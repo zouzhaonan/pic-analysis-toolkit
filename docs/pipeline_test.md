@@ -92,7 +92,7 @@ First, create a gene list for plotting.
 ```bash
 cat > "$wd/genes.txt" <<'EOF'
 Map2
-gfap
+Gfap
 Ddx4
 Kit
 EOF
