@@ -17,10 +17,10 @@ wd="$HOME/tmp/pic_test"
 ### 2-1. Activate the conda environment
 
 ```bash
+shell_name="$(basename "${SHELL:-zsh}")"
+eval "$("$(command -v conda)" "shell.${shell_name}" hook)"
 conda activate pic
 ```
-
-If `conda activate` is not available in your shell, try `source activate pic`.
 
 ### 2-2. Run mapping
 

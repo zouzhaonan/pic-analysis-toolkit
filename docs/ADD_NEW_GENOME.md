@@ -5,6 +5,8 @@ This document explains how to add a new genome to `pic`, using rat `rn7` as an e
 ## 1. Pre-check
 
 ```bash
+shell_name="$(basename "${SHELL:-zsh}")"
+eval "$("$(command -v conda)" "shell.${shell_name}" hook)"
 conda activate pic
 pic --help
 ```
