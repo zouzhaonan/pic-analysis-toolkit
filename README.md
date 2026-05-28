@@ -8,26 +8,13 @@ PIC analysis toolkit is a command-line workflow for analyzing PIC RNA-seq data, 
 
 ## 注意事項 / Notes
 
-Apple Silicon Mac でのみ動作確認しています。
+Apple Silicon Mac でのみ動作確認しています。/ Tested only on Apple Silicon Mac.
 
-Tested only on Apple Silicon Mac.
+**⚠️ Intel Mac は未検証です。Windows では動きません。/ Intel Mac is untested. Windows is not supported. ⚠️**
 
-**⚠️ Intel Mac は未検証です。Windows では動きません。⚠️**
+## パッケージのダウンロード / Download the package
 
-**⚠️ Intel Mac is untested. Windows is not supported. ⚠️**
-
-## このツールでできること / What This Toolkit Can Do
-
-- `mapping`: 一次解析を一括実行 / Run full primary workflow in one command
-- `deseq2`: DESeq2 解析 / Run DESeq2 analysis
-- `enrich`: ORA/GSEA 解析 / Run ORA/GSEA enrichment analysis
-- `chipatlas`: ChIP-Atlas enrichment/PAGE 実行 / Run ChIP-Atlas enrichment/PAGE from DESeq2 outputs
-- `plot-expression`: 指定遺伝子の発現プロット / Plot expression for selected genes
-
-```bash
-pic
-pic <subcommand> --help
-```
+[Download](https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2Fzouzhaonan%2Fpic-analysis-toolkit%2Ftree%2Fmain%2Fsrc%2Fpic-channel)
 
 ## チュートリアル / Documentations
 
