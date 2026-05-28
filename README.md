@@ -20,7 +20,7 @@ Download the latest `pic-channel.zip` from the [Download Page](https://github.co
 
 ## チュートリアル / Documentations
 
-### 1) 初回導入 / First-time setup
+### 1) セットアップ / Setup
 
 - 日本語: [導入方法](docs/導入方法.md)
 - English: [Installation Guide](docs/installation_guide.md)
