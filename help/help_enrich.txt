@@ -9,9 +9,10 @@ Required options:
   --stats <path>           DESeq2 stats CSV
   --genome <name>          Genome name in <lib_dir>/register/genome_enrichment_map.tsv
   --out-dir <dir>          Output directory
-  --deg-clusters <path>    deseq2 output: DEG/DEGCluster/DEGCluster_gene_for_ora_*.csv
 
 Optional options:
+  --deg-clusters <path>    DEG list for ORA (No need if no DEGs)
+                           deseq2 output: DEG/DEGCluster/DEGCluster_gene_for_ora_*.csv
   --project-name <name>    Output suffix (default: auto from --stats filename)
   --threads <n>            Number of parallel threads (default: 8)
   --methods <csv>          Methods to run (comma-separated)
