@@ -1,32 +1,25 @@
-使い方:
+Usage:
   pic <subcommand> [options]
 
-サブコマンド:
-  (事前準備)
-    build-genome     HISAT2 index を構築しゲノム参照を登録
+Subcommands:
+  (Preparation)
+    build-genome     Build HISAT2 index and register genome references
 
-  (一次解析)
-    mapping      一次解析を一括実行
-    demux            バーコードで FASTQ をサンプル単位に分割
+  (Primary Analysis)
+    mapping          Run the full primary workflow
+    demux            Demultiplex FASTQ files by barcode
 
-  (統計解析)
-    manage-biomart   biomart キャッシュの一覧・登録・取得
-    deseq2       DESeq2 解析を実行
-    chipatlas    deseq2 出力から ChIP-Atlas enrichment/PAGE を実行
-    enrich       ORA/GSEA enrichment 解析を実行
-    plot-expression  指定遺伝子の発現量プロットを作成
+  (Statistical Analysis)
+    manage-biomart   List/register biomart datasets and cache
+    deseq2           Run DESeq2 analysis
+    enrich           Run ORA/GSEA enrichment analysis
+    chipatlas        Run ChIP-Atlas enrichment/PAGE from DESeq2 outputs
+    plot-expression  Plot expression of selected genes
 
-    help             このヘルプを表示して終了
+    help             Show this help and exit
 
-サブコマンド別ヘルプ:
+Global options:
+  --debug            Enable debug logs
+
+See subcommand help for details:
   pic <subcommand> --help
-
-グローバルオプション:
-  --debug           デバッグログを有効化（ステップごとの入出力・引数・結果を表示）
-
-実行例:
-  pic --debug mapping --out-dir run_a --sample-sheet samples.tsv --raw-fastq-dir /path/raw_fastq
-  pic mapping --out-dir run_a --sample-sheet samples.tsv --raw-fastq-dir /path/raw_fastq
-  pic build-genome --genome mm10 --fasta /path/mm10.fa --gtf /path/mm10.gtf
-  pic deseq2 --deftable /path/deftable_mm10.tsv --count-dir /path/counts --genome mm10 --out-dir /path/deseq2_out
-  pic chipatlas --deftable /path/deftable_mm10.tsv --umi /path/UMI_count_mm10.csv --deg-list-dir /path/deseq2_out/DEG/DEGList --genome mm10 --out-dir /path/chipatlas_out

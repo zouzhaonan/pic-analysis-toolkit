@@ -1,28 +1,28 @@
-使い方:
+Usage:
   pic build-genome --genome <name> --fasta <path> --gtf <path> [options]
 
-概要:
-  HISAT2 index、GTF などの reference を準備し登録する。
+Overview:
+  Prepare and register genome references including HISAT2 index and GTF.
 
-必須オプション:
-  --genome <name>            ゲノム名（e.g. mm10, hg38）
-  --fasta <path>             参照 FASTA
-  --gtf <path>               参照 GTF
+Required options:
+  --genome <name>          Genome name (e.g. mm10, hg38)
+  --fasta <path>           Reference FASTA
+  --gtf <path>             Reference GTF
 
-任意オプション:
-  --fasta-source <text>      FASTA 出典メモ (default: unspecified)
-  --gtf-source <text>        GTF 出典メモ (default: unspecified)
-  --threads <int>            HISAT2 index 作成用スレッド数 (default: 8)
+Optional options:
+  --fasta-source <text>    FASTA source note (default: unspecified)
+  --gtf-source <text>      GTF source note (default: unspecified)
+  --threads <int>          Threads for HISAT2 index build (default: 8)
 
-登録先:
-  - HISAT2 index:   $PIC_LIB/hisat2_index/<genome>/genome.*.ht2*
-  - GTF:            $PIC_LIB/gtf/<genome>.gtf
-  - chrom sizes:    $PIC_LIB/chrom_size/<genome>.chrom.sizes
-  - 登録管理用 TSV: $PIC_LIB/register/genome_map.tsv（genome名と出典メモのみ）
+Output locations:
+  - HISAT2 index:   <PIC_LIB>/hisat2_index/<genome>/genome.*.ht2*
+  - GTF:            <PIC_LIB>/gtf/<genome>.gtf
+  - chrom sizes:    <PIC_LIB>/chrom_size/<genome>.chrom.sizes
+  - registry TSV:   <PIC_LIB>register/genome_map.tsv (genome name + source notes)
 
-  * PIC_LIB: 未設定時は $HOME/local/lib/pic が自動で使われます
+  * PIC_LIB defaults to $HOME/local/lib/pic when not set
 
-実行例:
+Example:
   pic build-genome \
     --genome mm10 \
     --fasta /path/mm10.fa \

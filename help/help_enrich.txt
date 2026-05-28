@@ -1,37 +1,36 @@
-使い方:
+Usage:
   pic enrich --stats <path> --genome <name> --out-dir <dir> --deg-clusters <path> [options]
   pic enrich --prepare-libs --genome <name> [--categories <csv>]
 
-概要:
-  DESeq2 stats から ORA/GSEA enrichment を実行します。
+Overview:
+  Run ORA/GSEA enrichment analysis from DESeq2 stats.
 
-ライブラリ準備:
-  --prepare-libs             local enrichment gson ライブラリを準備（--genome 必須）
-  --categories <csv>         prepare-libs 時に更新するカテゴリ（カンマ区切り）
-                             省略時は全カテゴリを更新
-                             選択肢: GO_BP, GO_CC, GO_MF, HPO, HDO, MPO, KEGG, REACTOME, WIKIPATHWAYS
+Required options:
+  --stats <path>           DESeq2 stats CSV
+  --genome <name>          Genome name in <lib_dir>/register/genome_enrichment_map.tsv
+  --out-dir <dir>          Output directory
+  --deg-clusters <path>    deseq2 output: DEG/DEGCluster/DEGCluster_gene_for_ora_*.csv
 
-必須オプション（通常実行）:
-  --stats <path>             DESeq2 stats CSV
-  --genome <name>            <lib_dir>/register/genome_enrichment_map.tsv のゲノム名
-  --out-dir <dir>            出力ディレクトリ
-  --deg-clusters <path>      deseq2 出力の DEG/DEGCluster/DEGCluster_gene_for_ora_*.csv
+Optional options:
+  --project-name <name>    Output suffix (default: auto from --stats filename)
+  --threads <n>            Number of parallel threads (default: 8)
+  --methods <csv>          Methods to run (comma-separated)
+                           default: GO_BP,KEGG,REACTOME,WIKIPATHWAYS,HDO,HPO,MPO
+                           choices: defaults + GO_CC, GO_MF
 
-任意オプション:
-  --project-name <name>      出力名サフィックス (default: --stats ファイル名から自動生成)
-  --threads <n>              並列実行スレッド数 (default: 8)
-  --methods <csv>            実行メソッド（カンマ区切り） (default: GO_BP,KEGG,REACTOME,WIKIPATHWAYS,HDO,HPO,MPO)
-                             選択肢: GO_BP, GO_CC, GO_MF, HPO, HDO, MPO, KEGG, REACTOME, WIKIPATHWAYS
+Library preparation:
+  --prepare-libs --genome <name>    Prepare local enrichment libraries for new genome assemblies
 
-ID マッピング:
-  - ライブラリは symbol ベースで実行
-  - genome x category が available (TRUE) の場合: source symbol で解析
-  - available (FALSE) の場合: human ortholog symbol に変換して解析
 
-実行例:
-  pic enrich --prepare-libs --genome mm10
+ID mapping behavior:
+  - Libraries are gene symbol–based.
+  - If genome x category is unavailable mapped human ortholog symbols are used.
+
+Examples:
   pic enrich \
     --stats /path/to/stats_mm10.csv \
     --genome mm10 \
     --out-dir /path/to/out \
     --deg-clusters /path/to/DEGCluster_gene_for_ora_xxx.csv
+
+  pic enrich --prepare-libs --genome mm10

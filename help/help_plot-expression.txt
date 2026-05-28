@@ -1,16 +1,16 @@
-使い方:
+Usage:
   pic plot-expression --count <path> --deftable <path> --gene-list <path> --out <path>
 
-概要:
-  指定遺伝子の正規化発現量をグループ別バイオリンプロットで出力します。
+Overview:
+  Generate group-wise violin plots for normalized expression of selected genes.
 
-必須オプション:
-  --count <path>             deseq2 出力の normalizedCountTable_*.csv
-  --deftable <path>          ゲノム別 deftable TSV
-  --gene-list <path>         ID/遺伝子名を 1 行 1 つで書いたテキスト
-  --out <path>               出力 PDF パス
+Required options:
+  --count <path>         deseq2 output normalizedCountTable_*.csv
+  --deftable <path>      Deftable TSV used for deseq2 input
+  --gene-list <path>     Text file with one ID/gene name per line
+  --out <path>           Output PDF path
 
-実行例:
+Example:
   pic plot-expression \
     --count /path/to/normalizedCountTable.csv \
     --deftable /path/to/deftable.tsv \

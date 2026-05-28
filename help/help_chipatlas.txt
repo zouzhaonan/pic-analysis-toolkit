@@ -1,37 +1,28 @@
-使い方:
-  pic chipatlas --deftable <tsv> --umi <csv> --deg-list-dir <dir> --genome <name> --out-dir <dir> [options]
+Usage:
+  pic chipatlas --deftable <tsv> --umi <csv> --deg-list-dir <dir> \
+    --genome <name> --out-dir <dir> [options]
 
-概要:
-  ChIP-Atlas Enrichment Analysis を contrast ごとに実行します。
-  各 contrast で以下を実行:
-  1) DEGList(2群) を使った enrichment analysis (typeA=gene, typeB=gene)
-  2) UMI raw-count table を使った PAGE (typeA=count)
+Overview:
+  Run ChIP-Atlas enrichment analysis per contrast.
+  For each contrast:
+    1) GOEA-like Enrichment analysis using DEGList
+    2) GSEA-like PAGE using UMI raw-count table
 
-必須オプション:
-  --deftable <tsv>           deseq2 入力に使った deftable TSV
-  --umi <csv>                UMI_count_*.csv（raw count table）
-  --deg-list-dir <dir>       deseq2 の DEGList ディレクトリ
-  --genome <name>            hg38, mm10, rn6, dm6, ce11, sacCer3
-  --out-dir <dir>            出力先ディレクトリ
+Required options:
+  --deftable <tsv>           Deftable TSV used for deseq2 input
+  --umi <csv>                UMI_count_*.csv (raw count table)
+  --deg-list-dir <dir>       DEGList directory from deseq2 output (DEG/DEGList)
+  --genome <name>            Supported: hg38, mm10, rn6, dm6, ce11, sacCer3
+  --out-dir <dir>            Output directory
 
-任意オプション:
+Optional options:
   --antigen-class <text>     (default: TFs and others)
   --cell-class <text>        (default: All cell types)
   --threshold <n>            (default: 100)
   --distance-up <n>          (default: 5000)
   --distance-down <n>        (default: 5000)
 
-出力:
-  <out-dir>/input/<contrast>/
-    <contrast>__groupA.txt
-    <contrast>__groupB.txt
-    <contrast>__page_input.csv
-  <out-dir>/result/ea/<contrast>/
-    <contrast>__chipatlas_ea.tsv/html/log
-  <out-dir>/result/page/<contrast>/
-    <contrast>__chipatlas_page.tsv/html/log
-
-実行例:
+Example:
   pic chipatlas \
     --deftable /path/to/deftable_mm10_xxx.tsv \
     --umi /path/to/UMI_count_mm10_xxx.csv \
