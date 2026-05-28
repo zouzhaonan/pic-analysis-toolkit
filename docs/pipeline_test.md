@@ -108,7 +108,7 @@ pic plot-expression \
   --out "$wd/deseq2/plot_expression_test.pdf"
 ```
 
-If `$wd/deseq2/plot_expression_test.pdf` is created, this step succeeded.
+Warnings may appear during plotting, but this is fine as long as `$wd/deseq2/plot_expression_test.pdf` is generated correctly.
 
 ## 7. Cleanup
 
