@@ -14,7 +14,10 @@ Apple Silicon Mac でのみ動作確認しています。/ Tested only on Apple 
 
 ## パッケージのダウンロード / Download the package
 
-[Download](https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2Fzouzhaonan%2Fpic-analysis-toolkit%2Ftree%2Fmain%2Fsrc%2Fpic-channel)
+- `pic-channel` only (external tool): [Download folder ZIP](https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2Fzouzhaonan%2Fpic-analysis-toolkit%2Ftree%2Fmain%2Fsrc%2Fpic-channel)
+- Fallback (official GitHub ZIP of entire repo): [Download repository ZIP](https://github.com/zouzhaonan/pic-analysis-toolkit/archive/refs/heads/main.zip)
+
+If the folder ZIP link fails, use the repository ZIP and extract `src/pic-channel`.
 
 ## チュートリアル / Documentations
 
