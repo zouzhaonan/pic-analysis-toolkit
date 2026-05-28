@@ -84,7 +84,7 @@ If help is displayed, installation is complete.
 
 ## 5. Prepare references for human (hg38) and mouse (mm10)
 
-For other species/genomes, see the operation guide.
+For other species/genomes, see [Add New Genome](docs/add_new_genome.md).
 Here, we place hg38 and mm10 so that analysis can start immediately.
 
 ```bash
