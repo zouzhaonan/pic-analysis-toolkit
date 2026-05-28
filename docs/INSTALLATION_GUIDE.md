@@ -1,8 +1,5 @@
 # pic Toolkit Installation Guide
 
-Tested only on Apple Silicon Mac.
-**⚠️ Intel Mac is untested. Windows is not supported. ⚠️**
-
 If you complete this guide, you will install the toolkit and set up hg38/mm10 references.
 **⚠️ The full process can take a few hours. Please run it when your network is stable and you have enough time. ⚠️**
 

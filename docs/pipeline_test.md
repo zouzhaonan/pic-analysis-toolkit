@@ -9,7 +9,7 @@ mkdir -p "$HOME/tmp"
 cd "$HOME/tmp"
 curl -L "https://chip-atlas.dbcls.jp/data/share/pic_test.tar.gz" | tar zx
 
-wd="$$HOME/tmp/pic_test"
+wd="$HOME/tmp/pic_test"
 ```
 
 ## 2. Run mapping
@@ -83,15 +83,42 @@ pic chipatlas \
 
 The computation runs on the ChIP-Atlas side. Results are saved under the specified `out-dir` after completion.
 
-## 6. Cleanup
+## 6. Run plot-expression
 
-### 6-1. Deactivate conda environment
+This step plots normalized counts by group for selected genes.
+
+First, create a gene list for plotting.
+
+```bash
+cat > "$wd/genes.txt" <<'EOF'
+Map2
+gfap
+Ddx4
+Kit
+EOF
+```
+
+Then generate expression plots from the DESeq2 normalized count table.
+
+```bash
+pic plot-expression \
+  --count "$wd/deseq2/normalizedCountTable_mm10_test.csv" \
+  --deftable "$wd/deftable_mm10_test.tsv" \
+  --gene-list "$wd/genes.txt" \
+  --out "$wd/deseq2/plot_expression_test.pdf"
+```
+
+If `$wd/deseq2/plot_expression_test.pdf` is created, this step succeeded.
+
+## 7. Cleanup
+
+### 7-1. Deactivate conda environment
 
 ```bash
 conda deactivate
 ```
 
-### 6-2. Remove test data (optional)
+### 7-2. Remove test data (optional)
 
 ```bash
 rm -rf "$wd"
