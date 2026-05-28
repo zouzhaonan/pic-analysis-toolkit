@@ -94,3 +94,7 @@ curl https://chip-atlas.dbcls.jp/data/share/pic.tar.gz| tar zx
 
 cd
 ```
+
+## 6. Test the workflow
+
+After completing the steps above, run the workflow check by following [Pipeline Test](pipeline_test.md).
