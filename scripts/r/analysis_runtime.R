@@ -26,7 +26,7 @@ pic_runtime_paths <- function(analysis_root) {
 
   list(
     lib_dir = lib_dir,
-    help_dir = file.path(lib_dir, "help"),
+    help_dir = file.path(analysis_root, "help"),
     register_dir = register_dir,
     biomart_lookup_file = file.path(register_dir, "biomart_lookup.tsv"),
     genome_map_file = file.path(register_dir, "genome_enrichment_map.tsv"),

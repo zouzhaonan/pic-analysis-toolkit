@@ -8,7 +8,7 @@
 #   cache 内 human_ortholog 列。
 
 print_usage <- function() {
-  local_help <- file.path(analysis_root, "lib", "help", "help_manage-biomart.txt")
+  local_help <- file.path(analysis_root, "help", "help_manage-biomart.txt")
   cat(readChar(local_help, file.info(local_help)$size, useBytes = TRUE))
   cat("\n\n")
 

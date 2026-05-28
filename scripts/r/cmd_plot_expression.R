@@ -24,7 +24,7 @@ load_plot_packages <- function() {
 }
 
 print_usage <- function() {
-  help_file <- file.path(analysis_root, "lib", "help", "help_plot-expression.txt")
+  help_file <- file.path(analysis_root, "help", "help_plot-expression.txt")
   cat(readChar(help_file, file.info(help_file)$size, useBytes = TRUE))
   cat("\n")
 }

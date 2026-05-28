@@ -11,7 +11,7 @@ PIC_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIC_ROOT="$(cd "${PIC_BIN_DIR}/.." && pwd)"
 PIC_BASH_DIR="${PIC_ROOT}/scripts/bash"
 PIC_R_DIR="${PIC_ROOT}/scripts/r"
-PIC_HELP_DIR="${PIC_ROOT}/lib/help"
+PIC_HELP_DIR="${PIC_ROOT}/help"
 
 # shellcheck source=/dev/null
 source "${PIC_BASH_DIR}/core_common.sh"

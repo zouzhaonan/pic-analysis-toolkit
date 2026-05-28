@@ -1,6 +1,6 @@
 # PIC Post-Install Setup
 
-`pic` package includes `lib/help` only.
+`pic` package includes `help` only.
 Runtime data (genome index/cache/register/enrichment) must be prepared externally and mounted.
 
 ## 1. Prepare runtime lib directory
@@ -18,7 +18,7 @@ export PIC_LIB=/path/to/mounted/lib
 
 # PIC インストール後設定
 
-`pic` パッケージには `lib/help` のみ含まれます。  
+`pic` パッケージには `help` のみ含まれます。  
 実行時データ（genome index/cache/register/enrichment）は外部で準備してマウントする必要があります。
 
 ## 1. 実行時 lib ディレクトリを準備

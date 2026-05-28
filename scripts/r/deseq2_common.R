@@ -37,7 +37,7 @@ parse_deseq2_args <- function(args) {
     }
 
     if (identical(arg, "--help")) {
-      help_file <- file.path(analysis_root, "lib", "help", "help_deseq2.txt")
+      help_file <- file.path(analysis_root, "help", "help_deseq2.txt")
       cat(readChar(help_file, file.info(help_file)$size, useBytes = TRUE))
       cat("\n")
 

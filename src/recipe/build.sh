@@ -9,8 +9,7 @@ mkdir -p "${install_root}"
 
 cp -R "${pkg_root}/bin" "${install_root}/"
 cp -R "${pkg_root}/scripts" "${install_root}/"
-mkdir -p "${install_root}/lib"
-cp -R "${pkg_root}/lib/help" "${install_root}/lib/"
+cp -R "/help" "/"
 
 cat > "${PREFIX}/bin/pic" <<'WRAP'
 #!/usr/bin/env bash
