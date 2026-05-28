@@ -1,0 +1,25 @@
+使い方:
+  pic mapping --out-dir <dir> --sample-sheet <tsv> [options]
+
+概要:
+  RNA一次解析を一括実行します。
+  demux -> map -> count-umi -> summarize-map -> generate-bigwig
+  demux した FASTQ は out-dir/demux/ 配下に作成されます。
+
+必須オプション:
+  --out-dir <dir>            出力ルートディレクトリ
+  --sample-sheet <tsv>       サンプルシートTSV（ヘッダー付き）
+                             ヘッダー: fastq_prefix, genome, barcode, sample, group
+  --raw-fastq-dir <dir>      生の FASTQ (R1 & R2) が置かれたディレクトリ
+                             * --demux-fastq-dir 指定時は不要
+
+任意オプション:
+  --threads <n>              並列実行スレッド数 (default: 8)
+  --run-name <name>          出力ファイル名に付与する実行名 (default: ランダム8文字)
+  --demux-fastq-dir <dir>    demux 済の FASTQ が置かれたディレクトリ
+  --simulation               シミュレーションモードで実行 (default: off)
+  --hisat2-very-sensitive    hisat2 に --very-sensitive を付与 (default: off)
+
+実行例:
+  pic mapping --sample-sheet /path/sample.tsv --raw-fastq-dir /path/raw_fastq --out-dir /path/mapping --run-name test
+  pic mapping --sample-sheet /path/sample.tsv --demux-fastq-dir /path/demux_fastq --out-dir /path/mapping --run-name test

@@ -1,0 +1,62 @@
+{% set name = "pic" %}
+{% set version = "1.0.0" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  path: ..
+
+build:
+  noarch: generic
+  number: 0
+
+requirements:
+  run:
+    - bash >=5
+    - pigz =2.8
+    - trim-galore =0.6.10
+    - seqkit >=2.5.1
+    - hisat2 =2.2.1
+    - samtools >=1.17
+    - subread >=2.0.6
+    - bedtools >=2.31.0
+    - ucsc-bedgraphtobigwig
+    - ucsc-fasize
+    - r-base =4.4
+    - r-readr
+    - r-dplyr
+    - r-tidyr
+    - r-purrr
+    - r-tibble
+    - r-ggplot2
+    - r-ggrepel
+    - r-ggsci
+    - r-ggbeeswarm
+    - r-scales
+    - r-pheatmap
+    - r-curl
+    - bioconductor-annotationdbi
+    - bioconductor-dose
+    - bioconductor-gosemsim
+    - r-gson
+    - bioconductor-reactomepa
+    - r-r.utils
+    - r-yulab.utils
+    - bioconductor-org.hs.eg.db
+    - bioconductor-org.mm.eg.db
+    - bioconductor-deseq2 =1.46.0
+    - bioconductor-clusterprofiler =4.14.0
+    - bioconductor-degreport =1.42.0
+
+test:
+  commands:
+    - pic
+
+about:
+  summary: "A toolkit for mapping and statistical analysis of PIC sequencing data"
+
+extra:
+  recipe-maintainers:
+    - Zhaonan Zou

@@ -1,0 +1,30 @@
+使い方:
+  pic manage-biomart --list-datasets [--source <name>]
+  pic manage-biomart --register --genome <name> --dataset <name> [--source <name>]
+
+概要:
+  biomart データセットの一覧取得と登録を行います。
+
+動作:
+  --list-datasets            指定 source のデータセット一覧を表示
+  --register                 指定データセットを取得し lookup へ登録
+
+--register の内容:
+  - lib/biomart/<dataset>.tsv を上書き保存
+  - annotation 4列（ens_gene, ext_gene, biotype, chr）を取得
+  - 非human datasetでは、hsapiens_homolog_associated_gene_name を別クエリで取得して
+    human_ortholog 列として結合（リトライあり）
+  - 最終的な cache 列は:
+    ens_gene, ext_gene, biotype, chr, human_ortholog
+
+必須オプション（--register 時）:
+  --genome <name>            登録するゲノム名（例: mm10, hg38, rn7）
+  --dataset <name>           登録する biomart dataset 名（例: mmusculus_gene_ensembl）
+
+任意オプション:
+  --source <name>            biomart source (default: ensembl)
+                             選択肢: ensembl, plants, fungi, protists, metazoa
+
+実行例:
+  pic manage-biomart --list-datasets
+  pic manage-biomart --register --genome rn7 --dataset rnorvegicus_gene_ensembl

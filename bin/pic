@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [[ -z "${BASH_VERSION:-}" ]]; then
+  echo "[ERROR] This tool must be run with bash." >&2
+  exit 1
+fi
+
+PIC_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PIC_ROOT="$(cd "${PIC_BIN_DIR}/.." && pwd)"
+PIC_BASH_DIR="${PIC_ROOT}/scripts/bash"
+PIC_R_DIR="${PIC_ROOT}/scripts/r"
+PIC_HELP_DIR="${PIC_ROOT}/lib/help"
+
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/core_common.sh"
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/core_runtime.sh"
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/core_workspace.sh"
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/core_validate.sh"
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/core_genome_registry.sh"
+
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/cmd_build_genome.sh"
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/cmd_chipatlas.sh"
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/workflow_mapping.sh"
+
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/cli_help.sh"
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/cli_primary.sh"
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/cli_analysis.sh"
+
+args_request_help() {
+  local arg
+  for arg in "$@"; do
+    if [[ "$arg" == "--help" || "$arg" == "-h" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+main() {
+  if [[ $# -eq 0 ]]; then
+    show_main_help
+    exit 0
+  fi
+
+  local filtered_args=()
+  local arg
+  for arg in "$@"; do
+    if [[ "$arg" == "--debug" ]]; then
+      enable_debug_mode
+      continue
+    fi
+    filtered_args+=("$arg")
+  done
+  set -- "${filtered_args[@]}"
+
+  if [[ $# -eq 0 ]]; then
+    show_main_help
+    exit 0
+  fi
+
+  if debug_enabled; then
+    debug_log "Debug mode enabled"
+    debug_kv "PIC_ROOT" "$PIC_ROOT"
+    debug_kv "PIC_BASH_DIR" "$PIC_BASH_DIR"
+    debug_kv "PIC_R_DIR" "$PIC_R_DIR"
+  fi
+
+  local subcommand="$1"
+  shift || true
+
+  case "$subcommand" in
+    help|--help|-h)
+      show_main_help
+      ;;
+    mapping|demux)
+      debug_log "Dispatch subcommand=${subcommand} args=$*"
+      if ! args_request_help "$@"; then
+        require_runtime_lib_dir
+      fi
+      run_primary_family_subcommand "$subcommand" "$@"
+      ;;
+    build-genome)
+      debug_log "Dispatch subcommand=${subcommand} args=$*"
+      if ! args_request_help "$@"; then
+        require_runtime_lib_dir
+      fi
+      run_build_genome_subcommand "$@"
+      ;;
+    deseq2|enrich|manage-biomart|plot-expression|chipatlas)
+      debug_log "Dispatch subcommand=${subcommand} args=$*"
+      if ! args_request_help "$@"; then
+        require_runtime_lib_dir
+      fi
+      run_analysis_subcommand "$subcommand" "$@"
+      ;;
+    *)
+      handle_error "Unknown subcommand: ${subcommand}"
+      show_main_help
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

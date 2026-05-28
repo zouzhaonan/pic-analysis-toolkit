@@ -1,0 +1,33 @@
+使い方:
+  pic deseq2 --deftable <path> --count-dir <dir> --genome <name> --out-dir <dir> [options]
+
+概要:
+  DESeq2 による統計解析を実行する。相関解析、PCA、M-A、Volcano plot が同時に行われる。
+
+前提:
+  対象 genome が `pic manage-biomart --register` で登録済みであること。
+  biomart cache（lib/biomart/<dataset>.tsv）は以下列を持ちます:
+  ens_gene, ext_gene, biotype, chr, human_ortholog
+
+必須オプション:
+  --deftable <path>     DESeq2 用サンプルシート
+                        = = = = = e.g. = = = = =
+                        count_prefix  barcode  sample   group
+                        brain         AGGATC   brain_1  brain
+                        brain         TCGAAG   brain_2  brain
+                        ovary         TCCTTC   ovary_1  ovary
+                        ovary         TGTCTG   ovary_2  ovary
+                        = = = = = = = = = = = = =
+  --count-dir <dir>     umi.txt.gz が入っているディレクトリ
+  --genome <name>       ゲノム名（e.g. mm10, hg38）
+  --out-dir <dir>       出力ディレクトリ
+
+任意オプション:
+  --fdr <value>         DEG 判定時の FDR (default: 0.1)
+
+実行例:
+  pic deseq2 \
+    --deftable /path/to/deftable_mm10.tsv \
+    --count-dir /path/to/counts \
+    --genome mm10 \
+    --out-dir /path/to/out

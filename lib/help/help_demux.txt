@@ -1,0 +1,26 @@
+使い方:
+  pic demux --out-dir <dir> --sample-sheet <tsv> [options]
+
+概要:
+  Paired FASTQ (R1 + R2) を demultiplex し、サンプル単位で FASTQ を作成する。
+
+必須オプション:
+  --out-dir <dir>          出力ディレクトリ
+  --sample-sheet <tsv>     サンプルシート
+                           = = = = = e.g. = = = = =
+                           fastq_prefix  genome  barcode  sample   group
+                           brain         mm10    AGGATC   brain_1  brain
+                           brain         mm10    TCGAAG   brain_2  brain
+                           ovary         mm10    TCCTTC   ovary_1  ovary
+                           ovary         mm10    TGTCTG   ovary_2  ovary
+                           = = = = = = = = = = = = =
+  --raw-fastq-dir <dir>    sample_sheet 1列目のFASTQ prefixが置かれた共通ディレクトリ
+
+任意オプション:
+  --threads <int>          並列実行スレッド数 (default: 8)
+
+実行例:
+  pic demux \
+    --sample-sheet /path/sample.tsv \
+    --raw-fastq-dir /path/raw_fastq \
+    --out-dir /path/mapping

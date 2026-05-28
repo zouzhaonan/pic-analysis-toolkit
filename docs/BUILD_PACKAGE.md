@@ -1,0 +1,55 @@
+# PIC パッケージ作成手順
+
+## 1. 事前準備
+
+- macOS もしくは Linux
+- Conda
+- conda-build
+
+```bash
+conda install -n base -c conda-forge conda-build
+```
+
+## 2. 既存環境と生成物を削除
+
+```bash
+conda deactivate || true
+conda env remove -n pic -y || true
+
+build_dir=/Users/zou/local/conda-bld-pic
+channel_dir=/Users/zou/photo-isolation-chemistry/pic-channel
+
+rm -rf $build_dir $channel_dir
+```
+
+## 3. パッケージをビルド
+
+```bash
+recipe_dir=/Users/zou/photo-isolation-chemistry/src/recipe
+
+conda config --set solver libmamba
+conda config --set channel_priority strict
+conda clean -i -y
+
+conda build "$recipe_dir" \
+  --croot "$build_dir" \
+  --override-channels \
+  -c conda-forge -c bioconda
+```
+
+## 4. `pic-channel` を作成
+
+```bash
+mkdir -p "$channel_dir/noarch"
+cp "$build_dir/noarch/pic-1.0.0-0.conda" "$channel_dir/noarch/"
+conda index "$channel_dir"
+```
+
+## 5. 共有するもの
+
+他ユーザーには `pic-channel` ディレクトリごと共有する。
+
+最低限必要なファイル:
+
+- `pic-channel/noarch/pic-0.1.0-0.conda`
+- `pic-channel/noarch/repodata.json`
