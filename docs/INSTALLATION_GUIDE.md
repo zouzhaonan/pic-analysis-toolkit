@@ -20,10 +20,10 @@ conda --version
 
 ---
 
-## 2. Download `pic-channel`
+## 2. Download the `pic` package
 
-Place the shared `pic-channel` folder anywhere you like.
-Example: `~/Downloads/pic-channel`
+Unzip the downloaded `pic-channel` ZIP file, then place the extracted `pic-channel` folder anywhere you like.
+The instructions below assume it is placed at `~/Downloads/pic-channel`.
 
 **You can delete this folder after installation.**
 
@@ -35,7 +35,7 @@ Run the following commands in order.
 
 ### 3-1. Remove existing `pic` environment (just in case)
 
-If you see warning-like messages here, it is fine at this step.
+If warning-like messages appear here, it is fine at this step.
 
 ```bash
 conda deactivate || true
@@ -66,7 +66,7 @@ conda create -n pic -y \
 
 ---
 
-## 4. Verify
+## 4. Verify startup
 
 ### 4-1. Activate environment
 
@@ -82,83 +82,15 @@ pic
 
 If help is displayed, installation is complete.
 
-## 5. Prepare References for Human (hg38) and Mouse (mm10)
+## 5. Prepare references for human (hg38) and mouse (mm10)
 
 For other species/genomes, see the operation guide.
-Here, we prepare hg38 and mm10 so you can start running analyses.
-
-**⚠️ This section takes time. Run it with a stable internet connection. ⚠️**
-
-First, move to a working directory:
+Here, we place hg38 and mm10 so that analysis can start immediately.
 
 ```bash
-tmp_dir="$HOME/Downloads/pic_tmp"
-mkdir -p "$tmp_dir"
-cd "$tmp_dir"
-```
+mkdir -p $HOME/local/lib
+cd $HOME/local/lib
+curl https://chip-atlas.dbcls.jp/data/share/pic.tar.gz| tar zx
 
-### 5-1. build-genome
-
-This step prepares HISAT2 index and GTF.
-Copy and run the block below as-is:
-
-```bash
-prepare_genome() {
-  genome="$1"
-  fasta_url="$2"
-  gtf_url="$3"
-
-  fasta_gz="$(basename "$fasta_url")"
-  gtf_gz="$(basename "$gtf_url")"
-  fasta="${fasta_gz%.gz}"
-  gtf="${gtf_gz%.gz}"
-
-  curl -L "$fasta_url" -o "$fasta_gz"
-  curl -L "$gtf_url" -o "$gtf_gz"
-  gunzip -f "$fasta_gz" "$gtf_gz"
-
-  pic build-genome \
-    --genome "$genome" \
-    --fasta "$fasta" \
-    --gtf "$gtf" \
-    --fasta-source "$fasta_url" \
-    --gtf-source "$gtf_url"
-}
-
-prepare_genome hg38 \
-  "https://ftp.ensembl.org/pub/release-115/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz" \
-  "https://ftp.ensembl.org/pub/release-115/gtf/homo_sapiens/Homo_sapiens.GRCh38.115.gtf.gz"
-
-prepare_genome mm10 \
-  "https://ftp.ensembl.org/pub/release-102/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.primary_assembly.fa.gz" \
-  "https://ftp.ensembl.org/pub/release-102/gtf/mus_musculus/Mus_musculus.GRCm38.102.gtf.gz"
-```
-
-### 5-2. Register biomart
-
-This adds annotation used in downstream count/stat tables.
-
-```bash
-pic manage-biomart --register --genome hg38 --dataset hsapiens_gene_ensembl
-pic manage-biomart --register --genome mm10 --dataset mmusculus_gene_ensembl
-```
-
-### 5-3. Prepare enrichment libraries
-
-```bash
-pic enrich --prepare-libs --genome hg38
-pic enrich --prepare-libs --genome mm10
-```
-
-Notes:
-
-- `manage-biomart` and `enrich --prepare-libs` access external servers.
-- They may fail when the server is busy or temporarily unavailable.
-- If failed, rerun only the relevant command(s) in [5-2](#5-2-register-biomart) or [5-3](#5-3-prepare-enrichment-libraries).
-
-### 5-4. Remove temporary files
-
-```bash
 cd
-rm -rf "$tmp_dir"
 ```
