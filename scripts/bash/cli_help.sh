@@ -42,7 +42,7 @@ show_help_for_subcommand() {
   cat "$help_file"
 
   case "$subcommand" in
-    mapping|build-genome)
+    all|mapping|build-genome)
       echo
       print_registered_pic_genomes
       ;;

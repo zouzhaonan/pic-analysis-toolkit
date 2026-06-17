@@ -5,6 +5,9 @@ Subcommands:
   (Preparation)
     build-genome     Build HISAT2 index and register genome references
 
+  (End-to-end)
+    all              Run mapping -> deseq2 -> enrich in one command
+
   (Primary Analysis)
     mapping          Run the full primary workflow
     demux            Demultiplex FASTQ files by barcode

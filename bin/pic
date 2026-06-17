@@ -37,6 +37,8 @@ source "${PIC_BASH_DIR}/cli_help.sh"
 source "${PIC_BASH_DIR}/cli_primary.sh"
 # shellcheck source=/dev/null
 source "${PIC_BASH_DIR}/cli_analysis.sh"
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/cli_pipeline.sh"
 
 args_request_help() {
   local arg
@@ -90,6 +92,13 @@ main() {
         require_runtime_lib_dir
       fi
       run_primary_family_subcommand "$subcommand" "$@"
+      ;;
+    all)
+      debug_log "Dispatch subcommand=${subcommand} args=$*"
+      if ! args_request_help "$@"; then
+        require_runtime_lib_dir
+      fi
+      run_pipeline_subcommand "$@"
       ;;
     build-genome)
       debug_log "Dispatch subcommand=${subcommand} args=$*"
