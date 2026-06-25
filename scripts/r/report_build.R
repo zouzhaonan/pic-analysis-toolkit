@@ -82,7 +82,8 @@ pic_report_discover_projects <- function(out_dir) {
 pic_report_find_enrich_dir <- function(out_dir, project) {
   all_csvs <- list.files(out_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE)
   gsea_csvs <- all_csvs[
-    grepl(file.path("enrich", "csv", "GSEA"), all_csvs, fixed = TRUE) &
+    grepl("enrich", all_csvs, fixed = TRUE) &
+      grepl(file.path("csv", "GSEA"), all_csvs, fixed = TRUE) &
       grepl(paste0(project, ".csv"), basename(all_csvs), fixed = TRUE)
   ]
   if (length(gsea_csvs) == 0) {
