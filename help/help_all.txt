@@ -3,7 +3,7 @@ Usage:
 
 Overview:
   Run the full analysis end-to-end in one command:
-  mapping -> deseq2 -> enrich
+  mapping -> deseq2 -> enrich -> report (HTML)
 
   For each genome found in the sample sheet, deseq2 and enrich are run
   automatically. This subcommand is intentionally simple and takes only the
@@ -30,6 +30,7 @@ Output layout:
   <out-dir>/                 mapping artifacts (deftable, counts, bam, bw ...)
   <out-dir>/deseq2/<genome>/ DESeq2 results per genome
   <out-dir>/enrich/<genome>/ ORA/GSEA results per genome
+  <out-dir>/report_<project>.html  interactive HTML report per genome
 
 Examples:
   pic all \

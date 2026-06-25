@@ -1,0 +1,75 @@
+:root{
+  --fg:#1f2933; --muted:#647280; --line:#e2e8f0; --bg:#ffffff; --accent:#2166ac;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Noto Sans JP",Meiryo,sans-serif;color:var(--fg);background:#f7f9fc;line-height:1.6}
+.pic-header{background:linear-gradient(90deg,#1b3a5b,#2166ac);color:#fff;padding:22px 28px}
+.pic-header h1{margin:0;font-size:22px}
+.pic-sub{opacity:.9;font-size:14px;margin-top:4px}
+.pic-nav{position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid var(--line);padding:8px 28px;display:flex;gap:18px}
+.pic-nav a{color:var(--accent);text-decoration:none;font-size:14px;font-weight:600}
+.pic-nav a:hover{text-decoration:underline}
+main{max-width:1180px;margin:0 auto;padding:8px 28px 60px}
+section{background:#fff;border:1px solid var(--line);border-radius:10px;padding:20px 24px;margin:22px 0;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+h2{margin-top:0;font-size:19px;border-bottom:2px solid var(--accent);padding-bottom:6px}
+h3{font-size:16px;margin:22px 0 10px}
+h4{font-size:13px;margin:6px 0;color:var(--muted)}
+.pic-note,.pic-contrast-meta{color:var(--muted);font-size:13px;margin:4px 0}
+
+/* plotly grid */
+.pic-plot-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
+.pic-plot-cell{border:1px solid var(--line);border-radius:8px;padding:8px}
+.pic-plot{width:100%;height:420px}
+
+/* contrast details */
+details.pic-contrast,details.pic-enrich-method{border:1px solid var(--line);border-radius:8px;margin:10px 0;padding:4px 12px;background:#fcfdff}
+details.pic-contrast summary,details.pic-enrich-method summary{cursor:pointer;font-weight:600;padding:6px 0}
+details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
+
+/* mapping QC bars */
+.pic-bars{margin:10px 0}
+.pic-bar-ruler{display:flex;justify-content:space-between;margin-left:150px;color:var(--muted);font-size:11px;border-bottom:1px dashed var(--line);padding-bottom:2px}
+.pic-bar-row{display:flex;align-items:center;margin:2px 0}
+.pic-bar-label{width:150px;flex:none;font-size:12px;padding-right:8px;text-align:right;color:var(--fg)}
+.pic-bar-track{flex:1;display:flex;height:18px;background:#f0f3f7;border-radius:2px;overflow:hidden;background-image:repeating-linear-gradient(90deg,transparent,transparent 19.9%,rgba(0,0,0,.06) 20%,transparent 20.1%)}
+.pic-seg{height:100%}
+.pic-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;margin-left:150px;font-size:12px}
+.pic-legend-item{display:flex;align-items:center;gap:5px}
+.pic-swatch{width:13px;height:13px;border-radius:2px;display:inline-block}
+
+/* tables */
+.pic-table{border-collapse:collapse;width:100%;font-size:13px;margin-top:8px}
+.pic-table th,.pic-table td{border:1px solid var(--line);padding:4px 8px;text-align:right}
+.pic-table th{background:#eef3f9;text-align:right}
+.pic-td-sample{text-align:left;font-weight:600}
+.pic-databar-table td.pic-td-bar{position:relative;min-width:140px;padding:3px 8px;text-align:left}
+.pic-databar{position:absolute;left:3px;right:3px;top:3px;bottom:3px;border-radius:2px;z-index:1}
+.pic-databar-val{position:relative;z-index:2;font-variant-numeric:tabular-nums}
+.pic-td-num{font-variant-numeric:tabular-nums}
+
+/* MA + volcano を横一列 */
+.pic-ma-vol{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:860px){.pic-ma-vol{grid-template-columns:1fr}}
+
+/* DEG ヒートマップ (スクロール + サンプル名 sticky) */
+.pic-hm-scroll{max-height:560px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:8px}
+table.pic-hm{border-collapse:separate;border-spacing:0}
+.pic-hm th,.pic-hm td{padding:0;margin:0}
+.pic-hm thead th.s{position:sticky;top:0;z-index:3;background:#fff;height:110px;width:20px;vertical-align:bottom;padding-bottom:4px}
+.pic-hm thead th.s span{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;font-size:10px;display:inline-block;font-weight:600}
+.pic-hm thead th.corner{position:sticky;top:0;left:0;z-index:4;background:#fff}
+.pic-hm tbody th.g{position:sticky;left:0;z-index:2;background:#fff;text-align:right;font-weight:400;font-size:9px;padding:0 6px;white-space:nowrap}
+.pic-hm tbody td{width:20px;height:13px;border-right:1px solid #fff}
+.pic-hm tbody tr{height:13px}
+
+/* enrich */
+details.pic-enrich-group{border:1px solid var(--line);border-radius:8px;margin:12px 0;padding:6px 14px;background:#fff}
+details.pic-enrich-group>summary{cursor:pointer;font-weight:700;font-size:15px;padding:6px 0;color:var(--accent)}
+details.pic-enrich-group[open]>summary{border-bottom:1px solid var(--line);margin-bottom:10px}
+.pic-enrich-item{margin:14px 0}
+.pic-enrich-item img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:6px}
+
+/* notes */
+.pic-notes{background:#f3f7fc;border-left:4px solid var(--accent);padding:10px 16px;border-radius:0 8px 8px 0;margin-bottom:14px}
+.pic-notes h3{margin-top:8px}
+code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}

@@ -19,6 +19,9 @@ Subcommands:
     chipatlas        Run ChIP-Atlas enrichment/PAGE from DESeq2 outputs
     plot-expression  Plot expression of selected genes
 
+  (Reporting)
+    report           Build a self-contained interactive HTML report
+
     help             Show this help and exit
 
 Global options:

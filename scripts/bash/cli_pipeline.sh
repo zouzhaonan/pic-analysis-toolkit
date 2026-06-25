@@ -130,5 +130,11 @@ run_pipeline_subcommand() {
     fi
   done
 
+  # --- Step 4: HTML レポート ---
+  log_info "pic all: [4/4] HTML レポートを生成します"
+  if ! Rscript "${PIC_R_DIR}/cmd_build_report.R" --out-dir "$OUTPUT_DIR"; then
+    handle_error "pic all: レポート生成に失敗しました (解析結果は ${OUTPUT_DIR} に保存済み)"
+  fi
+
   log_info "pic all: 完了しました (out-dir=${OUTPUT_DIR})"
 }
