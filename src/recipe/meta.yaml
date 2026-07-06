@@ -14,38 +14,43 @@ build:
 
 requirements:
   run:
-    - bash >=5
+    - bash =5.2.37
     - pigz =2.8
     - trim-galore =0.6.10
-    - seqkit >=2.5.1
+    - seqkit =2.13.0
     - hisat2 =2.2.1
-    - samtools >=1.17
-    - subread >=2.0.6
-    - bedtools >=2.31.0
-    - ucsc-bedgraphtobigwig
-    - ucsc-fasize
-    - r-base =4.4
-    - r-readr
-    - r-dplyr
-    - r-tidyr
-    - r-purrr
-    - r-tibble
-    - r-ggplot2
-    - r-ggrepel
-    - r-ggsci
-    - r-ggbeeswarm
-    - r-scales
-    - r-pheatmap
-    - r-curl
-    - bioconductor-annotationdbi
-    - bioconductor-dose
-    - bioconductor-gosemsim
-    - r-gson
-    - bioconductor-reactomepa
-    - r-r.utils
-    - r-yulab.utils
-    - bioconductor-org.hs.eg.db
-    - bioconductor-org.mm.eg.db
+    - samtools =1.23.1
+    - subread =2.1.1
+    - bedtools =2.31.1
+    - ucsc-bedgraphtobigwig =482
+    - ucsc-fasize =482
+    - xengsort =2.2.0
+    - ntcard =1.2.2
+    - gffread =0.12.7
+    - r-base =4.4.3
+    - r-readr =2.2.0
+    - r-dplyr =1.2.1
+    - r-tidyr =1.3.2
+    - r-purrr =1.2.2
+    - r-tibble =3.3.1
+    - r-ggplot2 =4.0.3
+    - r-ggrepel =0.9.8
+    - r-ggsci =5.0.0
+    - r-ggbeeswarm =0.7.3
+    - r-scales =1.4.0
+    - r-pheatmap =1.0.13
+    - r-curl =7.1.0
+    - r-jsonlite =2.0.0
+    - r-base64enc =0.1_6
+    - bioconductor-annotationdbi =1.68.0
+    - bioconductor-dose =4.0.0
+    - bioconductor-gosemsim =2.32.0
+    - r-gson =0.1.0
+    - bioconductor-reactomepa =1.50.0
+    - r-r.utils =2.13.0
+    - r-yulab.utils =0.2.4
+    - bioconductor-org.hs.eg.db =3.20.0
+    - bioconductor-org.mm.eg.db =3.20.0
     - bioconductor-deseq2 =1.46.0
     - bioconductor-clusterprofiler =4.14.0
     - bioconductor-degreport =1.42.0

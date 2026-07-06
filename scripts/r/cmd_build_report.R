@@ -37,6 +37,14 @@ main <- function() {
 
   out_dir <- normalizePath(args$out_dir, mustWork = TRUE)
 
+  # xenograft 統合レポート (分類サマリ + graft/host) を優先判定
+  if (pic_is_xenograft_out(out_dir)) {
+    message("[INFO] report: xenograft integrated (classification + graft/host)")
+    html <- build_xenograft_report(out_dir, asset_dir)
+    message(sprintf("[INFO] report written: %s", html))
+    return(invisible(NULL))
+  }
+
   projects <- pic_report_discover_projects(out_dir)
   if (length(projects) == 0) {
     stop(sprintf("deseq2 の stats_*.csv が見つかりません: %s", out_dir), call. = FALSE)

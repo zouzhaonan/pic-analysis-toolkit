@@ -50,5 +50,9 @@ show_help_for_subcommand() {
       echo
       print_registered_biomart_genomes
       ;;
+    xenograft|build-xenograft-index)
+      echo
+      print_registered_xengsort_indexes
+      ;;
   esac
 }

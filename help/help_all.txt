@@ -22,9 +22,13 @@ Required options:
                                ovary         mm10    TGTCTG   ovary_2  ovary
                              - - - - - - - - - - - - - - - - - - - - - - - - -
   --raw-fastq-dir <dir>      Directory containing raw paired FASTQ files (R1 & R2)
+                             * Not needed when --demux-fastq-dir is given
 
 Optional options:
   --run-name <name>          Run name suffix for output files (default: random 8 chars)
+  --demux-fastq-dir <dir>    Use already-demultiplexed/classified FASTQ (skips demux).
+                             Each sample is read from <dir>/<sample>.fastq.gz
+  --no-report                Skip the final HTML report step
 
 Output layout:
   <out-dir>/                 mapping artifacts (deftable, counts, bam, bw ...)

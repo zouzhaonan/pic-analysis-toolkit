@@ -3,7 +3,8 @@ Usage:
 
 Subcommands:
   (Preparation)
-    build-genome     Build HISAT2 index and register genome references
+    build-genome            Build HISAT2 index and register genome references
+    build-xenograft-index   Build and register a xengsort index (host/graft)
 
   (End-to-end)
     all              Run mapping -> deseq2 -> enrich in one command
@@ -11,6 +12,7 @@ Subcommands:
   (Primary Analysis)
     mapping          Run the full primary workflow
     demux            Demultiplex FASTQ files by barcode
+    xenograft        Classify demux FASTQ into host/graft with xengsort
 
   (Statistical Analysis)
     manage-biomart   List/register biomart datasets and cache

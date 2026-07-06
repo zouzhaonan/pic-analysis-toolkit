@@ -29,6 +29,8 @@ source "${PIC_BASH_DIR}/cmd_build_genome.sh"
 # shellcheck source=/dev/null
 source "${PIC_BASH_DIR}/cmd_chipatlas.sh"
 # shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/cmd_xenograft.sh"
+# shellcheck source=/dev/null
 source "${PIC_BASH_DIR}/workflow_mapping.sh"
 
 # shellcheck source=/dev/null
@@ -108,6 +110,20 @@ main() {
         require_runtime_lib_dir
       fi
       run_build_genome_subcommand "$@"
+      ;;
+    build-xenograft-index)
+      debug_log "Dispatch subcommand=${subcommand} args=$*"
+      if ! args_request_help "$@"; then
+        require_runtime_lib_dir
+      fi
+      run_build_xenograft_index_subcommand "$@"
+      ;;
+    xenograft)
+      debug_log "Dispatch subcommand=${subcommand} args=$*"
+      if ! args_request_help "$@"; then
+        require_runtime_lib_dir
+      fi
+      run_xenograft_subcommand "$@"
       ;;
     deseq2|enrich|manage-biomart|plot-expression|chipatlas)
       debug_log "Dispatch subcommand=${subcommand} args=$*"

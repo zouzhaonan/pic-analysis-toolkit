@@ -31,8 +31,8 @@ run_pipeline_subcommand() {
     return 0
   fi
 
-  local sample_sheet="" raw_fastq_dir="" run_name="" out_dir=""
-  local run_name_set=0
+  local sample_sheet="" raw_fastq_dir="" run_name="" out_dir="" demux_fastq_dir=""
+  local run_name_set=0 no_report=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -44,6 +44,10 @@ run_pipeline_subcommand() {
       raw_fastq_dir="${2:-}"
       shift 2
       ;;
+    --demux-fastq-dir)
+      demux_fastq_dir="${2:-}"
+      shift 2
+      ;;
     --run-name)
       run_name="${2:-}"
       run_name_set=1
@@ -53,13 +57,17 @@ run_pipeline_subcommand() {
       out_dir="${2:-}"
       shift 2
       ;;
+    --no-report)
+      no_report=1
+      shift
+      ;;
     --help)
       show_help_for_subcommand all
       return 0
       ;;
     *)
       handle_error "Unknown option: $1"
-      handle_error "pic all はシンプル実行専用です (--sample-sheet / --raw-fastq-dir / --run-name / --out-dir のみ)。"
+      handle_error "pic all のオプション: --sample-sheet / --raw-fastq-dir / --demux-fastq-dir / --run-name / --out-dir / --no-report"
       handle_error "詳細な調整が必要な場合は deseq2 / enrich を個別に実行してください。"
       exit 1
       ;;
@@ -67,11 +75,16 @@ run_pipeline_subcommand() {
   done
 
   # mapping 用の共通オプションをパースし、グローバル設定を確定する。
-  # subcommand を "mapping" にすることで --run-name が許可される。
+  # subcommand を "mapping" にすることで --run-name / --demux-fastq-dir が許可される。
   local mapping_args=()
   mapping_args+=(--out-dir "$out_dir")
   mapping_args+=(--sample-sheet "$sample_sheet")
-  mapping_args+=(--raw-fastq-dir "$raw_fastq_dir")
+  if [[ -n "$demux_fastq_dir" ]]; then
+    # 分類済み/demux 済み FASTQ を入力に使う (demux をスキップ)。
+    mapping_args+=(--demux-fastq-dir "$demux_fastq_dir")
+  else
+    mapping_args+=(--raw-fastq-dir "$raw_fastq_dir")
+  fi
   if [[ "$run_name_set" = 1 ]]; then
     mapping_args+=(--run-name "$run_name")
   fi
@@ -131,9 +144,13 @@ run_pipeline_subcommand() {
   done
 
   # --- Step 4: HTML レポート ---
-  log_info "pic all: [4/4] HTML レポートを生成します"
-  if ! Rscript "${PIC_R_DIR}/cmd_build_report.R" --out-dir "$OUTPUT_DIR"; then
-    handle_error "pic all: レポート生成に失敗しました (解析結果は ${OUTPUT_DIR} に保存済み)"
+  if [[ "$no_report" = 1 ]]; then
+    log_info "pic all: [4/4] --no-report によりレポート生成をスキップします"
+  else
+    log_info "pic all: [4/4] HTML レポートを生成します"
+    if ! Rscript "${PIC_R_DIR}/cmd_build_report.R" --out-dir "$OUTPUT_DIR"; then
+      handle_error "pic all: レポート生成に失敗しました (解析結果は ${OUTPUT_DIR} に保存済み)"
+    fi
   fi
 
   log_info "pic all: 完了しました (out-dir=${OUTPUT_DIR})"
