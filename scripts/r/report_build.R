@@ -538,6 +538,66 @@ png_data_uri <- function(path) {
   paste0("data:image/png;base64,", base64enc::base64encode(raw))
 }
 
+# <base_dir>/aggregate/<genome>/aggregate_profile.csv からインタラクティブな
+# メタジーン折れ線 (plotly) を作る。CSV が無ければ profile.png を埋め込む。
+build_aggregate_html <- function(reg, base_dir, id_prefix = "") {
+  agg_root <- file.path(base_dir, "aggregate")
+  if (!dir.exists(agg_root)) return("")
+  gdirs <- list.dirs(agg_root, recursive = FALSE, full.names = TRUE)
+  blocks <- character(0)
+  for (gd in gdirs) {
+    genome <- basename(gd)
+    csv <- file.path(gd, "aggregate_profile.csv")
+    if (file.exists(csv)) {
+      d <- suppressMessages(readr::read_csv(csv, show_col_types = FALSE, progress = FALSE))
+      d <- as.data.frame(d, check.names = FALSE)
+      if (nrow(d) == 0 || !all(c("sample", "group", "pos", "value") %in% colnames(d))) next
+      pal <- group_palette(unique(as.character(d$group)))
+      traces <- list()
+      for (s in unique(as.character(d$sample))) {
+        sub <- d[as.character(d$sample) == s, , drop = FALSE]
+        sub <- sub[order(sub$pos), , drop = FALSE]
+        g <- as.character(sub$group[[1]])
+        traces[[length(traces) + 1]] <- list(
+          x = as.list(as.numeric(sub$pos)), y = as.list(as.numeric(sub$value)),
+          name = s, legendgroup = g, mode = "lines", type = "scatter",
+          line = list(color = unname(pal[[g]]), width = 1.4),
+          hovertemplate = paste0("%{fullData.name}<br>CPM: %{y:.2f}<extra>", html_escape(g), "</extra>"))
+      }
+      id <- sprintf("%saggregate_%s", id_prefix, genome)
+      # フランク端ラベル (±Nkb / ±Nbp)
+      fb <- if ("flank_bp" %in% colnames(d)) suppressWarnings(as.numeric(d$flank_bp[[1]])) else NA
+      flab <- if (is.finite(fb)) { if (fb >= 1000) sprintf("%gkb", fb / 1000) else sprintf("%dbp", as.integer(fb)) } else "flank"
+      xmin <- min(as.numeric(d$pos)); xmax <- max(as.numeric(d$pos))
+      tickvals <- list(xmin, 0, 100, xmax)
+      ticktext <- list(paste0("-", flab), "TSS", "TES", paste0("+", flab))
+      vline <- function(x) list(type = "line", x0 = x, x1 = x, yref = "paper", y0 = 0, y1 = 1,
+                                line = list(color = "#9aa4af", width = 1, dash = "dash"))
+      layout <- list(
+        xaxis = list(title = "gene body (TSS → TES)", tickmode = "array", tickvals = tickvals, ticktext = ticktext, zeroline = FALSE),
+        yaxis = list(title = "mean CPM", autorange = TRUE),
+        shapes = list(vline(0), vline(100)),
+        hovermode = "x unified", margin = list(l = 60, r = 20, t = 30, b = 46),
+        legend = list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0))
+      register_plot(reg, id, list(data = traces, layout = layout))
+      blocks <- c(blocks, sprintf(
+        '<div class="pic-plot-cell"><h4>%s — gene-body profile (TSS→TES)</h4><div id="%s" class="pic-plot"></div></div>',
+        html_escape(genome), id))
+    } else {
+      png <- file.path(gd, "aggregate_profile.png")
+      if (file.exists(png)) {
+        uri <- png_data_uri(png)
+        if (!is.na(uri)) blocks <- c(blocks, sprintf(
+          '<div class="pic-enrich-item"><h4>%s — gene-body profile (TSS→TES)</h4><img loading="lazy" src="%s"></div>',
+          html_escape(genome), uri))
+      }
+    }
+  }
+  if (length(blocks) == 0) return("")
+  paste0('<p class="pic-note">Mean CPM over the scaled gene body (TSS→TES). Hover for sample/position/value; drag to zoom.</p><div class="pic-plot-grid">',
+         paste(blocks, collapse = ""), '</div>')
+}
+
 # DEG クラスタの挙動 (group ごとの rlog 分布) を facet で示す図。
 # 各 cluster_N が何を意味するか (どの group で高い/低い) を ORA の前に提示する。
 build_cluster_profile_png <- function(deseq2_dir, project, tmp_dir, group_pal = NULL) {
@@ -715,10 +775,10 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
 }
 
 # 通常レポート用の enrichment セクション (<section id="enrich"> でラップ)。
-section_enrichment <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL) {
+section_enrichment <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, heading = "4. Enrichment") {
   inner <- enrichment_blocks(enrich_dir, project, tmp_dir, deg_counts, deseq2_dir, group_pal)
   if (!nzchar(inner)) inner <- '<p>No enrichment plots were generated.</p>'
-  paste0('<section id="enrich"><h2>4. Enrichment</h2>', inner, '</section>')
+  sprintf('<section id="enrich"><h2>%s</h2>%s</section>', heading, inner)
 }
 
 # ---------------------------------------------------------------------------
@@ -766,28 +826,35 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
     group_pal <- group_palette(as.character(msum$group))
   }
 
-  # セクション組み立て
+  # セクション組み立て (順序: QC -> Aggregation -> PCA -> DEG -> Enrichment)
   sec_qc <- if (!is.null(msum)) section_mapping_qc(msum) else ""
 
-  # 2. PCA
+  # 2. Aggregation (TSS-TES)
+  agg_html <- build_aggregate_html(reg, out_dir)
+  sec_agg <- if (nzchar(agg_html)) paste0('<section id="aggregate"><h2>2. Aggregation (TSS-TES)</h2>', agg_html, '</section>') else ""
+
+  # 3. PCA
   pca_html <- build_pca_plots(reg, desc$deseq2_dir, project, group_pal)
-  sec_pca <- paste0('<section id="pca"><h2>2. PCA</h2>',
+  sec_pca <- paste0('<section id="pca"><h2>3. PCA</h2>',
                     if (!is.null(pca_html)) pca_html else "<p>No PCA data.</p>",
                     '</section>')
 
-  # 3. DEG (heatmap + MA/volcano)
+  # 4. DEG (heatmap + MA/volcano)
   hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal)
   contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr)
-  sec_deg <- paste0(sprintf('<section id="deg"><h2>3. DEG (DESeq2; FDR = %s)</h2>', format(fdr, trim = TRUE)),
+  sec_deg <- paste0(sprintf('<section id="deg"><h2>4. DEG (DESeq2; FDR = %s)</h2>', format(fdr, trim = TRUE)),
                     if (!is.null(hm_html)) hm_html else "",
                     contrast_html,
                     '</section>')
 
-  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal)
+  # 5. Enrichment
+  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "5. Enrichment")
   if (is.null(sec_enrich)) sec_enrich <- ""
 
-  nav <- '<nav class="pic-nav"><a href="#qc">QC</a><a href="#pca">PCA</a><a href="#deg">DEG</a><a href="#enrich">Enrichment</a></nav>'
-  body <- paste0(sec_qc, sec_pca, sec_deg, sec_enrich)
+  nav <- paste0('<nav class="pic-nav"><a href="#qc">QC</a>',
+                if (nzchar(sec_agg)) '<a href="#aggregate">Aggregation</a>' else "",
+                '<a href="#pca">PCA</a><a href="#deg">DEG</a><a href="#enrich">Enrichment</a></nav>')
+  body <- paste0(sec_qc, sec_agg, sec_pca, sec_deg, sec_enrich)
   out_html <- file.path(out_dir, sprintf("report_%s.html", project))
   render_report_page(project, nav, body, reg, asset_dir, out_html)
   unlink(tmp_dir, recursive = TRUE)
@@ -930,6 +997,14 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
     sid <- paste0(frac_key, "_qc")
     secs <- c(secs, section_mapping_qc(msum, sid, sprintf("%d. %s · Mapping QC", n, label)))
     navs <- c(navs, sprintf('<a href="#%s">Mapping</a>', sid))
+  }
+  # Aggregation (TSS-TES)
+  agg_html <- build_aggregate_html(reg, frac_dir, id_prefix)
+  if (nzchar(agg_html)) {
+    n <- n + 1L
+    sid <- paste0(frac_key, "_agg")
+    secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · Aggregation (TSS-TES)</h2>%s</section>', sid, n, label, agg_html))
+    navs <- c(navs, sprintf('<a href="#%s">Aggregation</a>', sid))
   }
   # PCA
   n <- n + 1L

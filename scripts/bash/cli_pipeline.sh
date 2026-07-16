@@ -92,7 +92,7 @@ run_pipeline_subcommand() {
   parse_pic_common_long_options "mapping" "${mapping_args[@]}"
 
   # --- Step 1: mapping ---
-  log_info "pic all: [1/3] mapping を実行します"
+  log_info "pic all: [1/5] mapping を実行します"
   run_primary_command
 
   # --- genome 列挙 ---
@@ -110,14 +110,20 @@ run_pipeline_subcommand() {
 
   log_info "pic all: 解析対象 genome: ${genomes[*]}"
 
-  # --- Step 2/3: genome ごとに deseq2 -> enrich ---
+  # --- Step 2: aggregate (遺伝子全体 TSS→TES 集計) ---
+  log_info "pic all: [2/5] aggregate を実行します"
+  if ! run_aggregate_subcommand --out-dir "$OUTPUT_DIR" --run-name "$RUN_NAME" --threads "$THREADS"; then
+    handle_error "pic all: aggregate に失敗しました (解析は継続します)"
+  fi
+
+  # --- Step 3/4: genome ごとに deseq2 -> enrich ---
   local project deftable deseq2_out stats_csv enrich_out deg_clusters
   for g in "${genomes[@]}"; do
     project="${g}_${RUN_NAME}"
     deftable="${DEFTABLE_DIR}/deftable_${project}.tsv"
     deseq2_out="${OUTPUT_DIR}/deseq2/${g}"
 
-    log_info "pic all: [2/3] deseq2 を実行します (genome=${g})"
+    log_info "pic all: [3/5] deseq2 を実行します (genome=${g})"
     Rscript "${PIC_R_DIR}/cmd_run_deseq2.R" \
       --deftable "$deftable" \
       --count-dir "$COUNTS_DIR" \
@@ -128,7 +134,7 @@ run_pipeline_subcommand() {
     deg_clusters="${deseq2_out}/DEG/DEGCluster/DEGCluster_gene_for_ora_${project}.csv"
     enrich_out="${OUTPUT_DIR}/enrich/${g}"
 
-    log_info "pic all: [3/3] enrich を実行します (genome=${g})"
+    log_info "pic all: [4/5] enrich を実行します (genome=${g})"
     if [[ -f "$deg_clusters" ]]; then
       Rscript "${PIC_R_DIR}/cmd_run_enrich.R" \
         --stats "$stats_csv" \
@@ -143,11 +149,11 @@ run_pipeline_subcommand() {
     fi
   done
 
-  # --- Step 4: HTML レポート ---
+  # --- Step 5: HTML レポート ---
   if [[ "$no_report" = 1 ]]; then
-    log_info "pic all: [4/4] --no-report によりレポート生成をスキップします"
+    log_info "pic all: [5/5] --no-report によりレポート生成をスキップします"
   else
-    log_info "pic all: [4/4] HTML レポートを生成します"
+    log_info "pic all: [5/5] HTML レポートを生成します"
     if ! Rscript "${PIC_R_DIR}/cmd_build_report.R" --out-dir "$OUTPUT_DIR"; then
       handle_error "pic all: レポート生成に失敗しました (解析結果は ${OUTPUT_DIR} に保存済み)"
     fi

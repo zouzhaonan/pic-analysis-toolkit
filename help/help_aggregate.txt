@@ -1,0 +1,33 @@
+pic aggregate — 遺伝子全体 (TSS→TES) の aggregation / metagene profile
+
+Overview:
+  pic mapping/all の出力にある CPM 正規化 bigwig (bw/<sample>_umi.cpm.bw) を
+  再利用し、各遺伝子を N 分割したビンの平均を UCSC bigWigAverageOverBed で
+  取得、全遺伝子で平均してサンプルごとのメタジーンプロファイルを R で計算する
+  (deepTools 非依存)。
+
+Usage:
+  pic aggregate --out-dir <dir> [options]
+
+Required options:
+  --out-dir <dir>          pic mapping/all の出力ディレクトリ
+                           (bw/ と deftable_<genome>_<run>.tsv を含む)
+
+Optional options:
+  --run-name <name>        run 名 (未指定時は mapping_sum__<run>.tsv から推定)
+  --genome <g>             特定の genome だけ処理 (既定: 全 genome)
+  --group <pattern>        group/sample 名がこの正規表現に一致する行だけ処理
+                           (例: --group Cntl)
+  --bins <int>             遺伝子本体 (TSS→TES) の分割数 (default: 100)
+  --flank <bp>             TSS/TES の外側も集計する範囲 (default: 1000)
+  --flank-bins <int>       各フランクの分割数 (default: 10)
+  --threads <int>          スレッド数 (default: 8)
+
+Output:
+  <out>/aggregate/<genome>/aggregate_profile.csv  (sample,group,binpos,pos,value)
+  <out>/aggregate/<genome>/aggregate_profile.png  (集計折れ線, 静的)
+
+Notes:
+  - pic all の [2/5] (mapping の直後) で自動実行される。
+  - GTF は ${PIC_LIB:-$HOME/local/lib/pic} を参照する。
+  - report では CSV からインタラクティブな折れ線 (plotly) として表示される。

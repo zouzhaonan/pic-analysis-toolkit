@@ -10,6 +10,19 @@
     try {
       Plotly.newPlot(el, spec.data, layout, { responsive: true, displaylogo: false });
       el.dataset.rendered = "1";
+      // 凡例クリックでサンプルを on/off した後、表示中のトレースだけで軸を再スケール
+      el.on("plotly_legendclick", function () {
+        setTimeout(function () {
+          try { Plotly.relayout(el, { "yaxis.autorange": true }); } catch (e) {}
+        }, 60);
+        return true;
+      });
+      el.on("plotly_legenddoubleclick", function () {
+        setTimeout(function () {
+          try { Plotly.relayout(el, { "yaxis.autorange": true }); } catch (e) {}
+        }, 60);
+        return true;
+      });
     } catch (e) {
       el.innerHTML = '<div style="color:#b00;padding:8px">plot 描画エラー: ' + e + '</div>';
     }

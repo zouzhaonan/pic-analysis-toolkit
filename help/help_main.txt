@@ -20,6 +20,7 @@ Subcommands:
     enrich           Run ORA/GSEA enrichment analysis
     chipatlas        Run ChIP-Atlas enrichment/PAGE from DESeq2 outputs
     plot-expression  Plot expression of selected genes
+    aggregate        Gene-body (TSS-TES) aggregation / metagene plots
 
   (Reporting)
     report           Build a self-contained interactive HTML report

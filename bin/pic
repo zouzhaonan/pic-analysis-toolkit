@@ -31,6 +31,8 @@ source "${PIC_BASH_DIR}/cmd_chipatlas.sh"
 # shellcheck source=/dev/null
 source "${PIC_BASH_DIR}/cmd_xenograft.sh"
 # shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/cmd_aggregate.sh"
+# shellcheck source=/dev/null
 source "${PIC_BASH_DIR}/workflow_mapping.sh"
 
 # shellcheck source=/dev/null
@@ -135,6 +137,13 @@ main() {
     report)
       debug_log "Dispatch subcommand=${subcommand} args=$*"
       run_report_subcommand "$@"
+      ;;
+    aggregate)
+      debug_log "Dispatch subcommand=${subcommand} args=$*"
+      if ! args_request_help "$@"; then
+        require_runtime_lib_dir
+      fi
+      run_aggregate_subcommand "$@"
       ;;
     *)
       handle_error "Unknown subcommand: ${subcommand}"
