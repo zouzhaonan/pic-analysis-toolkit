@@ -1,0 +1,1 @@
+{"channeldata_version":1,"packages":{"pic":{"activate.d":false,"binary_prefix":false,"deactivate.d":false,"post_link":false,"pre_link":false,"pre_unlink":false,"run_exports":{},"subdirs":["noarch"],"summary":"A toolkit for mapping and statistical analysis of PIC sequencing data","text_prefix":false,"timestamp":1784236895,"version":"1.1.0"}},"subdirs":["noarch","osx-arm64"]}
