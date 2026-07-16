@@ -92,6 +92,9 @@ main() {
     help|--help|-h)
       show_main_help
       ;;
+    version|--version|-v)
+      show_version
+      ;;
     mapping|demux)
       debug_log "Dispatch subcommand=${subcommand} args=$*"
       if ! args_request_help "$@"; then

@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 
+pic_version() {
+  local vf="${PIC_ROOT}/VERSION"
+  if [[ -f "$vf" ]]; then
+    head -n 1 "$vf" | tr -d '[:space:]'
+  else
+    printf "unknown"
+  fi
+}
+
+show_version() {
+  printf "pic %s\n" "$(pic_version)"
+}
+
 show_main_help() {
+  show_version
+  echo
   cat "${PIC_HELP_DIR}/help_main.txt"
 }
 

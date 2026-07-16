@@ -562,7 +562,7 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "") {
           x = as.list(as.numeric(sub$pos)), y = as.list(as.numeric(sub$value)),
           name = s, legendgroup = g, mode = "lines", type = "scatter",
           line = list(color = unname(pal[[g]]), width = 1.4),
-          hovertemplate = paste0("%{fullData.name}<br>CPM: %{y:.2f}<extra>", html_escape(g), "</extra>"))
+          hovertemplate = "%{fullData.name}<br>CPM: %{y:.2f}<extra></extra>")
       }
       id <- sprintf("%saggregate_%s", id_prefix, genome)
       # フランク端ラベル (±Nkb / ±Nbp)
@@ -577,7 +577,7 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "") {
         xaxis = list(title = "gene body (TSS → TES)", tickmode = "array", tickvals = tickvals, ticktext = ticktext, zeroline = FALSE),
         yaxis = list(title = "mean CPM", autorange = TRUE),
         shapes = list(vline(0), vline(100)),
-        hovermode = "x unified", margin = list(l = 60, r = 20, t = 30, b = 46),
+        hovermode = "closest", margin = list(l = 60, r = 20, t = 30, b = 46),
         legend = list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0))
       register_plot(reg, id, list(data = traces, layout = layout))
       blocks <- c(blocks, sprintf(
