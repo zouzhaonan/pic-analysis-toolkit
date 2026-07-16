@@ -82,13 +82,18 @@ save_ma_plot <- function(contrast_stats, out_dir, project_name, display_label, f
   )
 }
 
-save_volcano_plot <- function(contrast_stats, out_dir, project_name, display_label, file_label, numerator, denominator, fdr) {
+save_volcano_plot <- function(contrast_stats, out_dir, project_name, display_label, file_label, numerator, denominator, fdr, y_value = "padj") {
   ccfg <- pic_plot_spec()$plot$contrast
+  y_value <- match.arg(y_value, c("padj", "pvalue"))
   plot_df <- contrast_stats |>
-    dplyr::filter(!is.na(.data$log2FoldChange), !is.na(.data$padj), .data$padj > 0) |>
+    dplyr::filter(
+      !is.na(.data$log2FoldChange),
+      !is.na(.data[[y_value]]),
+      .data[[y_value]] > 0
+    ) |>
     annotate_volcano_points(numerator, denominator, fdr) |>
     dplyr::mutate(
-      neg_log10_padj = -log10(.data$padj)
+      neg_log10_y = -log10(.data[[y_value]])
     )
 
   if (nrow(plot_df) == 0) {
@@ -96,7 +101,7 @@ save_volcano_plot <- function(contrast_stats, out_dir, project_name, display_lab
   }
 
   direction_labels <- build_contrast_direction_labels(numerator, denominator)
-  label_df <- select_top_contrast_labels(plot_df, numerator, denominator, "padj")
+  label_df <- select_top_contrast_labels(plot_df, numerator, denominator, y_value)
   direction_colors <- stats::setNames(
     ccfg$direction_colors,
     c(
@@ -108,19 +113,19 @@ save_volcano_plot <- function(contrast_stats, out_dir, project_name, display_lab
 
   plot_obj <- ggplot2::ggplot(
     plot_df,
-    ggplot2::aes(x = .data$log2FoldChange, y = .data$neg_log10_padj, color = .data$direction)
+    ggplot2::aes(x = .data$log2FoldChange, y = .data$neg_log10_y, color = .data$direction)
   ) +
     ggplot2::geom_point(size = ccfg$point_size, alpha = ccfg$point_alpha) +
     ggplot2::scale_color_manual(values = direction_colors) +
     ggplot2::geom_vline(xintercept = 0, linetype = "dashed", color = ccfg$guide_line_color) +
-    ggplot2::labs(title = display_label, x = "log2 fold change", y = "-log10(padj)", color = "Direction") +
+    ggplot2::labs(title = display_label, x = "log2 fold change", y = sprintf("-log10(%s)", y_value), color = "Direction") +
     ggplot2::theme_minimal()
 
   plot_obj <- add_gene_labels(plot_obj, label_df)
 
   save_plot_png(
     plot_obj,
-    file.path(out_dir, sprintf("volcano_%s_%s.png", file_label, project_name)),
+    file.path(out_dir, sprintf("volcano_%s_%s_%s.png", file_label, project_name, y_value)),
     width = pic_plot_spec()$plot$png_width,
     height = pic_plot_spec()$plot$png_height
   )
@@ -268,7 +273,8 @@ save_contrast_plots <- function(dds, label, stats, contrasts, normalized_count_t
       dplyr::filter(.data$aspect == display_label)
 
     save_ma_plot(contrast_stats, ma_dir, project_name, display_label, file_label, contrast_values[[2]], contrast_values[[3]])
-    save_volcano_plot(contrast_stats, volcano_dir, project_name, display_label, file_label, contrast_values[[2]], contrast_values[[3]], fdr)
+    save_volcano_plot(contrast_stats, volcano_dir, project_name, display_label, file_label, contrast_values[[2]], contrast_values[[3]], fdr, y_value = "padj")
+    save_volcano_plot(contrast_stats, volcano_dir, project_name, display_label, file_label, contrast_values[[2]], contrast_values[[3]], fdr, y_value = "pvalue")
   })
 
   save_deg_heatmap(

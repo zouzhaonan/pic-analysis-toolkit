@@ -10,6 +10,7 @@ mkdir -p "${install_root}"
 cp -R "${pkg_root}/bin" "${install_root}/"
 cp -R "${pkg_root}/scripts" "${install_root}/"
 cp -R "${pkg_root}/help" "${install_root}/"
+cp "${pkg_root}/VERSION" "${install_root}/"
 
 cat > "${PREFIX}/bin/pic" <<'WRAP'
 #!/usr/bin/env bash

@@ -28,6 +28,19 @@ debug_kv() {
   debug_log "${key}=${value}"
 }
 
+debug_command() {
+  debug_enabled || return 0
+  local rendered=""
+  local arg
+  for arg in "$@"; do
+    if [[ -n "$rendered" ]]; then
+      rendered+=" "
+    fi
+    rendered+="$(printf '%q' "$arg")"
+  done
+  debug_log "CMD=${rendered}"
+}
+
 wait_for_available_slot() {
   local max_jobs="$1"
 

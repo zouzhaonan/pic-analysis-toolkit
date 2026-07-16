@@ -1,0 +1,29 @@
+pic report — 解析結果から自己完結型 HTML レポートを生成する
+
+概要:
+  mapping / deseq2 / enrich の出力ディレクトリを読み取り、1 つの HTML
+  レポートを出力する。
+  PCA / heatmap / MA / volcano はインタラクティブ (マウス hover でラベル表示)。
+
+使い方:
+  pic report --out-dir <dir>
+
+オプション:
+  --out-dir <dir>   mapping/deseq2/enrich を含む出力ベース (必須)。
+                    配下の deseq2 stats_*.csv ごとに 1 レポートを生成する。
+
+出力:
+  <out-dir>/report_<project>.html   (project = <genome>_<run>)
+
+内容 (セクション構成):
+  1. Mapping QC: mapping sum
+  2. PCA
+  3. DEG
+     - ヒートマップ
+     - contrast ごとの MA / volcano
+  4. Enrichment
+     - GSEA (contrast ごとに GO_BP/KEGG/… をまとめる)
+     - ORA
+
+備考:
+  pic all の最終ステップでも自動実行される。

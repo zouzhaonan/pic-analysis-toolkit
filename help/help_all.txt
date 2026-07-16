@@ -1,0 +1,44 @@
+Usage:
+  pic all --out-dir <dir> --sample-sheet <tsv> --raw-fastq-dir <dir> [--run-name <name>]
+
+Overview:
+  Run the full analysis end-to-end in one command:
+  mapping -> deseq2 -> enrich -> report (HTML)
+
+  For each genome found in the sample sheet, deseq2 and enrich are run
+  automatically. This subcommand is intentionally simple and takes only the
+  four options below. If you need to tune parameters (e.g. --fdr, --methods),
+  run `pic deseq2` / `pic enrich` individually instead.
+
+Required options:
+  --out-dir <dir>            Output directory
+  --sample-sheet <tsv>       Sample sheet TSV (same format as `pic mapping`)
+                             Example:
+                             - - - - - - - - - - - - - - - - - - - - - - - - -
+                               fastq_prefix  genome  barcode  sample   group
+                               brain         mm10    AGGATC   brain_1  brain
+                               brain         mm10    TCGAAG   brain_2  brain
+                               ovary         mm10    TCCTTC   ovary_1  ovary
+                               ovary         mm10    TGTCTG   ovary_2  ovary
+                             - - - - - - - - - - - - - - - - - - - - - - - - -
+  --raw-fastq-dir <dir>      Directory containing raw paired FASTQ files (R1 & R2)
+                             * Not needed when --demux-fastq-dir is given
+
+Optional options:
+  --run-name <name>          Run name suffix for output files (default: random 8 chars)
+  --demux-fastq-dir <dir>    Use already-demultiplexed/classified FASTQ (skips demux).
+                             Each sample is read from <dir>/<sample>.fastq.gz
+  --no-report                Skip the final HTML report step
+
+Output layout:
+  <out-dir>/                 mapping artifacts (deftable, counts, bam, bw ...)
+  <out-dir>/deseq2/<genome>/ DESeq2 results per genome
+  <out-dir>/enrich/<genome>/ ORA/GSEA results per genome
+  <out-dir>/report_<project>.html  interactive HTML report per genome
+
+Examples:
+  pic all \
+    --sample-sheet /path/sample.tsv \
+    --raw-fastq-dir /path/raw_fastq \
+    --out-dir /path/out \
+    --run-name test

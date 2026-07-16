@@ -10,14 +10,13 @@ parse_pic_common_long_options() {
   local allow_hisat2_very_sensitive=0
 
   case "$subcommand" in
-    mapping)
-      allow_run_name=1
-      allow_demux_fastq=1
-      allow_simulation=1
-      allow_hisat2_very_sensitive=1
-      ;;
-    demux)
-      ;;
+  mapping)
+    allow_run_name=1
+    allow_demux_fastq=1
+    allow_simulation=1
+    allow_hisat2_very_sensitive=1
+    ;;
+  demux) ;;
   esac
 
   PIC_WANT_HELP=0
@@ -33,69 +32,69 @@ parse_pic_common_long_options() {
   PIC_RUN_NAME="$(pic_default_run_name)"
 
   case "$subcommand" in
-    mapping) PIC_DEMUX_LAYOUT="nested" ;;
-    demux) PIC_DEMUX_LAYOUT="flat" ;;
+  mapping) PIC_DEMUX_LAYOUT="nested" ;;
+  demux) PIC_DEMUX_LAYOUT="flat" ;;
   esac
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --out-dir)
-        PIC_OUTPUT_DIR="${2:-}"
-        shift 2
-        ;;
-      --sample-sheet)
-        PIC_SAMPLE_SHEET="${2:-}"
-        shift 2
-        ;;
-      --threads)
-        PIC_THREADS="${2:-}"
-        shift 2
-        ;;
-      --demux-fastq-dir)
-        if [[ "$allow_demux_fastq" != 1 ]]; then
-          handle_error "--demux-fastq-dir is not supported for ${subcommand}."
-          exit 1
-        fi
-        PIC_DEMUX_FASTQ_DIR="${2:-}"
-        PIC_SKIP_DEMUX=1
-        shift 2
-        ;;
-      --raw-fastq-dir)
-        PIC_RAW_FASTQ_DIR="${2:-}"
-        shift 2
-        ;;
-      --run-name)
-        if [[ "$allow_run_name" != 1 ]]; then
-          handle_error "--run-name is not supported for ${subcommand}."
-          exit 1
-        fi
-        PIC_RUN_NAME="${2:-}"
-        shift 2
-        ;;
-      --simulation)
-        if [[ "$allow_simulation" != 1 ]]; then
-          handle_error "--simulation is not supported for ${subcommand}."
-          exit 1
-        fi
-        PIC_SIMULATION_MODE=1
-        shift
-        ;;
-      --hisat2-very-sensitive)
-        if [[ "$allow_hisat2_very_sensitive" != 1 ]]; then
-          handle_error "--hisat2-very-sensitive is not supported for ${subcommand}."
-          exit 1
-        fi
-        PIC_HISAT2_VERY_SENSITIVE=1
-        shift
-        ;;
-      --help)
-        PIC_WANT_HELP=1
-        return 0
-        ;;
-      *)
-        handle_error "Unknown option: $1"
+    --out-dir)
+      PIC_OUTPUT_DIR="${2:-}"
+      shift 2
+      ;;
+    --sample-sheet)
+      PIC_SAMPLE_SHEET="${2:-}"
+      shift 2
+      ;;
+    --threads)
+      PIC_THREADS="${2:-}"
+      shift 2
+      ;;
+    --demux-fastq-dir)
+      if [[ "$allow_demux_fastq" != 1 ]]; then
+        handle_error "--demux-fastq-dir is not supported for ${subcommand}."
         exit 1
-        ;;
+      fi
+      PIC_DEMUX_FASTQ_DIR="${2:-}"
+      PIC_SKIP_DEMUX=1
+      shift 2
+      ;;
+    --raw-fastq-dir)
+      PIC_RAW_FASTQ_DIR="${2:-}"
+      shift 2
+      ;;
+    --run-name)
+      if [[ "$allow_run_name" != 1 ]]; then
+        handle_error "--run-name is not supported for ${subcommand}."
+        exit 1
+      fi
+      PIC_RUN_NAME="${2:-}"
+      shift 2
+      ;;
+    --simulation)
+      if [[ "$allow_simulation" != 1 ]]; then
+        handle_error "--simulation is not supported for ${subcommand}."
+        exit 1
+      fi
+      PIC_SIMULATION_MODE=1
+      shift
+      ;;
+    --hisat2-very-sensitive)
+      if [[ "$allow_hisat2_very_sensitive" != 1 ]]; then
+        handle_error "--hisat2-very-sensitive is not supported for ${subcommand}."
+        exit 1
+      fi
+      PIC_HISAT2_VERY_SENSITIVE=1
+      shift
+      ;;
+    --help)
+      PIC_WANT_HELP=1
+      return 0
+      ;;
+    *)
+      handle_error "Unknown option: $1"
+      exit 1
+      ;;
     esac
   done
 
@@ -137,12 +136,12 @@ run_primary_family_subcommand() {
   fi
 
   case "$subcommand" in
-    mapping) run_primary_command ;;
-    demux) run_demux_command ;;
-    *)
-      handle_error "Unsupported subcommand: ${subcommand}"
-      exit 1
-      ;;
+  mapping) run_primary_command ;;
+  demux) run_demux_command ;;
+  *)
+    handle_error "Unsupported subcommand: ${subcommand}"
+    exit 1
+    ;;
   esac
 }
 
@@ -161,38 +160,38 @@ run_build_genome_subcommand() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --genome)
-        genome_name="${2:-}"
-        shift 2
-        ;;
-      --fasta)
-        fasta_path="${2:-}"
-        shift 2
-        ;;
-      --gtf)
-        gtf_path="${2:-}"
-        shift 2
-        ;;
-      --fasta-source)
-        fasta_source="${2:-}"
-        shift 2
-        ;;
-      --gtf-source)
-        gtf_source="${2:-}"
-        shift 2
-        ;;
-      --threads)
-        threads="${2:-}"
-        shift 2
-        ;;
-      --help)
-        show_help_for_subcommand build-genome
-        return 0
-        ;;
-      *)
-        handle_error "Unknown option: $1"
-        exit 1
-        ;;
+    --genome)
+      genome_name="${2:-}"
+      shift 2
+      ;;
+    --fasta)
+      fasta_path="${2:-}"
+      shift 2
+      ;;
+    --gtf)
+      gtf_path="${2:-}"
+      shift 2
+      ;;
+    --fasta-source)
+      fasta_source="${2:-}"
+      shift 2
+      ;;
+    --gtf-source)
+      gtf_source="${2:-}"
+      shift 2
+      ;;
+    --threads)
+      threads="${2:-}"
+      shift 2
+      ;;
+    --help)
+      show_help_for_subcommand build-genome
+      return 0
+      ;;
+    *)
+      handle_error "Unknown option: $1"
+      exit 1
+      ;;
     esac
   done
 

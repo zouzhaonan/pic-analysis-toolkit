@@ -1,0 +1,41 @@
+Usage:
+  pic xenograft --index <name> --out-dir <dir> \
+    ( --demux-fastq-dir <dir> | --raw-fastq-dir <dir> --sample-sheet <tsv> ) [options]
+
+Overview:
+  Classify xenograft FASTQ into host / graft with xengsort, then lay the
+  classified reads out (and per-fraction sample sheets) for mapping.
+  Rule: graft reads -> graft genome, host reads -> host genome.
+
+Input (choose one):
+  --demux-fastq-dir <dir>  Already-demultiplexed FASTQ (*.fastq.gz / *.fq.gz),
+                           one file per sample.
+  --raw-fastq-dir <dir> + --sample-sheet <tsv>
+                           Raw paired FASTQ + sample sheet; demux is run first.
+
+Required options:
+  --index <name>           Registered xengsort index (see build-xenograft-index)
+  --out-dir <dir>          Output directory
+
+Optional options:
+  --fraction <f>           graft | host | both (default: both)
+  --threads <int>          Threads (default: 8)
+  --run-name <name>        Run name for the summary (default: out-dir basename)
+
+Output:
+  <out>/xengsort/<sample>-{host,graft,both,neither,ambiguous}.fq.gz
+  <out>/classified/<fraction>/<sample>.fastq.gz        (mapping input)
+  <out>/sample_sheet_{graft,host}.tsv                  (when --sample-sheet given)
+  <out>/xenograft_classify_summary__<run>.tsv          (read counts per category)
+
+Next step (map each fraction to its genome, then one combined report):
+  pic all --no-report --demux-fastq-dir <out>/classified/graft --sample-sheet <out>/sample_sheet_graft.tsv --run-name <run>_graft --out-dir <out>/graft
+  pic all --no-report --demux-fastq-dir <out>/classified/host  --sample-sheet <out>/sample_sheet_host.tsv  --run-name <run>_host  --out-dir <out>/host
+  pic report --out-dir <out>
+
+Example:
+  pic xenograft \
+    --index human_on_marmo \
+    --raw-fastq-dir /path/raw_fastq \
+    --sample-sheet /path/sample_sheet.tsv \
+    --out-dir /path/out

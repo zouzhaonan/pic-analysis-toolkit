@@ -29,6 +29,10 @@ source "${PIC_BASH_DIR}/cmd_build_genome.sh"
 # shellcheck source=/dev/null
 source "${PIC_BASH_DIR}/cmd_chipatlas.sh"
 # shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/cmd_xenograft.sh"
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/cmd_aggregate.sh"
+# shellcheck source=/dev/null
 source "${PIC_BASH_DIR}/workflow_mapping.sh"
 
 # shellcheck source=/dev/null
@@ -37,6 +41,10 @@ source "${PIC_BASH_DIR}/cli_help.sh"
 source "${PIC_BASH_DIR}/cli_primary.sh"
 # shellcheck source=/dev/null
 source "${PIC_BASH_DIR}/cli_analysis.sh"
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/cli_pipeline.sh"
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/cli_report.sh"
 
 args_request_help() {
   local arg
@@ -84,12 +92,22 @@ main() {
     help|--help|-h)
       show_main_help
       ;;
+    version|--version|-v)
+      show_version
+      ;;
     mapping|demux)
       debug_log "Dispatch subcommand=${subcommand} args=$*"
       if ! args_request_help "$@"; then
         require_runtime_lib_dir
       fi
       run_primary_family_subcommand "$subcommand" "$@"
+      ;;
+    all)
+      debug_log "Dispatch subcommand=${subcommand} args=$*"
+      if ! args_request_help "$@"; then
+        require_runtime_lib_dir
+      fi
+      run_pipeline_subcommand "$@"
       ;;
     build-genome)
       debug_log "Dispatch subcommand=${subcommand} args=$*"
@@ -98,12 +116,37 @@ main() {
       fi
       run_build_genome_subcommand "$@"
       ;;
+    build-xenograft-index)
+      debug_log "Dispatch subcommand=${subcommand} args=$*"
+      if ! args_request_help "$@"; then
+        require_runtime_lib_dir
+      fi
+      run_build_xenograft_index_subcommand "$@"
+      ;;
+    xenograft)
+      debug_log "Dispatch subcommand=${subcommand} args=$*"
+      if ! args_request_help "$@"; then
+        require_runtime_lib_dir
+      fi
+      run_xenograft_subcommand "$@"
+      ;;
     deseq2|enrich|manage-biomart|plot-expression|chipatlas)
       debug_log "Dispatch subcommand=${subcommand} args=$*"
       if ! args_request_help "$@"; then
         require_runtime_lib_dir
       fi
       run_analysis_subcommand "$subcommand" "$@"
+      ;;
+    report)
+      debug_log "Dispatch subcommand=${subcommand} args=$*"
+      run_report_subcommand "$@"
+      ;;
+    aggregate)
+      debug_log "Dispatch subcommand=${subcommand} args=$*"
+      if ! args_request_help "$@"; then
+        require_runtime_lib_dir
+      fi
+      run_aggregate_subcommand "$@"
       ;;
     *)
       handle_error "Unknown subcommand: ${subcommand}"

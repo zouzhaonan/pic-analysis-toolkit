@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 
+pic_version() {
+  local vf="${PIC_ROOT}/VERSION"
+  if [[ -f "$vf" ]]; then
+    head -n 1 "$vf" | tr -d '[:space:]'
+  else
+    printf "unknown"
+  fi
+}
+
+show_version() {
+  printf "pic %s\n" "$(pic_version)"
+}
+
 show_main_help() {
+  show_version
+  echo
   cat "${PIC_HELP_DIR}/help_main.txt"
 }
 
@@ -42,13 +57,17 @@ show_help_for_subcommand() {
   cat "$help_file"
 
   case "$subcommand" in
-    mapping|build-genome)
+    all|mapping|build-genome)
       echo
       print_registered_pic_genomes
       ;;
     deseq2|manage-biomart)
       echo
       print_registered_biomart_genomes
+      ;;
+    xenograft|build-xenograft-index)
+      echo
+      print_registered_xengsort_indexes
       ;;
   esac
 }

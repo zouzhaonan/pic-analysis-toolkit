@@ -3,11 +3,16 @@ Usage:
 
 Subcommands:
   (Preparation)
-    build-genome     Build HISAT2 index and register genome references
+    build-genome            Build HISAT2 index and register genome references
+    build-xenograft-index   Build and register a xengsort index (host/graft)
+
+  (End-to-end)
+    all              Run mapping -> deseq2 -> enrich in one command
 
   (Primary Analysis)
     mapping          Run the full primary workflow
     demux            Demultiplex FASTQ files by barcode
+    xenograft        Classify demux FASTQ into host/graft with xengsort
 
   (Statistical Analysis)
     manage-biomart   List/register biomart datasets and cache
@@ -15,6 +20,10 @@ Subcommands:
     enrich           Run ORA/GSEA enrichment analysis
     chipatlas        Run ChIP-Atlas enrichment/PAGE from DESeq2 outputs
     plot-expression  Plot expression of selected genes
+    aggregate        Gene-body (TSS-TES) aggregation / metagene plots
+
+  (Reporting)
+    report           Build a self-contained interactive HTML report
 
     help             Show this help and exit
 

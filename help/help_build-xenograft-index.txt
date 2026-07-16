@@ -1,0 +1,39 @@
+Usage:
+  pic build-xenograft-index --name <index> \
+    --host-genome <g> --graft-genome <g> \
+    --host-fasta <fa> --graft-fasta <fa> [options]
+
+Overview:
+  Build and register a xengsort index for xenograft read classification.
+  Host (-H) and graft (-G) genomes (optionally with cDNA) are concatenated
+  per species, the k-mer count (-n) is estimated with ntcard, and
+  `xengsort index` is run.
+
+Required options:
+  --name <index>           Index name (e.g. human_on_mouse)
+  --host-genome <g>        pic genome name for the host reads (e.g. mm10)
+  --graft-genome <g>       pic genome name for the graft reads (e.g. hg38)
+  --host-fasta <fa>        Host genome DNA FASTA (.fa or .fa.gz)
+  --graft-fasta <fa>       Graft genome DNA FASTA (.fa or .fa.gz)
+
+Optional options:
+  --host-cdna <fa>         Host cDNA FASTA
+  --graft-cdna <fa>        Graft cDNA FASTA
+  --host-gtf <gtf>         Host GTF (used to build host cDNA when --host-cdna is omitted)
+  --graft-gtf <gtf>        Graft GTF (used to build graft cDNA when --graft-cdna is omitted)
+  --threads <int>          Threads (default: 8)
+  --host-source <text>     Host source note (default: unspecified)
+  --graft-source <text>    Graft source note (default: unspecified)
+
+Output locations:
+  - index files: <PIC_LIB>/xengsort_index/<name>/<name>.hash|.info
+  - registry:    <PIC_LIB>/register/xengsort_index_map.tsv
+
+  * PIC_LIB defaults to $HOME/local/lib/pic when not set
+
+Example:
+  pic build-xenograft-index \
+    --name human_on_mouse \
+    --host-genome mm10 --graft-genome hg38 \
+    --host-fasta mm10.fa.gz --host-cdna mm10.cdna.fa.gz \
+    --graft-fasta hg38.fa.gz --graft-cdna hg38.cdna.fa.gz

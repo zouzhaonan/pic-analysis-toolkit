@@ -5,6 +5,38 @@ chipatlas_poll_interval_fixed="60"
 chipatlas_sbatch_options_fixed="-p epyc -t 180"
 chipatlas_supported_genomes="hg38 mm10 rn6 dm6 ce11 sacCer3"
 
+count_group_replicates() {
+  local deftable_tsv="$1"
+  local group_name="$2"
+
+  awk -F '\t' -v target_group="$group_name" '
+    NR == 1 {
+      for (i = 1; i <= NF; i++) {
+        if ($i == "sample") sample_col = i
+        if ($i == "group") group_col = i
+      }
+      next
+    }
+    {
+      gsub(/\r$/, "", $group_col)
+      gsub(/\r$/, "", $sample_col)
+      if ($group_col == target_group && $sample_col != "") {
+        seen[$sample_col] = 1
+      }
+    }
+    END {
+      count = 0
+      for (sample_name in seen) count++
+      print count
+    }
+  ' "$deftable_tsv"
+}
+
+count_nonempty_lines() {
+  local file_path="$1"
+  awk 'NF > 0 {count++} END {print count + 0}' "$file_path"
+}
+
 extract_chipatlas_job_url() {
   local response="$1"
   local job_url=""
@@ -181,6 +213,7 @@ run_chipatlas_subcommand() {
     local file_a="${pair_files[0]}"
     local file_b="${pair_files[1]}"
     local group_a group_b
+    local group_a_reps group_b_reps
 
     group_a="$(basename "$file_a")"
     group_a="${group_a%.txt}"
@@ -188,41 +221,72 @@ run_chipatlas_subcommand() {
     group_b="$(basename "$file_b")"
     group_b="${group_b%.txt}"
     group_b="${group_b##*__}"
+    group_a_reps="$(count_group_replicates "$deftable_tsv" "$group_a")"
+    group_b_reps="$(count_group_replicates "$deftable_tsv" "$group_b")"
 
     log_info "[ChIP-Atlas] (${pair_index}) Running ${prefix}: ${group_a} vs ${group_b}"
+    debug_kv "chipatlas.${prefix}.replicates.${group_a}" "$group_a_reps"
+    debug_kv "chipatlas.${prefix}.replicates.${group_b}" "$group_b_reps"
 
+    local deg_count_a deg_count_b
+    deg_count_a="$(count_nonempty_lines "$file_a")"
+    deg_count_b="$(count_nonempty_lines "$file_b")"
+    debug_kv "chipatlas.${prefix}.deg_count.${group_a}" "$deg_count_a"
+    debug_kv "chipatlas.${prefix}.deg_count.${group_b}" "$deg_count_b"
+
+    local submit_ea=1
+    local submit_page=1
     local input_contrast_dir="$input_root/$prefix"
     local result_ea_dir="$result_ea_root/$prefix"
     local result_page_dir="$result_page_root/$prefix"
-    mkdir -p "$input_contrast_dir" "$result_ea_dir" "$result_page_dir"
 
-    cp "$file_a" "$input_contrast_dir/${prefix}__${group_a}.txt"
-    cp "$file_b" "$input_contrast_dir/${prefix}__${group_b}.txt"
+    if [[ "$deg_count_a" -eq 0 || "$deg_count_b" -eq 0 ]]; then
+      submit_ea=0
+      log_info "[ChIP-Atlas] Skipping EA for ${prefix}: empty DEG list detected (${group_a}=${deg_count_a}, ${group_b}=${deg_count_b})"
+    fi
 
-    local ea_url
-    ea_url="$(submit_chipatlas_ea \
-      "$genome" "$antigen_class" "$cell_class" "$threshold" \
-      "$distance_up" "$distance_down" \
-      "$prefix" "$group_a" "$group_b" \
-      "$input_contrast_dir/${prefix}__${group_a}.txt" "$input_contrast_dir/${prefix}__${group_b}.txt" \
-      "$result_ea_dir")" || {
-      handle_error "EA submit failed: ${prefix}"
+    if [[ "$group_a_reps" -lt 2 || "$group_b_reps" -lt 2 ]]; then
+      submit_page=0
+      log_info "[ChIP-Atlas] Skipping PAGE for ${prefix}: replicate count must be >= 2 in both groups (${group_a}=${group_a_reps}, ${group_b}=${group_b_reps})"
+    fi
+
+    if [[ "$submit_ea" -eq 0 && "$submit_page" -eq 0 ]]; then
       continue
-    }
-    printf "%s\t%s\t%s\t%s\n" "$prefix" "ea" "$ea_url" "${result_ea_dir}/${prefix}__chipatlas_ea" >>"$jobs_tsv"
+    fi
 
-    local page_input_csv="$input_contrast_dir/${prefix}__page_input.csv"
-    build_chipatlas_page_input "$umi_count_csv" "$deftable_tsv" "$group_a" "$group_b" "$page_input_csv"
+    if [[ "$submit_ea" -eq 1 ]]; then
+      mkdir -p "$input_contrast_dir" "$result_ea_dir"
+      cp "$file_a" "$input_contrast_dir/${prefix}__${group_a}.txt"
+      cp "$file_b" "$input_contrast_dir/${prefix}__${group_b}.txt"
 
-    local page_url
-    page_url="$(submit_chipatlas_page \
-      "$genome" "$antigen_class" "$cell_class" "$threshold" \
-      "$distance_up" "$distance_down" \
-      "$prefix" "$page_input_csv" "$result_page_dir")" || {
-      handle_error "PAGE submit failed: ${prefix}"
-      continue
-    }
-    printf "%s\t%s\t%s\t%s\n" "$prefix" "page" "$page_url" "${result_page_dir}/${prefix}__chipatlas_page" >>"$jobs_tsv"
+      local ea_url
+      ea_url="$(submit_chipatlas_ea \
+        "$genome" "$antigen_class" "$cell_class" "$threshold" \
+        "$distance_up" "$distance_down" \
+        "$prefix" "$group_a" "$group_b" \
+        "$input_contrast_dir/${prefix}__${group_a}.txt" "$input_contrast_dir/${prefix}__${group_b}.txt" \
+        "$result_ea_dir")" || {
+        handle_error "EA submit failed: ${prefix}"
+        continue
+      }
+      printf "%s\t%s\t%s\t%s\n" "$prefix" "ea" "$ea_url" "${result_ea_dir}/${prefix}__chipatlas_ea" >>"$jobs_tsv"
+    fi
+
+    if [[ "$submit_page" -eq 1 ]]; then
+      mkdir -p "$input_contrast_dir" "$result_page_dir"
+      local page_input_csv="$input_contrast_dir/${prefix}__page_input.csv"
+      build_chipatlas_page_input "$umi_count_csv" "$deftable_tsv" "$group_a" "$group_b" "$page_input_csv"
+
+      local page_url
+      page_url="$(submit_chipatlas_page \
+        "$genome" "$antigen_class" "$cell_class" "$threshold" \
+        "$distance_up" "$distance_down" \
+        "$prefix" "$page_input_csv" "$result_page_dir")" || {
+        handle_error "PAGE submit failed: ${prefix}"
+        continue
+      }
+      printf "%s\t%s\t%s\t%s\n" "$prefix" "page" "$page_url" "${result_page_dir}/${prefix}__chipatlas_page" >>"$jobs_tsv"
+    fi
   done <<<"$uniq_prefixes"
 
   run_chipatlas_jobs_in_parallel "$jobs_tsv" || return 1
@@ -292,27 +356,29 @@ submit_chipatlas_ea() {
   local out_dir="$1"
 
   local response job_url
-  response="$(
-    curl -sS -X POST \
-      -d "format=text" \
-      -d "result=www" \
-      -d "genome=${genome}" \
-      -d "antigenClass=${antigen_class}" \
-      -d "cellClass=${cell_class}" \
-      -d "threshold=${threshold}" \
-      -d "typeA=gene" \
-      --data-urlencode "bedAFile@${file_a}" \
-      -d "typeB=gene" \
-      --data-urlencode "bedBFile@${file_b}" \
-      -d "permTime=1" \
-      -d "title=${title}" \
-      -d "descriptionA=${group_a}" \
-      -d "descriptionB=${group_b}" \
-      -d "distanceUp=${distance_up}" \
-      -d "distanceDown=${distance_down}" \
-      -d "sbatchOptions=${chipatlas_sbatch_options_fixed}" \
-      "${chipatlas_url_fixed}"
-  )"
+  local -a curl_args=(
+    -sS -X POST
+    -d "format=text"
+    -d "result=www"
+    -d "genome=${genome}"
+    -d "antigenClass=${antigen_class}"
+    -d "cellClass=${cell_class}"
+    -d "threshold=${threshold}"
+    -d "typeA=gene"
+    --data-urlencode "bedAFile@${file_a}"
+    -d "typeB=gene"
+    --data-urlencode "bedBFile@${file_b}"
+    -d "permTime=1"
+    -d "title=${title}"
+    -d "descriptionA=${group_a}"
+    -d "descriptionB=${group_b}"
+    -d "distanceUp=${distance_up}"
+    -d "distanceDown=${distance_down}"
+    -d "sbatchOptions=${chipatlas_sbatch_options_fixed}"
+    "${chipatlas_url_fixed}"
+  )
+  debug_command curl "${curl_args[@]}"
+  response="$(curl "${curl_args[@]}")"
 
   job_url="$(extract_chipatlas_job_url "$response" || true)"
   debug_kv "chipatlas.ea.response" "$(printf "%s" "$response" | tr '\n' ' ' | cut -c1-300)"
@@ -344,27 +410,29 @@ submit_chipatlas_page() {
   local out_dir="$1"
 
   local response job_url
-  response="$(
-    curl -sS -X POST \
-      -d "format=text" \
-      -d "result=www" \
-      -d "genome=${genome}" \
-      -d "antigenClass=${antigen_class}" \
-      -d "cellClass=${cell_class}" \
-      -d "threshold=${threshold}" \
-      -d "typeA=count" \
-      --data-urlencode "bedAFile@${page_input_csv}" \
-      -d "typeB=empty" \
-      -d "bedBFile=empty" \
-      -d "permTime=1" \
-      -d "title=${title}" \
-      -d "descriptionA=empty" \
-      -d "descriptionB=empty" \
-      -d "distanceUp=${distance_up}" \
-      -d "distanceDown=${distance_down}" \
-      -d "sbatchOptions=${chipatlas_sbatch_options_fixed}" \
-      "${chipatlas_url_fixed}"
-  )"
+  local -a curl_args=(
+    -sS -X POST
+    -d "format=text"
+    -d "result=www"
+    -d "genome=${genome}"
+    -d "antigenClass=${antigen_class}"
+    -d "cellClass=${cell_class}"
+    -d "threshold=${threshold}"
+    -d "typeA=count"
+    --data-urlencode "bedAFile@${page_input_csv}"
+    -d "typeB=empty"
+    -d "bedBFile=empty"
+    -d "permTime=1"
+    -d "title=${title}"
+    -d "descriptionA=empty"
+    -d "descriptionB=empty"
+    -d "distanceUp=${distance_up}"
+    -d "distanceDown=${distance_down}"
+    -d "sbatchOptions=${chipatlas_sbatch_options_fixed}"
+    "${chipatlas_url_fixed}"
+  )
+  debug_command curl "${curl_args[@]}"
+  response="$(curl "${curl_args[@]}")"
 
   job_url="$(extract_chipatlas_job_url "$response" || true)"
   debug_kv "chipatlas.page.response" "$(printf "%s" "$response" | tr '\n' ' ' | cut -c1-300)"
