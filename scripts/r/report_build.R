@@ -1020,10 +1020,12 @@ build_expression_section <- function(reg, deseq2_dir, project, group_map, group_
     'Hover over a gene name to see its padj for every comparison.</p>',
     '%s',
     '<div class="pic-expr" data-expr="%s">',
+    '<div class="pic-expr-side"><h4>Genes</h4>',
     '<div class="pic-expr-typeahead"><div class="pic-expr-tagbox">',
     '<input class="pic-expr-input" type="text" autocomplete="off" placeholder="Add a gene…"></div>',
     '<div class="pic-expr-ac"></div></div>',
-    '<div class="pic-expr-msg"></div><div class="pic-expr-plots"></div></div></section>'),
+    '<div class="pic-expr-msg"></div></div>',
+    '<div class="pic-expr-plots"></div></div></section>'),
     section_id, html_escape(heading), format(fdr, trim = TRUE),
     src_note(report_rel_path(countf, proj_dir)), id)
 }

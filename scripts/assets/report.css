@@ -89,8 +89,12 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-databar-val{position:relative;z-index:2;font-variant-numeric:tabular-nums}
 .pic-td-num{font-variant-numeric:tabular-nums}
 
-/* 遺伝子発現 (タグ入力 -> box+beeswarm) */
-.pic-expr-typeahead{position:relative;margin:8px 0;max-width:640px}
+/* 遺伝子発現 (左=タグ入力 / 右=box+beeswarm) */
+.pic-expr{display:grid;grid-template-columns:290px minmax(0,1fr);gap:18px;align-items:start}
+.pic-expr-side{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px}
+.pic-expr-side h4{margin:0 0 8px;font-size:13px;color:var(--fg)}
+@media(max-width:900px){.pic-expr{grid-template-columns:1fr}.pic-expr-side{position:static}}
+.pic-expr-typeahead{position:relative;margin:0}
 .pic-expr-tagbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:#fff;min-height:42px}
 .pic-expr-tagbox:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px rgba(33,102,172,.12)}
 .pic-expr-chip{display:inline-flex;align-items:center;gap:6px;background:#e7f0fb;color:#1b3a5b;border:1px solid #bcd3ea;border-radius:14px;padding:3px 6px 3px 11px;font-size:13px;font-weight:600}
