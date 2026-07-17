@@ -30,6 +30,21 @@ fmt_ratio <- function(x, digits = 1) {
   formatC(as.numeric(x), format = "f", digits = digits)
 }
 
+# project フォルダ (report 出力先) から見た相対パス。
+report_rel_path <- function(path, base) {
+  if (is.null(base) || !nzchar(base) || is.null(path) || !nzchar(path)) return("")
+  p <- tryCatch(normalizePath(path, winslash = "/", mustWork = FALSE), error = function(e) path)
+  b <- tryCatch(normalizePath(base, winslash = "/", mustWork = FALSE), error = function(e) base)
+  b2 <- paste0(b, "/")
+  if (startsWith(p, b2)) substring(p, nchar(b2) + 1) else basename(p)
+}
+
+# 元データの場所を示すキャプション。
+src_note <- function(rel) {
+  if (is.null(rel) || !nzchar(rel)) return("")
+  sprintf('<p class="pic-src">source: <code>%s</code></p>', html_escape(rel))
+}
+
 # plot 仕様を共有レジストリ env に登録する
 pic_report_registry <- function() {
   reg <- new.env(parent = emptyenv())
@@ -119,10 +134,10 @@ read_mapping_sum <- function(path) {
   df
 }
 
-section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC") {
+section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC", src = "") {
   fate_cols <- names(PIC_FATE_COLORS)
   have_fate <- all(fate_cols %in% colnames(msum))
-  parts <- c(sprintf('<section id="%s"><h2>%s</h2>', section_id, heading))
+  parts <- c(sprintf('<section id="%s"><h2>%s</h2>', section_id, heading), src_note(src))
 
   # ---- 100% 積み上げ棒 ----
   if (have_fate) {
@@ -249,7 +264,7 @@ group_palette <- function(groups) {
   stats::setNames(cols, ug)
 }
 
-build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefix = "") {
+build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefix = "", proj_dir = NULL) {
   f <- file.path(deseq2_dir, "PCA", sprintf("PCA_RegLog_%s.csv", project))
   if (!file.exists(f)) return(NULL)
   d <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
@@ -319,6 +334,7 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
   if (is.null(varpct) && length(pair_blocks) == 0) return(NULL)
   # 1 行目: 寄与率のみ / 2 行目: PC1-2, PC2-3
   paste0(
+    src_note(report_rel_path(f, proj_dir)),
     if (!is.null(varpct)) sprintf('<div class="pic-plot-grid pic-pca-scree-row">%s</div>', scree_block) else "",
     if (length(pair_blocks) > 0) sprintf('<div class="pic-plot-grid pic-pca-pair-row">%s</div>', paste(pair_blocks, collapse = "")) else ""
   )
@@ -335,7 +351,7 @@ zcolor_vec <- function(v, zmax) {
 }
 
 # DEG ヒートマップを、サンプル行ヘッダ固定・縦スクロール可能な HTML 表として生成する。
-build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal = NULL) {
+build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal = NULL, proj_dir = NULL) {
   f <- file.path(deseq2_dir, "DEG", sprintf("DEG_normalizedCountTable_%s.csv", project))
   if (!file.exists(f)) return(NULL)
   d <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
@@ -391,9 +407,13 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
     legend_html <- sprintf('<div class="pic-legend" style="margin-left:0">%s</div>', paste(items, collapse = ""))
   }
 
-  sprintf(
-    '<h3>Heatmap (row z-score, %d genes)</h3><p class="pic-note">Hover a cell to show gene / sample / z.</p>%s<div class="pic-hm-scroll"><table class="pic-hm"><thead>%s</thead><tbody>%s</tbody></table></div>',
-    nrow(z), legend_html, header, paste(rows, collapse = "")
+  paste0(
+    sprintf('<h3>Heatmap (row z-score, %d genes)</h3>', nrow(z)),
+    src_note(report_rel_path(f, proj_dir)),
+    '<p class="pic-note">Hover a cell to show gene / sample / z.</p>',
+    legend_html,
+    sprintf('<div class="pic-hm-scroll"><table class="pic-hm"><thead>%s</thead><tbody>%s</tbody></table></div>',
+            header, paste(rows, collapse = ""))
   )
 }
 
@@ -441,7 +461,7 @@ scatter_traces_by_dir <- function(df, x, y, numerator, denominator, hovertemplat
   traces
 }
 
-build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "") {
+build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", stats_src = "") {
   aspects <- unique(stats$aspect)
   # contrast を DEG 数で降順に並べる
   deg_per <- vapply(aspects, function(a) {
@@ -525,6 +545,7 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "") {
     ))
   }
   paste0('<h3>MA / volcano</h3>',
+         src_note(stats_src),
          '<p class="pic-note">Volcano y-axis is -log10(pvalue); point color indicates significance by padj (hover shows padj).</p>',
          paste(blocks, collapse = "\n"))
 }
@@ -541,7 +562,7 @@ png_data_uri <- function(path) {
 
 # <base_dir>/aggregate/<genome>/aggregate_profile.csv からインタラクティブな
 # メタジーン折れ線 (plotly) を作る。CSV が無ければ profile.png を埋め込む。
-build_aggregate_html <- function(reg, base_dir, id_prefix = "") {
+build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL) {
   agg_root <- file.path(base_dir, "aggregate")
   if (!dir.exists(agg_root)) return("")
   gdirs <- list.dirs(agg_root, recursive = FALSE, full.names = TRUE)
@@ -582,8 +603,8 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "") {
         legend = list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0))
       register_plot(reg, id, list(data = traces, layout = layout))
       blocks <- c(blocks, sprintf(
-        '<div class="pic-plot-cell"><h4>%s — gene-body profile (TSS→TES)</h4><div id="%s" class="pic-plot"></div></div>',
-        html_escape(genome), id))
+        '<div class="pic-plot-cell"><h4>%s — gene-body profile (TSS→TES)</h4>%s<div id="%s" class="pic-plot"></div></div>',
+        html_escape(genome), src_note(report_rel_path(csv, proj_dir)), id))
     } else {
       png <- file.path(gd, "aggregate_profile.png")
       if (file.exists(png)) {
@@ -664,20 +685,22 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
 }
 
 # 遺伝子発現セクション: 入力した Gene ID/symbol を box+beeswarm で表示する UI。
-build_expression_section <- function(reg, deseq2_dir, project, group_map, group_pal, stats, id, section_id, heading) {
+build_expression_section <- function(reg, deseq2_dir, project, group_map, group_pal, stats, id, section_id, heading, proj_dir = NULL) {
   if (!register_expr_data(reg, id, deseq2_dir, project, group_map, group_pal, stats)) return("")
+  countf <- file.path(deseq2_dir, sprintf("normalizedCountTable_%s.csv", project))
   sprintf(paste0(
     '<section id="%s"><h2>%s</h2>',
     '<p class="pic-note">Type a Gene ID or symbol (autocomplete from this dataset). ',
     'Multiple genes allowed (comma or space separated). ',
     'Default shows the 5 genes with the smallest p-value.</p>',
+    '%s',
     '<div class="pic-expr" data-expr="%s">',
     '<div class="pic-expr-ctrl">',
     '<div class="pic-expr-typeahead"><input class="pic-expr-input" type="text" autocomplete="off" placeholder="Gene ID or symbol…">',
     '<div class="pic-expr-ac"></div></div>',
     '<button class="pic-expr-go" type="button">Plot</button></div>',
     '<div class="pic-expr-msg"></div><div class="pic-expr-plots"></div></div></section>'),
-    section_id, html_escape(heading), id)
+    section_id, html_escape(heading), src_note(report_rel_path(countf, proj_dir)), id)
 }
 
 # DEG クラスタの挙動 (group ごとの rlog 分布) を facet で示す図。
@@ -732,7 +755,7 @@ build_cluster_profile_png <- function(deseq2_dir, project, tmp_dir, group_pal = 
 }
 
 # enrichment セクションの中身 (h3 GSEA / ORA) を返す。<section> ラッパは付けない。
-enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL) {
+enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, proj_dir = NULL) {
   if (is.null(enrich_dir) || is.na(enrich_dir) || !dir.exists(enrich_dir)) return("")
   ecfg <- pic_plot_spec()$plot$enrichment
   parts <- character(0)
@@ -798,7 +821,8 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
   }
   if (length(gsea_blocks) > 0) {
     parts <- c(parts, sprintf(
-      '<details class="pic-enrich-group" open><summary>GSEA</summary><p class="pic-note">Expand a contrast to see GSEA dot plots for GO_BP / KEGG / REACTOME ...</p>%s</details>',
+      '<details class="pic-enrich-group" open><summary>GSEA</summary>%s<p class="pic-note">Expand a contrast to see GSEA dot plots for GO_BP / KEGG / REACTOME ...</p>%s</details>',
+      src_note(report_rel_path(gsea_root, proj_dir)),
       paste(gsea_blocks, collapse = "\n")
     ))
   }
@@ -838,15 +862,16 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
     if (!is.null(deseq2_dir)) {
       prof_uri <- tryCatch(build_cluster_profile_png(deseq2_dir, project, tmp_dir, group_pal), error = function(e) NULL)
       if (!is.null(prof_uri) && !is.na(prof_uri)) {
+        prof_csv <- file.path(deseq2_dir, "DEG", "DEGCluster", sprintf("DEGCluster_profile_%s.csv", project))
         ora_inner <- c(ora_inner, sprintf(
-          '<div class="pic-enrich-item"><h4>Cluster expression profiles (per-cluster rlog by group)</h4><img loading="lazy" src="%s"></div>',
-          prof_uri
+          '<div class="pic-enrich-item"><h4>Cluster expression profiles (per-cluster rlog by group)</h4>%s<img loading="lazy" src="%s"></div>',
+          src_note(report_rel_path(prof_csv, proj_dir)), prof_uri
         ))
       }
     }
     ora_inner <- c(ora_inner,
-      sprintf('<details class="pic-enrich-method" open><summary>ORA dot plots (%d method)</summary>%s</details>',
-              length(ora_blocks), paste(ora_blocks, collapse = "")))
+      sprintf('<details class="pic-enrich-method" open><summary>ORA dot plots (%d method)</summary>%s%s</details>',
+              length(ora_blocks), src_note(report_rel_path(ora_root, proj_dir)), paste(ora_blocks, collapse = "")))
     parts <- c(parts, sprintf(
       '<details class="pic-enrich-group" open><summary>ORA (DEG clusters)</summary>%s</details>',
       paste(ora_inner, collapse = "")
@@ -857,8 +882,8 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
 }
 
 # 通常レポート用の enrichment セクション (<section id="enrich"> でラップ)。
-section_enrichment <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, heading = "4. Enrichment") {
-  inner <- enrichment_blocks(enrich_dir, project, tmp_dir, deg_counts, deseq2_dir, group_pal)
+section_enrichment <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, heading = "4. Enrichment", proj_dir = NULL) {
+  inner <- enrichment_blocks(enrich_dir, project, tmp_dir, deg_counts, deseq2_dir, group_pal, proj_dir)
   if (!nzchar(inner)) inner <- '<p>No enrichment plots were generated.</p>'
   sprintf('<section id="enrich"><h2>%s</h2>%s</section>', heading, inner)
 }
@@ -909,31 +934,32 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   }
 
   # セクション組み立て (順序: QC -> Aggregation -> PCA -> DEG -> Enrichment)
-  sec_qc <- if (!is.null(msum)) section_mapping_qc(msum) else ""
+  msum_file <- { mf <- list.files(out_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = TRUE); if (length(mf) > 0) mf[[1]] else "" }
+  sec_qc <- if (!is.null(msum)) section_mapping_qc(msum, "qc", "1. Mapping QC", report_rel_path(msum_file, out_dir)) else ""
 
   # 2. Aggregation (TSS-TES)
-  agg_html <- build_aggregate_html(reg, out_dir)
+  agg_html <- build_aggregate_html(reg, out_dir, "", out_dir)
   sec_agg <- if (nzchar(agg_html)) paste0('<section id="aggregate"><h2>2. Aggregation (TSS-TES)</h2>', agg_html, '</section>') else ""
 
   # 3. PCA
-  pca_html <- build_pca_plots(reg, desc$deseq2_dir, project, group_pal)
+  pca_html <- build_pca_plots(reg, desc$deseq2_dir, project, group_pal, "", out_dir)
   sec_pca <- paste0('<section id="pca"><h2>3. PCA</h2>',
                     if (!is.null(pca_html)) pca_html else "<p>No PCA data.</p>",
                     '</section>')
 
   # 4. DEG (heatmap + MA/volcano)
-  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal)
-  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr)
+  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir)
+  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, "", report_rel_path(desc$stats_csv, out_dir))
   sec_deg <- paste0(sprintf('<section id="deg"><h2>4. DEG (DESeq2; FDR = %s)</h2>', format(fdr, trim = TRUE)),
                     if (!is.null(hm_html)) hm_html else "",
                     contrast_html,
                     '</section>')
 
   # 5. Gene expression (normalized counts, interactive)
-  sec_expr <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats, "expr", "expr", "5. Gene expression")
+  sec_expr <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats, "expr", "expr", "5. Gene expression", out_dir)
 
   # 6. Enrichment
-  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "6. Enrichment")
+  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "6. Enrichment", out_dir)
   if (is.null(sec_enrich)) sec_enrich <- ""
 
   nav <- paste0('<nav class="pic-nav"><a href="#qc">QC</a>',
@@ -984,10 +1010,10 @@ PIC_XENO_COLORS <- c(
 )
 
 # 分類サマリ TSV から 100% 積み上げ棒の QC セクションを作る。
-section_xenograft_qc <- function(summary_df) {
+section_xenograft_qc <- function(summary_df, src = "") {
   cats <- names(PIC_XENO_COLORS)
   have <- all(cats %in% colnames(summary_df))
-  parts <- c('<section id="classification"><h2>1. Xenograft classification (xengsort)</h2>')
+  parts <- c('<section id="classification"><h2>1. Xenograft classification (xengsort)</h2>', src_note(src))
   if (!have) {
     parts <- c(parts, '<p>classification summary not found.</p></section>')
     return(paste(parts, collapse = "\n"))
@@ -1084,11 +1110,12 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
   if (!is.null(msum)) {
     n <- n + 1L
     sid <- paste0(frac_key, "_qc")
-    secs <- c(secs, section_mapping_qc(msum, sid, sprintf("%d. %s · Mapping QC", n, label)))
+    secs <- c(secs, section_mapping_qc(msum, sid, sprintf("%d. %s · Mapping QC", n, label),
+                                       report_rel_path(msum_files[[1]], out_dir)))
     navs <- c(navs, sprintf('<a href="#%s">Mapping</a>', sid))
   }
   # Aggregation (TSS-TES)
-  agg_html <- build_aggregate_html(reg, frac_dir, id_prefix)
+  agg_html <- build_aggregate_html(reg, frac_dir, id_prefix, out_dir)
   if (nzchar(agg_html)) {
     n <- n + 1L
     sid <- paste0(frac_key, "_agg")
@@ -1098,15 +1125,15 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
   # PCA
   n <- n + 1L
   sid <- paste0(frac_key, "_pca")
-  pca_html <- build_pca_plots(reg, desc$deseq2_dir, project, group_pal, id_prefix)
+  pca_html <- build_pca_plots(reg, desc$deseq2_dir, project, group_pal, id_prefix, out_dir)
   secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · PCA</h2>%s</section>',
                           sid, n, label, if (!is.null(pca_html)) pca_html else "<p>No PCA data.</p>"))
   navs <- c(navs, sprintf('<a href="#%s">PCA</a>', sid))
   # DEG (heatmap + MA/volcano)
   n <- n + 1L
   sid <- paste0(frac_key, "_deg")
-  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal)
-  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, id_prefix)
+  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir)
+  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir))
   secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · DEG (DESeq2; FDR = %s)</h2>%s%s</section>',
                           sid, n, label, format(fdr, trim = TRUE),
                           if (!is.null(hm_html)) hm_html else "", contrast_html))
@@ -1114,14 +1141,14 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
   # Gene expression (normalized counts)
   sid <- paste0(frac_key, "_expr")
   expr_html <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats,
-                                        paste0(frac_key, "__expr"), sid, sprintf("%d. %s · Expression", n + 1L, label))
+                                        paste0(frac_key, "__expr"), sid, sprintf("%d. %s · Expression", n + 1L, label), out_dir)
   if (nzchar(expr_html)) {
     n <- n + 1L
     secs <- c(secs, expr_html)
     navs <- c(navs, sprintf('<a href="#%s">Expression</a>', sid))
   }
   # Enrichment
-  enrich_inner <- enrichment_blocks(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal)
+  enrich_inner <- enrichment_blocks(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, out_dir)
   if (nzchar(enrich_inner)) {
     n <- n + 1L
     sid <- paste0(frac_key, "_enrich")
@@ -1150,7 +1177,7 @@ build_xenograft_report <- function(out_dir, asset_dir) {
 
   tmp_dir <- file.path(tempdir(), paste0("picxenoreport_", run))
 
-  sec_qc <- section_xenograft_qc(summary_df)
+  sec_qc <- section_xenograft_qc(summary_df, report_rel_path(summary_files[[1]], out_dir))
   nav_items <- c('<a href="#classification">Classification</a>')
   body <- sec_qc
   n <- 1L

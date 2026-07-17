@@ -18,6 +18,8 @@ h2{margin-top:0;font-size:19px;border-bottom:2px solid var(--accent);padding-bot
 h3{font-size:16px;margin:22px 0 10px}
 h4{font-size:13px;margin:6px 0;color:var(--muted)}
 .pic-note,.pic-contrast-meta{color:var(--muted);font-size:13px;margin:4px 0}
+.pic-src{color:var(--muted);font-size:11px;margin:2px 0 8px}
+.pic-src code{background:#eef1f5;padding:1px 5px;border-radius:3px}
 
 /* plotly grid */
 .pic-plot-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
