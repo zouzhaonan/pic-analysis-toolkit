@@ -143,9 +143,9 @@ build_cluster_ora_plot <- function(ora_df) {
     vapply(cluster_levels, function(cl) {
       den <- cluster_den$den[cluster_den$cluster == cl]
       if (length(den) == 0 || !is.finite(den[[1]])) {
-        sprintf("%s (N=NA)", cl)
+        sprintf("%s (n=NA)", cl)
       } else {
-        sprintf("%s (N=%s)", cl, format(den[[1]], scientific = FALSE, trim = TRUE))
+        sprintf("%s (n=%s)", cl, format(den[[1]], scientific = FALSE, trim = TRUE))
       }
     }, character(1)),
     cluster_levels
@@ -359,8 +359,8 @@ build_ora_plotly <- function(ora_df) {
   cluster_labels <- stats::setNames(
     vapply(cluster_levels, function(cl) {
       den <- cluster_den$den[cluster_den$cluster == cl]
-      if (length(den) == 0 || !is.finite(den[[1]])) sprintf("%s (N=NA)", cl)
-      else sprintf("%s (N=%s)", cl, format(den[[1]], scientific = FALSE, trim = TRUE))
+      if (length(den) == 0 || !is.finite(den[[1]])) sprintf("%s (n=NA)", cl)
+      else sprintf("%s (n=%s)", cl, format(den[[1]], scientific = FALSE, trim = TRUE))
     }, character(1)), cluster_levels)
 
   plot_df <- plot_df |>

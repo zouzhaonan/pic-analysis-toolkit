@@ -39,6 +39,11 @@ report_rel_path <- function(path, base) {
   if (startsWith(p, b2)) substring(p, nchar(b2) + 1) else basename(p)
 }
 
+# 「ここで選択」を明示する目立つ案内バッジ。
+pick_hint <- function(text) {
+  sprintf('<div class="pic-pick"><span class="pic-pick-ic">&#128071;</span><span>%s</span></div>', text)
+}
+
 # HTML 要素 (id=cap_id) を PNG 画像でダウンロードするボタン。
 png_button <- function(cap_id, name) {
   sprintf('<button class="pic-png-btn" type="button" data-cap="%s" data-name="%s">Download plot as a png.</button>',
@@ -844,8 +849,9 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
   sel_html <- if (length(items) <= 1) {
     if (length(items) == 1) sprintf('<div class="pic-select-item">%s</div>', items[[1]]$html) else ""
   } else if (nzchar(matrix_html)) {
-    paste0('<p class="pic-note">Pick comparisons to display from the matrix below &mdash; each cell shows the number of ',
-           'differentially expressed genes (padj &lt; FDR) between the two groups.</p>',
+    paste0(pick_hint('Select comparisons to show &mdash; tick a cell in the matrix below.'),
+           '<p class="pic-note">Each cell shows the number of differentially expressed genes ',
+           '(padj &lt; FDR) between the two groups; the plots appear underneath.</p>',
            matrix_html, paste(blocks, collapse = ""))
   } else {
     build_select_group(items)
@@ -1226,7 +1232,10 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
   }
   if (nzchar(gsea_html)) {
     parts <- c(parts, sprintf(
-      '<details class="pic-enrich-group" open><summary>GSEA &mdash; gene set enrichment</summary>%s<p class="pic-note">GSEA asks which biological terms (GO, pathways&hellip;) are shifted up or down in a comparison, using the whole ranked gene list. Each dot is a term: position is its enrichment score (NES), color its significance (padj), size the number of genes. Tick a comparison and a term set below to view it.</p>%s</details>',
+      paste0('<details class="pic-enrich-group" open><summary>GSEA &mdash; gene set enrichment</summary>%s',
+             '<p class="pic-note">GSEA asks which biological terms (GO, pathways&hellip;) are shifted up or down in a comparison, using the whole ranked gene list. Each dot is a term: position is its enrichment score (NES), color its significance (padj), size the number of genes.</p>',
+             pick_hint('Select what to view &mdash; tick a <b>Contrast</b> cell and a <b>Method</b> below.'),
+             '%s</details>'),
       src_note(report_rel_path(gsea_root, proj_dir)),
       gsea_html
     ))
