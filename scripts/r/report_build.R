@@ -1394,17 +1394,56 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "7. Enrichment", out_dir, "", reg, group_order)
   if (is.null(sec_enrich)) sec_enrich <- ""
 
-  nav <- paste0('<nav class="pic-nav"><a href="#qc">QC</a>',
-                if (nzchar(sec_agg)) '<a href="#aggregate">Aggregation</a>' else "",
-                if (nzchar(sec_cor)) '<a href="#cor">Correlation</a>' else "",
-                '<a href="#pca">PCA</a><a href="#deg">DEG</a>',
-                if (nzchar(sec_expr)) '<a href="#expr">Expression</a>' else "",
-                '<a href="#enrich">Enrichment</a></nav>')
-  body <- paste0(sec_qc, sec_agg, sec_cor, sec_pca, sec_deg, sec_expr, sec_enrich)
+  tb <- build_tabs(list(
+    list(html = sec_qc,     label = "QC"),
+    list(html = sec_agg,    label = "Aggregation"),
+    list(html = sec_cor,    label = "Correlation"),
+    list(html = sec_pca,    label = "PCA"),
+    list(html = sec_deg,    label = "DEG"),
+    list(html = sec_expr,   label = "Expression"),
+    list(html = sec_enrich, label = "Enrichment")
+  ))
   out_html <- file.path(out_dir, sprintf("report_%s.html", project))
-  render_report_page(project, nav, body, reg, asset_dir, out_html)
+  render_report_page(project, tb$bar, tb$panels, reg, asset_dir, out_html)
   unlink(tmp_dir, recursive = TRUE)
   out_html
+}
+
+# 1 タブ (= 1 セクション) を組み立てる。
+# desc があれば info(丸i)+hover の吹き出し、controls があれば左ペイン。
+pic_tab_panel <- function(id, title, view, desc = "", controls = "", active = FALSE) {
+  info <- if (nzchar(desc)) sprintf('<span class="pic-info" tabindex="0">i<span class="pic-info-pop">%s</span></span>', desc) else ""
+  pane_cls <- if (nzchar(controls)) "pic-2pane" else "pic-2pane pic-1pane"
+  ctrl <- if (nzchar(controls)) sprintf('<aside class="pic-ctrl">%s</aside>', controls) else ""
+  sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s</div><div class="%s">%s<div class="pic-view">%s</div></div></section>',
+          if (active) " active" else "", id, title, info, pane_cls, ctrl, view)
+}
+
+# 既存のフル <section> HTML からタブを作る (title / inner を抽出して再ラップ)。
+section_to_tab <- function(sec_html, active = FALSE, desc = "", controls = "") {
+  if (!nzchar(sec_html)) return("")
+  id <- regmatches(sec_html, regexpr('(?<=<section id=")[^"]+', sec_html, perl = TRUE))
+  title <- regmatches(sec_html, regexpr('(?<=<h2>).*?(?=</h2>)', sec_html, perl = TRUE))
+  inner <- sub('^<section[^>]*><h2>.*?</h2>', '', sec_html)
+  inner <- sub('</section>[[:space:]]*$', '', inner)
+  pic_tab_panel(id, title, inner, desc, controls, active)
+}
+
+# セクション HTML 群からタブバー + パネルを組み立てる。
+# tabs: list(list(html=, label=), ...)。空 html は除外。
+build_tabs <- function(tabs) {
+  tabs <- Filter(function(t) nzchar(t$html), tabs)
+  if (length(tabs) == 0) return(list(bar = "", panels = ""))
+  btns <- character(0); panels <- character(0)
+  for (i in seq_along(tabs)) {
+    active <- (i == 1L)
+    id <- regmatches(tabs[[i]]$html, regexpr('(?<=<section id=")[^"]+', tabs[[i]]$html, perl = TRUE))
+    btns <- c(btns, sprintf('<button class="pic-tabbtn%s" type="button" data-target="%s">%s</button>',
+                            if (active) " active" else "", id, html_escape(tabs[[i]]$label)))
+    panels <- c(panels, section_to_tab(tabs[[i]]$html, active))
+  }
+  list(bar = sprintf('<nav class="pic-tabs">%s</nav>', paste(btns, collapse = "")),
+       panels = paste(panels, collapse = "\n"))
 }
 
 # HTML ページを組み立てて書き出す (plotly を内包)。
@@ -1422,7 +1461,7 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
     '<header class="pic-header"><h1>pic analysis report</h1>',
     '<div class="pic-sub">project: <b>', html_escape(title), '</b></div></header>',
     nav_html,
-    '<main>', body_html, '</main>',
+    '<main class="pic-main">', body_html, '</main>',
     '<script>', plotly_js, '</script>',
     '<script>var PIC_PLOTS=', plots_json, ';var PIC_EXPR=', expr_json, ';</script>',
     '<script>', report_runtime_js(), '</script>',

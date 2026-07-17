@@ -3,8 +3,12 @@
 (function () {
   function renderPlot(el) {
     if (!el || el.dataset.rendered) return;
-    // 非表示ブロック内は描画しない (表示された時に描く)
-    if (el.closest && el.closest(".pic-select-item[hidden]")) return;
+    // 非表示 (別タブ / 閉じた details / 非表示ブロック) 内は描画しない (表示された時に描く)
+    if (el.closest) {
+      if (el.closest("section.pic-tab:not(.active)")) return;
+      if (el.closest("details:not([open])")) return;
+      if (el.closest(".pic-select-item[hidden]")) return;
+    }
     var spec = window.PIC_PLOTS && window.PIC_PLOTS[el.id];
     if (!spec) return;
     var layout = spec.layout || {};
@@ -33,6 +37,29 @@
 
   function renderWithin(root) {
     root.querySelectorAll(".pic-plot").forEach(renderPlot);
+  }
+  function resizeWithin(root) {
+    root.querySelectorAll(".pic-plot").forEach(function (p) {
+      if (p.dataset.rendered) { try { Plotly.Plots.resize(p); } catch (e) {} }
+    });
+  }
+  // タブ切替: 対象タブを表示し、そのタブのプロットを遅延描画 + リサイズ
+  function activateTab(key) {
+    if (!key) return;
+    var found = false;
+    document.querySelectorAll("section.pic-tab").forEach(function (s) {
+      var on = (s.id === key);
+      s.classList.toggle("active", on);
+      if (on) found = true;
+    });
+    if (!found) return;
+    document.querySelectorAll(".pic-tabbtn").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.target === key);
+    });
+    var tab = document.getElementById(key);
+    if (tab) { renderWithin(tab); resizeWithin(tab); }
+    try { if (history.replaceState) history.replaceState(null, "", "#" + key); } catch (e) {}
+    window.scrollTo(0, 0);
   }
 
   // HTML 要素 (heatmap / QC / correlation テーブル) を PNG 化してダウンロードする。
@@ -331,12 +358,22 @@
   }
 
   document.addEventListener("DOMContentLoaded", function () {
-    // details 外・非表示ブロック外のプロットは即描画
-    document.querySelectorAll(".pic-plot").forEach(function (p) {
-      if (p.closest("details")) return;
-      if (p.closest(".pic-select-item[hidden]")) return;
-      renderPlot(p);
-    });
+    // タブ: ボタンで切替。初期は URL ハッシュ or 先頭タブ。
+    var tabbtns = document.querySelectorAll(".pic-tabbtn");
+    if (tabbtns.length) {
+      tabbtns.forEach(function (b) {
+        b.addEventListener("click", function () { activateTab(b.dataset.target); });
+      });
+      var initial = (location.hash || "").replace(/^#/, "");
+      if (!initial || !document.getElementById(initial) ||
+          !document.getElementById(initial).classList.contains("pic-tab")) {
+        var first = document.querySelector("section.pic-tab.active") || document.querySelector("section.pic-tab");
+        initial = first ? first.id : "";
+      }
+      activateTab(initial);
+    }
+    // アクティブなタブのプロットを描画 (renderPlot が非表示を自己判定)
+    renderWithin(document.body);
     // details は開いた時に描画
     document.querySelectorAll("details").forEach(function (d) {
       // 既に open のものは描画
