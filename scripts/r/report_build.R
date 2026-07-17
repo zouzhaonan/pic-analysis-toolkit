@@ -192,10 +192,16 @@ read_mapping_sum <- function(path) {
   df
 }
 
-section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC", src = "") {
+section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC", src = "", group_map = NULL, group_pal = NULL) {
   fate_cols <- names(PIC_FATE_COLORS)
   have_fate <- all(fate_cols %in% colnames(msum))
   parts <- c(sprintf('<section id="%s"><h2>%s</h2>', section_id, heading), src_note(src))
+
+  # サンプル名を group 配色で (heatmap と同じ)
+  scol <- function(s) {
+    g <- if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
+    if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else "#333333"
+  }
 
   # ---- 100% 積み上げ棒 ----
   if (have_fate) {
@@ -220,8 +226,8 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
         ))
       }
       rows <- c(rows, sprintf(
-        '<div class="pic-bar-row"><div class="pic-bar-label">%s</div><div class="pic-bar-track">%s</div></div>',
-        html_escape(sample), paste(segs, collapse = "")
+        '<div class="pic-bar-row"><div class="pic-bar-label" style="color:%s;font-weight:600">%s</div><div class="pic-bar-track">%s</div></div>',
+        scol(sample), html_escape(sample), paste(segs, collapse = "")
       ))
     }
     legend_items <- vapply(fate_cols, function(cc) sprintf(
@@ -260,7 +266,8 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
 
   trows <- character(0)
   for (i in seq_len(nrow(msum))) {
-    cells <- sprintf('<td class="pic-td-sample">%s</td>', html_escape(as.character(msum$sample[[i]])))
+    cells <- sprintf('<td class="pic-td-sample" style="color:%s">%s</td>',
+                     scol(as.character(msum$sample[[i]])), html_escape(as.character(msum$sample[[i]])))
     for (cc in names(bar_cols)) {
       if (!(cc %in% colnames(msum))) next
       v <- suppressWarnings(as.numeric(msum[[cc]][[i]]))
@@ -682,7 +689,7 @@ png_data_uri <- function(path) {
 
 # <base_dir>/aggregate/<genome>/aggregate_profile.csv からインタラクティブな
 # メタジーン折れ線 (plotly) を作る。CSV が無ければ profile.png を埋め込む。
-build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL) {
+build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL, sample_order = NULL, group_pal = NULL) {
   agg_root <- file.path(base_dir, "aggregate")
   if (!dir.exists(agg_root)) return("")
   gdirs <- list.dirs(agg_root, recursive = FALSE, full.names = TRUE)
@@ -694,17 +701,23 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL)
       d <- suppressMessages(readr::read_csv(csv, show_col_types = FALSE, progress = FALSE))
       d <- as.data.frame(d, check.names = FALSE)
       if (nrow(d) == 0 || !all(c("sample", "group", "pos", "value") %in% colnames(d))) next
-      pal <- group_palette(unique(as.character(d$group)))
+      pal <- if (!is.null(group_pal)) group_pal else group_palette(unique(as.character(d$group)))
+      miss <- setdiff(unique(as.character(d$group)), names(pal)); if (length(miss) > 0) pal <- c(pal, group_palette(miss))
       traces <- list()
-      for (s in unique(as.character(d$sample))) {
+      # 凡例は group 単位 (各 group の最初の trace のみ凡例に表示、他は legendgroup で連動)。
+      # サンプルは sample_sheet の順に描画し、hover にサンプル名を表示。
+      seen <- character(0)
+      for (s in pic_reorder_vec(unique(as.character(d$sample)), sample_order)) {
         sub <- d[as.character(d$sample) == s, , drop = FALSE]
         sub <- sub[order(sub$pos), , drop = FALSE]
         g <- as.character(sub$group[[1]])
+        first <- !(g %in% seen); seen <- c(seen, g)
         traces[[length(traces) + 1]] <- list(
           x = as.list(as.numeric(sub$pos)), y = as.list(as.numeric(sub$value)),
-          name = s, legendgroup = g, mode = "lines", type = "scatter",
+          name = if (first) g else s, legendgroup = g, showlegend = first,
+          mode = "lines", type = "scatter",
           line = list(color = unname(pal[[g]]), width = 1.4),
-          hovertemplate = "%{fullData.name}<br>CPM: %{y:.2f}<extra></extra>")
+          hovertemplate = sprintf("%s<br>CPM: %%{y:.2f}<extra></extra>", html_escape(s)))
       }
       id <- sprintf("%saggregate_%s", id_prefix, genome)
       # フランク端ラベル (±Nkb / ±Nbp)
@@ -1149,10 +1162,10 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
 
   # セクション組み立て (順序: QC -> Aggregation -> PCA -> DEG -> Enrichment)
   msum_file <- { mf <- list.files(out_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = TRUE); if (length(mf) > 0) mf[[1]] else "" }
-  sec_qc <- if (!is.null(msum)) section_mapping_qc(msum, "qc", "1. Mapping QC", report_rel_path(msum_file, out_dir)) else ""
+  sec_qc <- if (!is.null(msum)) section_mapping_qc(msum, "qc", "1. Mapping QC", report_rel_path(msum_file, out_dir), group_map, group_pal) else ""
 
   # 2. Aggregation (TSS-TES)
-  agg_html <- build_aggregate_html(reg, out_dir, "", out_dir)
+  agg_html <- build_aggregate_html(reg, out_dir, "", out_dir, sample_order, group_pal)
   sec_agg <- if (nzchar(agg_html)) paste0('<section id="aggregate"><h2>2. Aggregation (TSS-TES)</h2>', agg_html, '</section>') else ""
 
   # 3. PCA
@@ -1332,11 +1345,11 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
     n <- n + 1L
     sid <- paste0(frac_key, "_qc")
     secs <- c(secs, section_mapping_qc(msum, sid, sprintf("%d. %s · Mapping QC", n, label),
-                                       report_rel_path(msum_files[[1]], out_dir)))
+                                       report_rel_path(msum_files[[1]], out_dir), group_map, group_pal))
     navs <- c(navs, sprintf('<a href="#%s">Mapping</a>', sid))
   }
   # Aggregation (TSS-TES)
-  agg_html <- build_aggregate_html(reg, frac_dir, id_prefix, out_dir)
+  agg_html <- build_aggregate_html(reg, frac_dir, id_prefix, out_dir, sample_order, group_pal)
   if (nzchar(agg_html)) {
     n <- n + 1L
     sid <- paste0(frac_key, "_agg")
