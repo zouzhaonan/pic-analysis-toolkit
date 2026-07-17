@@ -194,7 +194,7 @@ build_cluster_ora_plot <- function(ora_df) {
 # ---------------------------------------------------------------------------
 
 # 連続値を plotly マーカーの px サイズに線形写像する。
-plotly_marker_size <- function(v, min_px = 5, max_px = 17) {
+plotly_marker_size <- function(v, min_px = 8, max_px = 24) {
   v <- suppressWarnings(as.numeric(v))
   fin <- v[is.finite(v)]
   if (length(fin) == 0) return(rep((min_px + max_px) / 2, length(v)))
@@ -253,16 +253,19 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator) {
   dirs <- levels(plot_df$direction)
   dirs <- dirs[dirs %in% unique(as.character(plot_df$direction))]
   ndir <- length(dirs)
-  gap <- 0.035
+  gap <- 0.07
   panelw <- (1 - gap * (ndir - 1)) / ndir
 
   traces <- list()
   annotations <- list()
+  shapes <- list()
   layout <- list(
-    margin = list(l = 10, r = 10, t = 30, b = 46), hovermode = "closest",
+    margin = list(l = 10, r = 10, t = 34, b = 46), hovermode = "closest",
+    showlegend = FALSE,
     yaxis = list(tickmode = "array", tickvals = as.list(ypos_all), ticktext = as.list(ylab),
                  automargin = TRUE, range = list(0.5, nrow(plot_df) + 0.5),
-                 domain = list(0, 1), anchor = "x")
+                 domain = list(0, 1), anchor = "x", showline = TRUE, mirror = TRUE,
+                 linecolor = "#cdd7e2")
   )
   for (i in seq_len(ndir)) {
     d <- dirs[[i]]
@@ -271,7 +274,8 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator) {
     axref <- if (i == 1) "x" else paste0("x", i)
     axname <- if (i == 1) "xaxis" else paste0("xaxis", i)
     layout[[axname]] <- list(title = list(text = "NES"), domain = list(x0, x1),
-                             anchor = "y", zeroline = FALSE, automargin = TRUE)
+                             anchor = "y", zeroline = FALSE, automargin = TRUE,
+                             showline = TRUE, mirror = TRUE, linecolor = "#cdd7e2")
     showscale <- (i == ndir)
     mk <- list(size = as.list(size_all[idx]), color = as.list(padj_all[idx]),
                colorscale = enrich_colorscale(), cmin = cmin, cmax = cmax,
@@ -281,20 +285,28 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator) {
                                         thickness = 12, len = 0.6)
     traces[[length(traces) + 1L]] <- list(
       x = as.list(as.numeric(plot_df$NES[idx])), y = as.list(ypos_all[idx]),
-      xaxis = axref, yaxis = "y",
+      xaxis = axref, yaxis = "y", showlegend = FALSE,
       customdata = lapply(idx, function(j) list(desc_full[j], as.numeric(plot_df$setSize[j]), padj_all[j], d)),
       mode = "markers", type = "scatter", marker = mk, hovertemplate = ht
     )
-    # facet strip: パネル上部に direction (enriched group) 名
+    # パネルを囲む枠 (左右が別の x 軸であることを明示)
+    shapes[[length(shapes) + 1L]] <- list(
+      type = "rect", xref = "paper", yref = "paper", layer = "below",
+      x0 = x0, x1 = x1, y0 = 0, y1 = 1,
+      line = list(color = "#cdd7e2", width = 1), fillcolor = "rgba(0,0,0,0)"
+    )
+    # facet strip: パネル上部に direction (enriched group) 名 (背景白)
     annotations[[length(annotations) + 1L]] <- list(
       text = html_escape(d), xref = "paper", yref = "paper",
-      x = (x0 + x1) / 2, y = 1.012, xanchor = "center", yanchor = "bottom",
+      x = (x0 + x1) / 2, y = 1.0, xanchor = "center", yanchor = "bottom",
       showarrow = FALSE, font = list(size = 12, color = "#1f2933"),
-      bgcolor = "#eef3f9", bordercolor = "#cdd7e2", borderwidth = 1, borderpad = 3
+      bgcolor = "#ffffff", bordercolor = "#cdd7e2", borderwidth = 1, borderpad = 3
     )
   }
   layout$annotations <- annotations
-  list(data = traces, layout = layout, n_terms = nrow(plot_df))
+  layout$shapes <- shapes
+  list(data = traces, layout = layout, n_terms = nrow(plot_df),
+       config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = FALSE))
 }
 
 # ORA (cluster) を plotly の dot plot spec に変換する。
@@ -389,15 +401,19 @@ build_ora_plotly <- function(ora_df) {
     hovertemplate = ht
   )
   layout <- list(
+    showlegend = FALSE,
     xaxis = list(type = "category", categoryorder = "array",
                  categoryarray = as.list(levels(plot_df$cluster_label)),
-                 tickangle = -40, automargin = TRUE),
+                 tickangle = -40, automargin = TRUE, showline = TRUE, mirror = TRUE,
+                 linecolor = "#cdd7e2"),
     yaxis = list(tickmode = "array", tickvals = as.list(seq_along(ylab_levels)),
                  ticktext = as.list(ylab_levels), automargin = TRUE,
-                 range = list(0.5, length(ylab_levels) + 0.5)),
+                 range = list(0.5, length(ylab_levels) + 0.5), showline = TRUE, mirror = TRUE,
+                 linecolor = "#cdd7e2"),
     margin = list(l = 10, r = 10, t = 16, b = 80), hovermode = "closest"
   )
-  list(data = list(trace), layout = layout, n_terms = length(ylab_levels))
+  list(data = list(trace), layout = layout, n_terms = length(ylab_levels),
+       config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = FALSE))
 }
 
 # dot plot の term 数からプロット高さ (px) を決める。

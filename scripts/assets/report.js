@@ -9,8 +9,9 @@
     if (!spec) return;
     var layout = spec.layout || {};
     layout.autosize = true;
+    var cfg = spec.config || { responsive: true, displaylogo: false };
     try {
-      Plotly.newPlot(el, spec.data, layout, { responsive: true, displaylogo: false });
+      Plotly.newPlot(el, spec.data, layout, cfg);
       el.dataset.rendered = "1";
       // 凡例クリックでサンプルを on/off した後、表示中のトレースだけで軸を再スケール
       el.on("plotly_legendclick", function () {

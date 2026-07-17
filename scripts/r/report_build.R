@@ -913,9 +913,10 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
 
   traces <- list()
   annotations <- list()
-  layout <- list(margin = list(l = 54, r = 10, t = 30, b = 64), hovermode = "closest",
+  # 凡例を strip ラベルより上に置き、重なりを避ける
+  layout <- list(margin = list(l = 54, r = 10, t = 58, b = 64), hovermode = "closest",
                  boxmode = "group", showlegend = TRUE,
-                 legend = list(orientation = "h", yanchor = "bottom", y = 1.05, x = 0))
+                 legend = list(orientation = "h", yanchor = "bottom", y = 1.14, x = 0))
   for (i in seq_len(ncl)) {
     cl <- clusters[[i]]
     x0 <- (i - 1) * (panelw + gap); x1 <- x0 + panelw
@@ -925,9 +926,11 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
     yname <- if (i == 1) "yaxis" else paste0("yaxis", i)
     layout[[xname]] <- list(domain = list(x0, x1), anchor = yref, type = "category",
                             categoryorder = "array", categoryarray = as.list(groups),
-                            tickangle = -40, automargin = TRUE)
+                            tickangle = -40, automargin = TRUE, showline = TRUE, mirror = TRUE,
+                            linecolor = "#cdd7e2")
     layout[[yname]] <- list(domain = list(0, 1), anchor = xref, automargin = TRUE,
-                            title = if (i == 1) list(text = "rlog expression") else list(text = ""))
+                            title = if (i == 1) list(text = "rlog expression") else list(text = ""),
+                            showline = TRUE, mirror = TRUE, linecolor = "#cdd7e2")
     sub <- prof[as.character(prof$cluster_id) == cl, , drop = FALSE]
     for (g in groups) {
       gv <- as.numeric(sub$rlog_expr[as.character(sub$group) == g])
@@ -946,13 +949,14 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
     }
     annotations[[length(annotations) + 1L]] <- list(
       text = html_escape(clab(cl)), xref = "paper", yref = "paper",
-      x = (x0 + x1) / 2, y = 1.012, xanchor = "center", yanchor = "bottom",
+      x = (x0 + x1) / 2, y = 1.0, xanchor = "center", yanchor = "bottom",
       showarrow = FALSE, font = list(size = 12, color = "#1f2933"),
-      bgcolor = "#eef3f9", bordercolor = "#cdd7e2", borderwidth = 1, borderpad = 3
+      bgcolor = "#ffffff", bordercolor = "#cdd7e2", borderwidth = 1, borderpad = 3
     )
   }
   layout$annotations <- annotations
-  list(data = traces, layout = layout, height = 380L)
+  list(data = traces, layout = layout, height = 380L,
+       config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = FALSE))
 }
 
 # enrichment セクションの中身 (h3 GSEA / ORA) を返す。<section> ラッパは付けない。
@@ -986,7 +990,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         spec <- tryCatch(build_gsea_plotly(df, numerator, denominator), error = function(e) NULL)
         if (is.null(spec)) next
         pid <- sprintf("%sgseaplot_%s_%s", id_prefix, method, format_contrast_file_label(contrast))
-        register_plot(reg, pid, list(data = spec$data, layout = spec$layout))
+        register_plot(reg, pid, list(data = spec$data, layout = spec$layout, config = spec$config))
         if (is.null(cellmap[[contrast]])) cellmap[[contrast]] <- list()
         cellmap[[contrast]][[method]] <- list(id = pid, h = enrich_plot_height(spec$n_terms))
         methods_seen <- union(methods_seen, method)
@@ -1041,7 +1045,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
       spec <- tryCatch(build_ora_plotly(ora_all), error = function(e) NULL)
       if (is.null(spec)) next
       pid <- sprintf("%soraplot_%s", id_prefix, method)
-      register_plot(reg, pid, list(data = spec$data, layout = spec$layout))
+      register_plot(reg, pid, list(data = spec$data, layout = spec$layout, config = spec$config))
       ora_items[[length(ora_items) + 1L]] <- list(
         id = sprintf("%sora_%s", id_prefix, method),
         label = method,
@@ -1059,7 +1063,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
       if (!is.null(prof_spec)) {
         prof_csv <- file.path(deseq2_dir, "DEG", "DEGCluster", sprintf("DEGCluster_profile_%s.csv", project))
         prof_id <- sprintf("%sclusterprofile", id_prefix)
-        register_plot(reg, prof_id, list(data = prof_spec$data, layout = prof_spec$layout))
+        register_plot(reg, prof_id, list(data = prof_spec$data, layout = prof_spec$layout, config = prof_spec$config))
         ora_inner <- c(ora_inner, sprintf(
           '<div class="pic-enrich-item"><h4>Cluster expression profiles (per-cluster rlog by group)</h4>%s<div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
           src_note(report_rel_path(prof_csv, proj_dir)), prof_id, prof_spec$height
