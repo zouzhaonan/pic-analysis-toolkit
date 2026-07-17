@@ -892,19 +892,8 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
   f <- file.path(deseq2_dir, "DEG", "DEGCluster", sprintf("DEGCluster_profile_%s.csv", project))
   if (!file.exists(f)) return(NULL)
   prof <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
-  if (nrow(prof) == 0 || !all(c("ens_gene", "sample", "cluster_id", "group") %in% colnames(prof))) return(NULL)
-
-  # rlog ではなく normalized count を y に使う (normalizedCountTable から (gene, sample) で引く)
-  ntab_f <- file.path(deseq2_dir, sprintf("normalizedCountTable_%s.csv", project))
-  if (!file.exists(ntab_f)) return(NULL)
-  ntab <- suppressMessages(readr::read_csv(ntab_f, show_col_types = FALSE, progress = FALSE))
-  ntab <- as.data.frame(ntab, check.names = FALSE)
-  scols <- setdiff(colnames(ntab), c("ens_gene", "ext_gene", "biotype", "chr"))
-  nmat <- as.matrix(ntab[, scols, drop = FALSE]); storage.mode(nmat) <- "double"
-  rn <- as.character(ntab$ens_gene)
-  gi <- match(as.character(prof$ens_gene), rn)
-  si <- match(as.character(prof$sample), scols)
-  prof$value <- ifelse(is.na(gi) | is.na(si), NA_real_, nmat[cbind(gi, si)])
+  if (nrow(prof) == 0 || !all(c("rlog_expr", "cluster_id", "group") %in% colnames(prof))) return(NULL)
+  prof$value <- suppressWarnings(as.numeric(prof$rlog_expr))
   prof <- prof[is.finite(prof$value), , drop = FALSE]
   if (nrow(prof) == 0) return(NULL)
 
@@ -945,7 +934,7 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
     # 全パネル 0 起点 (free-y だが下端は 0)。y=0 の黒線 (zeroline) は消す。
     layout[[yname]] <- list(domain = list(0, 1), anchor = xref, automargin = TRUE, rangemode = "tozero",
                             zeroline = FALSE,
-                            title = if (i == 1) list(text = "normalized count") else list(text = ""),
+                            title = if (i == 1) list(text = "rlog expression") else list(text = ""),
                             showline = TRUE, mirror = TRUE, linecolor = "#cdd7e2")
     sub <- prof[as.character(prof$cluster_id) == cl, , drop = FALSE]
     for (g in groups) {
@@ -960,7 +949,7 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
         line = list(color = col, width = 1.2),
         marker = list(color = col, size = 3, opacity = 0.55),
         xaxis = xref, yaxis = yref,
-        hovertemplate = sprintf("%s<br>norm. count: %%{y:.1f}<extra></extra>", html_escape(g))
+        hovertemplate = sprintf("%s<br>rlog: %%{y:.2f}<extra></extra>", html_escape(g))
       )
     }
     # strip ラベルは枠なし (テキストのみ)
@@ -1081,7 +1070,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         prof_id <- sprintf("%sclusterprofile", id_prefix)
         register_plot(reg, prof_id, list(data = prof_spec$data, layout = prof_spec$layout, config = prof_spec$config))
         ora_inner <- c(ora_inner, sprintf(
-          '<div class="pic-enrich-item"><h4>Cluster expression profiles (per-cluster normalized count by group)</h4>%s<div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
+          '<div class="pic-enrich-item"><h4>Cluster expression profiles (per-cluster rlog by group)</h4>%s<div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
           src_note(report_rel_path(prof_csv, proj_dir)), prof_id, prof_spec$height
         ))
       }
