@@ -322,6 +322,55 @@ group_palette <- function(groups) {
   stats::setNames(cols, ug)
 }
 
+# sample_sheet(_<frac>).tsv を読み、レポート全体で使う sample / group の正順を返す。
+# 見つからなければ NULL (この場合は従来どおり mapping_sum の順に従う)。
+pic_read_sample_sheet <- function(out_dir, frac_key = NULL) {
+  cand <- if (!is.null(frac_key)) file.path(out_dir, sprintf("sample_sheet_%s.tsv", frac_key))
+          else file.path(out_dir, "sample_sheet.tsv")
+  if (!file.exists(cand)) return(NULL)
+  df <- tryCatch(suppressMessages(readr::read_tsv(cand, show_col_types = FALSE, progress = FALSE)),
+                 error = function(e) NULL)
+  if (is.null(df) || !("sample" %in% colnames(df))) return(NULL)
+  df <- as.data.frame(df, check.names = FALSE)
+  list(samples = as.character(df$sample),
+       groups = if ("group" %in% colnames(df)) unique(as.character(df$group)) else character(0))
+}
+
+# data.frame を col の値が order に一致する順に並べ替える。order にない値は末尾に元順で残す。
+pic_reorder_rows <- function(x, col, order) {
+  if (is.null(order) || length(order) == 0 || !(col %in% colnames(x))) return(x)
+  v <- as.character(x[[col]])
+  rank <- match(v, order)
+  na <- is.na(rank)
+  rank[na] <- length(order) + seq_len(sum(na))
+  x[order(rank), , drop = FALSE]
+}
+
+# 文字列ベクトルを order の順に並べ替える (order にないものは末尾)。
+pic_reorder_vec <- function(v, order) {
+  if (is.null(order) || length(order) == 0) return(v)
+  rank <- match(v, order)
+  na <- is.na(rank); rank[na] <- length(order) + seq_len(sum(na))
+  v[order(rank)]
+}
+
+# contrast (aspect "num / den") を group の正順に並べ替える (大文字小文字は無視)。
+pic_order_contrasts <- function(aspects, group_order) {
+  if (is.null(group_order) || length(group_order) == 0) return(aspects)
+  go <- tolower(group_order)
+  keyf <- function(a) {
+    sp <- strsplit(a, " / ", fixed = TRUE)[[1]]
+    num <- if (length(sp) >= 1) tolower(sp[[1]]) else ""
+    den <- if (length(sp) >= 2) tolower(sp[[2]]) else ""
+    ni <- match(num, go); di <- match(den, go)
+    if (is.na(ni)) ni <- length(go) + 1L
+    if (is.na(di)) di <- length(go) + 1L
+    ni * 1000 + di
+  }
+  ks <- vapply(aspects, keyf, numeric(1))
+  aspects[order(ks)]
+}
+
 build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefix = "", proj_dir = NULL) {
   f <- file.path(deseq2_dir, "PCA", sprintf("PCA_RegLog_%s.csv", project))
   if (!file.exists(f)) return(NULL)
@@ -333,6 +382,8 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
   # パレットに無いグループがあれば補完
   miss <- setdiff(unique(d$group), names(pal))
   if (length(miss) > 0) pal <- c(pal, group_palette(miss))
+  # group (凡例) の順は palette (= sample_sheet) の順に従う
+  groups_ord <- pic_reorder_vec(unique(as.character(d$group)), names(pal))
 
   # ---- 寄与率 (scree) ----
   if (!is.null(varpct)) {
@@ -363,7 +414,7 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
     xc <- pr[[1]]; yc <- pr[[2]]
     if (!all(c(xc, yc) %in% colnames(d))) next
     traces <- list()
-    for (g in unique(d$group)) {
+    for (g in groups_ord) {
       sub <- d[d$group == g, , drop = FALSE]
       traces[[length(traces) + 1]] <- list(
         x = as.list(as.numeric(sub[[xc]])),
@@ -409,7 +460,7 @@ zcolor_vec <- function(v, zmax) {
 }
 
 # DEG ヒートマップを、サンプル行ヘッダ固定・縦スクロール可能な HTML 表として生成する。
-build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal = NULL, proj_dir = NULL) {
+build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal = NULL, proj_dir = NULL, sample_order = NULL) {
   f <- file.path(deseq2_dir, "DEG", sprintf("DEG_normalizedCountTable_%s.csv", project))
   if (!file.exists(f)) return(NULL)
   d <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
@@ -417,6 +468,8 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
   ann <- c("ens_gene", "ext_gene", "biotype", "chr")
   sample_cols <- setdiff(colnames(d), ann)
   if (length(sample_cols) < 2 || nrow(d) < 2) return(NULL)
+  # 列 (サンプル) を sample_sheet の順に並べる
+  sample_cols <- pic_reorder_vec(sample_cols, sample_order)
 
   labels <- if ("ext_gene" %in% colnames(d)) {
     lab <- as.character(d$ext_gene)
@@ -519,17 +572,24 @@ scatter_traces_by_dir <- function(df, x, y, numerator, denominator, hovertemplat
   traces
 }
 
-build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", stats_src = "") {
+build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", stats_src = "", group_order = NULL) {
   aspects <- unique(stats$aspect)
-  # contrast を DEG 数で降順に並べる
+  # contrast の並び順: sample_sheet の group 順 (なければ DEG 数で降順)
+  if (!is.null(group_order)) {
+    aspects <- pic_order_contrasts(aspects, group_order)
+  } else {
+    deg_per <- vapply(aspects, function(a) {
+      if (!is.null(deg_counts) && a %in% names(deg_counts)) deg_counts[[a]] else {
+        sum(stats$aspect == a & !is.na(stats$padj) & stats$padj < fdr)
+      }
+    }, numeric(1))
+    aspects <- aspects[order(deg_per, decreasing = TRUE)]
+  }
   deg_per <- vapply(aspects, function(a) {
     if (!is.null(deg_counts) && a %in% names(deg_counts)) deg_counts[[a]] else {
       sum(stats$aspect == a & !is.na(stats$padj) & stats$padj < fdr)
     }
   }, numeric(1))
-  ord <- order(deg_per, decreasing = TRUE)
-  aspects <- aspects[ord]
-  deg_per <- deg_per[ord]
 
   items <- list()
   for (k in seq_along(aspects)) {
@@ -682,7 +742,7 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL)
 
 # 正規化カウント (normalizedCountTable) を id 付きで登録する (HTML に埋め込む用)。
 # stats があれば pvalue 最小の 5 遺伝子を default として保持する。
-register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pal, stats = NULL) {
+register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pal, stats = NULL, sample_order = NULL, group_order = NULL) {
   f <- file.path(deseq2_dir, sprintf("normalizedCountTable_%s.csv", project))
   if (!file.exists(f)) return(FALSE)
   d <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
@@ -690,9 +750,11 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
   ann <- c("ens_gene", "ext_gene", "biotype", "chr")
   sample_cols <- setdiff(colnames(d), ann)
   if (length(sample_cols) < 1 || nrow(d) < 1) return(FALSE)
-  # サンプルを group 順に並べる
+  # サンプルを group 順 -> sample_sheet 順に並べる
   grp <- vapply(sample_cols, function(s) if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else "all", character(1))
-  ord <- order(grp, sample_cols)
+  grank <- if (!is.null(group_order)) { r <- match(grp, group_order); r[is.na(r)] <- length(group_order) + 1L; r } else match(grp, sort(unique(grp)))
+  srank <- if (!is.null(sample_order)) { r <- match(sample_cols, sample_order); r[is.na(r)] <- length(sample_order) + 1L; r } else seq_along(sample_cols)
+  ord <- order(grank, srank, sample_cols)
   sample_cols <- sample_cols[ord]; grp <- unname(grp[ord])
   ug <- unique(grp)
   pal <- if (!is.null(group_pal)) group_pal else group_palette(ug)
@@ -719,6 +781,7 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
     }
     if ("padj" %in% colnames(stats)) {
       contrasts <- unique(as.character(stats$aspect))
+      if (!is.null(group_order)) contrasts <- pic_order_contrasts(contrasts, group_order)
       qmat <- matrix(NA_real_, nrow = length(ens_all), ncol = length(contrasts))
       for (ci in seq_along(contrasts)) {
         sub <- stats[as.character(stats$aspect) == contrasts[ci], c("ens_gene", "padj")]
@@ -745,8 +808,8 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
 }
 
 # 遺伝子発現セクション: 入力した Gene ID/symbol を box+beeswarm で表示する UI。
-build_expression_section <- function(reg, deseq2_dir, project, group_map, group_pal, stats, id, section_id, heading, proj_dir = NULL) {
-  if (!register_expr_data(reg, id, deseq2_dir, project, group_map, group_pal, stats)) return("")
+build_expression_section <- function(reg, deseq2_dir, project, group_map, group_pal, stats, id, section_id, heading, proj_dir = NULL, sample_order = NULL, group_order = NULL) {
+  if (!register_expr_data(reg, id, deseq2_dir, project, group_map, group_pal, stats, sample_order, group_order)) return("")
   countf <- file.path(deseq2_dir, sprintf("normalizedCountTable_%s.csv", project))
   sprintf(paste0(
     '<section id="%s"><h2>%s</h2>',
@@ -841,6 +904,8 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
   clab <- function(cl) if (!is.null(nmap) && cl %in% names(nmap)) sprintf("%s (n=%s)", cl, nmap[[cl]]) else cl
   groups <- unique(as.character(prof$group))
   pal <- if (!is.null(group_pal)) group_pal else group_palette(groups)
+  # group を palette (= sample_sheet) の順に並べる
+  if (!is.null(group_pal)) groups <- pic_reorder_vec(groups, names(group_pal))
 
   ncl <- length(clusters)
   gap <- 0.045
@@ -891,7 +956,7 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
 }
 
 # enrichment セクションの中身 (h3 GSEA / ORA) を返す。<section> ラッパは付けない。
-enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, proj_dir = NULL, id_prefix = "", reg = NULL) {
+enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, proj_dir = NULL, id_prefix = "", reg = NULL, group_order = NULL) {
   if (is.null(enrich_dir) || is.na(enrich_dir) || !dir.exists(enrich_dir)) return("")
   ecfg <- pic_plot_spec()$plot$enrichment
   parts <- character(0)
@@ -929,8 +994,10 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
     }
     contrasts <- names(cellmap)
     if (length(contrasts) > 0) {
-      # contrast の並び順: DEG 数降順 (なければ名前順)
-      if (!is.null(deg_counts)) {
+      # contrast の並び順: sample_sheet の group 順 (なければ DEG 数降順)
+      if (!is.null(group_order)) {
+        contrasts <- pic_order_contrasts(contrasts, group_order)
+      } else if (!is.null(deg_counts)) {
         keyv <- vapply(contrasts, function(a) if (a %in% names(deg_counts)) deg_counts[[a]] else 0, numeric(1))
         contrasts <- contrasts[order(keyv, decreasing = TRUE)]
       } else {
@@ -1012,8 +1079,8 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
 }
 
 # 通常レポート用の enrichment セクション (<section id="enrich"> でラップ)。
-section_enrichment <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, heading = "4. Enrichment", proj_dir = NULL, id_prefix = "", reg = NULL) {
-  inner <- enrichment_blocks(enrich_dir, project, tmp_dir, deg_counts, deseq2_dir, group_pal, proj_dir, id_prefix, reg)
+section_enrichment <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, heading = "4. Enrichment", proj_dir = NULL, id_prefix = "", reg = NULL, group_order = NULL) {
+  inner <- enrichment_blocks(enrich_dir, project, tmp_dir, deg_counts, deseq2_dir, group_pal, proj_dir, id_prefix, reg, group_order)
   if (!nzchar(inner)) inner <- '<p>No enrichment plots were generated.</p>'
   sprintf('<section id="enrich"><h2>%s</h2>%s</section>', heading, inner)
 }
@@ -1055,12 +1122,20 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   tmp_dir <- file.path(tempdir(), paste0("picreport_", project))
   dir.create(tmp_dir, recursive = TRUE, showWarnings = FALSE)
 
+  # sample_sheet の順を正順とする (なければ mapping_sum の順)。
+  sheet <- pic_read_sample_sheet(out_dir)
+  sample_order <- if (!is.null(sheet)) sheet$samples else NULL
+  group_order  <- if (!is.null(sheet) && length(sheet$groups) > 0) sheet$groups else NULL
+  if (!is.null(msum)) msum <- pic_reorder_rows(msum, "sample", sample_order)
+
   # サンプル -> グループの対応とグループ配色 (PCA / heatmap で共有)
   group_map <- NULL
   group_pal <- NULL
   if (!is.null(msum) && all(c("sample", "group") %in% colnames(msum))) {
     group_map <- stats::setNames(as.character(msum$group), as.character(msum$sample))
-    group_pal <- group_palette(as.character(msum$group))
+    go <- if (!is.null(group_order)) pic_reorder_vec(unique(as.character(msum$group)), group_order)
+          else unique(as.character(msum$group))
+    group_pal <- group_palette(go)
   }
 
   # セクション組み立て (順序: QC -> Aggregation -> PCA -> DEG -> Enrichment)
@@ -1078,18 +1153,18 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
                     '</section>')
 
   # 4. DEG (heatmap + MA/volcano)
-  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir)
-  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, "", report_rel_path(desc$stats_csv, out_dir))
+  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order)
+  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, "", report_rel_path(desc$stats_csv, out_dir), group_order)
   sec_deg <- paste0(sprintf('<section id="deg"><h2>4. DEG (DESeq2; FDR = %s)</h2>', format(fdr, trim = TRUE)),
                     if (!is.null(hm_html)) hm_html else "",
                     contrast_html,
                     '</section>')
 
   # 5. Gene expression (normalized counts, interactive)
-  sec_expr <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats, "expr", "expr", "5. Gene expression", out_dir)
+  sec_expr <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats, "expr", "expr", "5. Gene expression", out_dir, sample_order, group_order)
 
   # 6. Enrichment
-  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "6. Enrichment", out_dir, "", reg)
+  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "6. Enrichment", out_dir, "", reg, group_order)
   if (is.null(sec_enrich)) sec_enrich <- ""
 
   nav <- paste0('<nav class="pic-nav"><a href="#qc">QC</a>',
@@ -1221,14 +1296,21 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
     for (a in unique(stats$aspect)) deg_counts[[a]] <- sum(stats$aspect == a & !is.na(stats$padj) & stats$padj < fdr)
   }
 
+  # sample_sheet_<frac>.tsv の順を正順とする
+  sheet <- pic_read_sample_sheet(out_dir, frac_key)
+  sample_order <- if (!is.null(sheet)) sheet$samples else NULL
+  group_order  <- if (!is.null(sheet) && length(sheet$groups) > 0) sheet$groups else NULL
+
   # 画分の group 配色は、その画分の mapping_sum から取得
   msum <- NULL; group_map <- NULL; group_pal <- NULL
   msum_files <- list.files(frac_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = TRUE)
   if (length(msum_files) > 0) {
-    msum <- read_mapping_sum(msum_files[[1]])
+    msum <- pic_reorder_rows(read_mapping_sum(msum_files[[1]]), "sample", sample_order)
     if (all(c("sample", "group") %in% colnames(msum))) {
       group_map <- stats::setNames(as.character(msum$group), as.character(msum$sample))
-      group_pal <- group_palette(as.character(msum$group))
+      go <- if (!is.null(group_order)) pic_reorder_vec(unique(as.character(msum$group)), group_order)
+            else unique(as.character(msum$group))
+      group_pal <- group_palette(go)
     }
   }
 
@@ -1262,8 +1344,8 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
   # DEG (heatmap + MA/volcano)
   n <- n + 1L
   sid <- paste0(frac_key, "_deg")
-  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir)
-  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir))
+  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order)
+  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir), group_order)
   secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · DEG (DESeq2; FDR = %s)</h2>%s%s</section>',
                           sid, n, label, format(fdr, trim = TRUE),
                           if (!is.null(hm_html)) hm_html else "", contrast_html))
@@ -1271,14 +1353,15 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
   # Gene expression (normalized counts)
   sid <- paste0(frac_key, "_expr")
   expr_html <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats,
-                                        paste0(frac_key, "__expr"), sid, sprintf("%d. %s · Expression", n + 1L, label), out_dir)
+                                        paste0(frac_key, "__expr"), sid, sprintf("%d. %s · Expression", n + 1L, label), out_dir,
+                                        sample_order, group_order)
   if (nzchar(expr_html)) {
     n <- n + 1L
     secs <- c(secs, expr_html)
     navs <- c(navs, sprintf('<a href="#%s">Expression</a>', sid))
   }
   # Enrichment
-  enrich_inner <- enrichment_blocks(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, out_dir, id_prefix, reg)
+  enrich_inner <- enrichment_blocks(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, out_dir, id_prefix, reg, group_order)
   if (nzchar(enrich_inner)) {
     n <- n + 1L
     sid <- paste0(frac_key, "_enrich")
