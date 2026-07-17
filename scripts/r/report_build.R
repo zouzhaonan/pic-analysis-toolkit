@@ -291,10 +291,9 @@ read_mapping_sum <- function(path) {
 section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC", src = "", group_map = NULL, group_pal = NULL) {
   fate_cols <- names(PIC_FATE_COLORS)
   have_fate <- all(fate_cols %in% colnames(msum))
-  cap_id <- paste0(section_id, "_cap")
-  parts <- c(sprintf('<section id="%s"><h2>%s</h2>', section_id, heading), src_note(src),
-             png_button(cap_id, "mapping_qc"),
-             sprintf('<div class="pic-capbox" id="%s">', cap_id))
+  rd_cap <- paste0(section_id, "_rd_cap")
+  sd_cap <- paste0(section_id, "_sd_cap")
+  parts <- c(sprintf('<section id="%s"><h2>%s</h2>', section_id, heading))
 
   # サンプル名を group 配色で (heatmap と同じ)
   scol <- function(s) {
@@ -304,7 +303,9 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
 
   # ---- 100% 積み上げ棒 ----
   if (have_fate) {
-    parts <- c(parts, '<h3>Read distribution</h3>')
+    parts <- c(parts, '<h3>Read distribution</h3>', src_note(src),
+               png_button(rd_cap, "read_distribution"),
+               sprintf('<div class="pic-capbox" id="%s">', rd_cap))
     # 目盛り (0-100%)
     ruler <- '<div class="pic-bar-ruler"><span>0%</span><span>20%</span><span>40%</span><span>60%</span><span>80%</span><span>100%</span></div>'
     rows <- character(0)
@@ -342,12 +343,14 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
       '<div class="pic-bars">',
       ruler,
       paste(rows, collapse = "\n"),
-      '</div>'
+      '</div></div>'   # close pic-bars, pic-capbox(rd)
     )
   }
 
   # ---- データバー表 ----
-  parts <- c(parts, '<h3>Sequencing depth</h3>')
+  parts <- c(parts, '<h3>Sequencing depth</h3>',
+             png_button(sd_cap, "sequencing_depth"),
+             sprintf('<div class="pic-capbox" id="%s">', sd_cap))
   bar_cols <- list(
     total = list(label = "total", grad = c("#9DC3E6", "#D9E7F5")),
     umis  = list(label = "umis",  grad = c("#63C384", "#D6EFDD")),
@@ -1427,13 +1430,19 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
 
   grp_panel  <- group_toggle_panel(group_pal)
   tb <- build_tabs(list(
-    list(html = sec_qc,     label = "QC",          controls = grp_panel),
+    list(html = sec_qc, label = "QC", shared_controls = grp_panel, subs = list(
+      list(label = "Read distribution", id = "qc-readdist", marker = ""),
+      list(label = "Sequencing depth",  id = "qc-depth",    marker = "<h3>Sequencing depth"))),
     list(html = sec_agg,    label = "Aggregation", controls = grp_panel),
     list(html = sec_cor,    label = "Correlation", controls = grp_panel),
     list(html = sec_pca,    label = "PCA",         controls = grp_panel),
-    list(html = sec_deg,    label = "DEG"),
+    list(html = sec_deg, label = "DEG", subs = list(
+      list(label = "Heatmap",     id = "deg-heatmap",   marker = ""),
+      list(label = "MA / volcano", id = "deg-mavolcano", marker = "<h3>Differential expression (MA"))),
     list(html = sec_expr,   label = "Expression"),
-    list(html = sec_enrich, label = "Enrichment")
+    list(html = sec_enrich, label = "Enrichment", subs = list(
+      list(label = "GSEA", id = "enrich-gsea", marker = ""),
+      list(label = "ORA",  id = "enrich-ora",  marker = '<details class="pic-enrich-group" open><summary>ORA')))
   ))
   out_html <- file.path(out_dir, sprintf("report_%s.html", project))
   render_report_page(project, tb$bar, tb$panels, reg, asset_dir, out_html)
@@ -1441,21 +1450,9 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   out_html
 }
 
-# 1 タブ (= 1 セクション) を組み立てる。
-# desc があれば info(丸i)+hover の吹き出し、controls があれば左ペイン。
-pic_tab_panel <- function(id, title, view, desc = "", controls = "", active = FALSE) {
-  info <- if (nzchar(desc)) sprintf('<span class="pic-info" tabindex="0">i<span class="pic-info-pop">%s</span></span>', desc) else ""
-  pane_cls <- if (nzchar(controls)) "pic-2pane" else "pic-2pane pic-1pane"
-  ctrl <- if (nzchar(controls)) sprintf('<aside class="pic-ctrl">%s</aside>', controls) else ""
-  sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s</div><div class="%s">%s<div class="pic-view">%s</div></div></section>',
-          if (active) " active" else "", id, title, info, pane_cls, ctrl, view)
-}
-
-# 既存のフル <section> HTML からタブを作る (title / inner を抽出して再ラップ)。
-# 本文中の説明文 (<p class="pic-note">) は抽出して info(丸i)吹き出しにまとめ、
-# デフォルト非表示にする。選択の合図 (pic-pick) は本文に残す。
-section_to_tab <- function(sec_html, active = FALSE, controls = "") {
-  if (!nzchar(sec_html)) return("")
+# <section id><h2>title</h2>inner</section> から (id, title, inner, desc) を取り出す。
+# 本文中の説明文 (<p class="pic-note">) は desc に集約し inner から除去。
+pic_extract_section <- function(sec_html) {
   id <- regmatches(sec_html, regexpr('(?<=<section id=")[^"]+', sec_html, perl = TRUE))
   title <- regmatches(sec_html, regexpr('(?<=<h2>).*?(?=</h2>)', sec_html, perl = TRUE))
   inner <- sub('^<section[^>]*><h2>.*?</h2>', '', sec_html)
@@ -1463,22 +1460,72 @@ section_to_tab <- function(sec_html, active = FALSE, controls = "") {
   notes <- unlist(regmatches(inner, gregexpr('<p class="pic-note">.*?</p>', inner, perl = TRUE)))
   desc <- if (length(notes) > 0) paste(sub('<p class="pic-note">', '<p>', notes), collapse = "") else ""
   inner <- gsub('<p class="pic-note">.*?</p>', '', inner, perl = TRUE)
-  pic_tab_panel(id, title, inner, desc, controls, active)
+  list(id = id, title = title, inner = inner, desc = desc)
 }
 
-# セクション HTML 群からタブバー + パネルを組み立てる。
-# tabs: list(list(html=, label=), ...)。空 html は除外。
+info_badge <- function(desc) {
+  if (!nzchar(desc)) return("")
+  sprintf('<span class="pic-info" tabindex="0">i<span class="pic-info-pop">%s</span></span>', desc)
+}
+
+# inner を markers (各 sub の開始文字列。先頭は "") で分割してチャンクを返す。
+pic_split_inner <- function(inner, markers) {
+  pos <- vapply(markers, function(mk) {
+    if (!nzchar(mk)) return(1L)
+    p <- regexpr(mk, inner, fixed = TRUE)[[1]]; if (p < 0) NA_integer_ else as.integer(p)
+  }, integer(1))
+  n <- length(markers)
+  ends <- c(pos[-1], nchar(inner) + 1L)
+  vapply(seq_len(n), function(i) {
+    s <- pos[[i]]; e <- ends[[i]]
+    if (is.na(s)) return("")
+    if (is.na(e)) e <- nchar(inner) + 1L
+    substr(inner, s, e - 1L)
+  }, character(1))
+}
+
+# 1 タブを組み立てる。subs 指定時はセクション内サブタブ、無ければ通常 (左=controls / 右=view)。
+# subs: list(list(label=, id=, marker=), ...)。shared_controls 指定時は左パネルを共有し
+# サブタブは右ビューのみ切替。無指定時はサブパネルを丸ごと切替。
+pic_tab_panel <- function(sec_html, active = FALSE, controls = "", subs = NULL, shared_controls = "") {
+  x <- pic_extract_section(sec_html)
+  info <- info_badge(x$desc)
+  if (is.null(subs)) {
+    pane_cls <- if (nzchar(controls)) "pic-2pane" else "pic-2pane pic-1pane"
+    ctrl <- if (nzchar(controls)) sprintf('<aside class="pic-ctrl">%s</aside>', controls) else ""
+    return(sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s</div><div class="%s">%s<div class="pic-view">%s</div></div></section>',
+                   if (active) " active" else "", x$id, x$title, info, pane_cls, ctrl, x$inner))
+  }
+  chunks <- pic_split_inner(x$inner, vapply(subs, function(s) s$marker, character(1)))
+  btns <- vapply(seq_along(subs), function(i) sprintf(
+    '<button class="pic-subtabbtn%s" type="button" data-sub="%s">%s</button>',
+    if (i == 1L) " active" else "", subs[[i]]$id, html_escape(subs[[i]]$label)), character(1))
+  panels <- vapply(seq_along(subs), function(i) sprintf(
+    '<div class="pic-subpanel%s" id="%s">%s</div>', if (i == 1L) " active" else "", subs[[i]]$id, chunks[[i]]), character(1))
+  subtab_bar <- sprintf('<nav class="pic-subtabs">%s</nav>', paste(btns, collapse = ""))
+  body <- if (nzchar(shared_controls)) {
+    sprintf('<div class="pic-2pane"><aside class="pic-ctrl">%s</aside><div class="pic-view">%s</div></div>',
+            shared_controls, paste(panels, collapse = ""))
+  } else paste(panels, collapse = "")
+  sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s%s</div>%s</section>',
+          if (active) " active" else "", x$id, x$title, info, subtab_bar, body)
+}
+
+# タブバー + パネルを組み立てる。tabs: list(list(html=, label=, controls=, subs=, shared_controls=))。
 build_tabs <- function(tabs) {
   tabs <- Filter(function(t) nzchar(t$html), tabs)
   if (length(tabs) == 0) return(list(bar = "", panels = ""))
   btns <- character(0); panels <- character(0)
   for (i in seq_along(tabs)) {
     active <- (i == 1L)
-    id <- regmatches(tabs[[i]]$html, regexpr('(?<=<section id=")[^"]+', tabs[[i]]$html, perl = TRUE))
+    t <- tabs[[i]]
+    id <- regmatches(t$html, regexpr('(?<=<section id=")[^"]+', t$html, perl = TRUE))
     btns <- c(btns, sprintf('<button class="pic-tabbtn%s" type="button" data-target="%s">%s</button>',
-                            if (active) " active" else "", id, html_escape(tabs[[i]]$label)))
-    ctrl <- if (!is.null(tabs[[i]]$controls)) tabs[[i]]$controls else ""
-    panels <- c(panels, section_to_tab(tabs[[i]]$html, active, controls = ctrl))
+                            if (active) " active" else "", id, html_escape(t$label)))
+    panels <- c(panels, pic_tab_panel(t$html, active,
+                                      controls = if (!is.null(t$controls)) t$controls else "",
+                                      subs = t$subs,
+                                      shared_controls = if (!is.null(t$shared_controls)) t$shared_controls else ""))
   }
   list(bar = sprintf('<nav class="pic-tabs">%s</nav>', paste(btns, collapse = "")),
        panels = paste(panels, collapse = "\n"))

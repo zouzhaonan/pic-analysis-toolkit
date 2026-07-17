@@ -22,8 +22,15 @@ section{background:#fff;border:1px solid var(--line);border-radius:10px;padding:
 main.pic-main{max-width:1400px}
 section.pic-tab{display:none}
 section.pic-tab.active{display:block}
-.pic-tab-head{display:flex;align-items:center;gap:10px;border-bottom:2px solid var(--accent);padding-bottom:6px;margin-bottom:14px}
+.pic-tab-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:2px solid var(--accent);padding-bottom:6px;margin-bottom:14px}
 .pic-tab-head h2{border:none;padding:0;margin:0}
+/* セクション内サブタブ */
+.pic-subtabs{display:flex;gap:3px;margin-left:auto}
+.pic-subtabbtn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--muted);font-size:13px;font-weight:600;padding:5px 14px;cursor:pointer;border-radius:6px}
+.pic-subtabbtn:hover{background:#eef3fb;color:var(--accent)}
+.pic-subtabbtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.pic-subpanel{display:none}
+.pic-subpanel.active{display:block}
 /* info (丸 i) + hover 吹き出し */
 .pic-info{position:relative;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--accent);color:var(--accent);font-size:12px;font-weight:700;font-style:italic;font-family:Georgia,serif;cursor:help;flex:none}
 .pic-info-pop{display:none;position:absolute;left:26px;top:50%;transform:translateY(-50%);z-index:80;width:min(520px,70vw);background:#1f2933;color:#fff;font-weight:400;font-style:normal;font-size:13px;line-height:1.5;padding:10px 13px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.25)}

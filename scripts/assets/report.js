@@ -6,6 +6,7 @@
     // 非表示 (別タブ / 閉じた details / 非表示ブロック) 内は描画しない (表示された時に描く)
     if (el.closest) {
       if (el.closest("section.pic-tab:not(.active)")) return;
+      if (el.closest(".pic-subpanel:not(.active)")) return;
       if (el.closest("details:not([open])")) return;
       if (el.closest(".pic-select-item[hidden]")) return;
     }
@@ -397,6 +398,18 @@
         } else {
           t.hidden = true;
         }
+      });
+    });
+    // セクション内サブタブの切替
+    document.querySelectorAll(".pic-subtabbtn").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var sec = b.closest("section.pic-tab"); if (!sec) return;
+        sec.querySelectorAll(".pic-subtabbtn").forEach(function (x) { x.classList.toggle("active", x === b); });
+        sec.querySelectorAll(".pic-subpanel").forEach(function (p) {
+          var on = (p.id === b.dataset.sub);
+          p.classList.toggle("active", on);
+          if (on) { renderWithin(p); resizeWithin(p); }
+        });
       });
     });
     // GSEA の contrast × method マトリクスを初期化
