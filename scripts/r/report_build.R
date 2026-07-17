@@ -39,10 +39,14 @@ report_rel_path <- function(path, base) {
   if (startsWith(p, b2)) substring(p, nchar(b2) + 1) else basename(p)
 }
 
-# 元データの場所を示すキャプション。
+# 元データの場所を示すキャプション (グレー背景 + 黄色文字 + コピーボタン)。
 src_note <- function(rel) {
   if (is.null(rel) || !nzchar(rel)) return("")
-  sprintf('<p class="pic-src">source: <code>%s</code></p>', html_escape(rel))
+  e <- html_escape(rel)
+  sprintf(paste0('<p class="pic-src"><span class="pic-src-label">source</span>',
+                 '<code class="pic-src-path">%s</code>',
+                 '<button class="pic-src-copy" type="button" data-copy="%s">copy path</button></p>'),
+          e, e)
 }
 
 # 複数ブロックをチェックボックスで表示選択する UI。既定は先頭のみ表示。
@@ -209,8 +213,12 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
     # 目盛り (0-100%)
     ruler <- '<div class="pic-bar-ruler"><span>0%</span><span>20%</span><span>40%</span><span>60%</span><span>80%</span><span>100%</span></div>'
     rows <- character(0)
+    grp_prev <- NULL
     for (i in seq_len(nrow(msum))) {
       sample <- as.character(msum$sample[[i]])
+      g_cur <- if ("group" %in% colnames(msum)) as.character(msum$group[[i]]) else NA
+      sep_cls <- if (!is.null(grp_prev) && !identical(g_cur, grp_prev)) " pic-grp-start" else ""
+      grp_prev <- g_cur
       vals <- vapply(fate_cols, function(cc) suppressWarnings(as.numeric(msum[[cc]][[i]])), numeric(1))
       vals[!is.finite(vals)] <- 0
       tot <- sum(vals)
@@ -226,8 +234,8 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
         ))
       }
       rows <- c(rows, sprintf(
-        '<div class="pic-bar-row"><div class="pic-bar-label" style="color:%s;font-weight:600">%s</div><div class="pic-bar-track">%s</div></div>',
-        scol(sample), html_escape(sample), paste(segs, collapse = "")
+        '<div class="pic-bar-row%s"><div class="pic-bar-label" style="color:%s;font-weight:600">%s</div><div class="pic-bar-track">%s</div></div>',
+        sep_cls, scol(sample), html_escape(sample), paste(segs, collapse = "")
       ))
     }
     legend_items <- vapply(fate_cols, function(cc) sprintf(
@@ -265,7 +273,11 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
   thead <- paste0(thead, "</tr>")
 
   trows <- character(0)
+  grp_prev_t <- NULL
   for (i in seq_len(nrow(msum))) {
+    g_cur <- if ("group" %in% colnames(msum)) as.character(msum$group[[i]]) else NA
+    sep_cls <- if (!is.null(grp_prev_t) && !identical(g_cur, grp_prev_t)) " pic-grp-start" else ""
+    grp_prev_t <- g_cur
     cells <- sprintf('<td class="pic-td-sample" style="color:%s">%s</td>',
                      scol(as.character(msum$sample[[i]])), html_escape(as.character(msum$sample[[i]])))
     for (cc in names(bar_cols)) {
@@ -288,7 +300,7 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
       v <- suppressWarnings(as.numeric(msum[[cc]][[i]]))
       cells <- paste0(cells, sprintf('<td class="pic-td-num">%s</td>', if (is.finite(v)) fmt_ratio(v) else "NA"))
     }
-    trows <- c(trows, sprintf("<tr>%s</tr>", cells))
+    trows <- c(trows, sprintf('<tr class="%s">%s</tr>', trimws(sep_cls), cells))
   }
 
   parts <- c(parts,
@@ -451,6 +463,8 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
   # 1 行目: 寄与率のみ / 2 行目: PC1-2, PC2-3
   paste0(
     src_note(report_rel_path(f, proj_dir)),
+    '<p class="pic-note">PCA summarizes each sample&rsquo;s overall expression into a few axes so you can see how samples relate. ',
+    'Samples close together are similar; replicates of the same group should cluster. The scree plot shows how much variance each axis captures.</p>',
     if (!is.null(varpct)) sprintf('<div class="pic-plot-grid pic-pca-scree-row">%s</div>', scree_block) else "",
     if (length(pair_blocks) > 0) sprintf('<div class="pic-plot-grid pic-pca-pair-row">%s</div>', paste(pair_blocks, collapse = "")) else ""
   )
@@ -526,9 +540,11 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
   }
 
   paste0(
-    sprintf('<h3>Heatmap (row z-score, %d genes)</h3>', nrow(z)),
+    sprintf('<h3>Expression heatmap (%d differentially expressed genes)</h3>', nrow(z)),
     src_note(report_rel_path(f, proj_dir)),
-    '<p class="pic-note">Hover a cell to show gene / sample / z.</p>',
+    '<p class="pic-note">Each row is a gene, each column a sample (grouped by color). ',
+    'Cell color is the gene&rsquo;s z-score across samples &mdash; <b style="color:#b2182b">red</b> is higher than that gene&rsquo;s average, ',
+    '<b style="color:#2166ac">blue</b> is lower. Genes are ordered by similarity. Hover a cell for the gene, sample, and z-score.</p>',
     legend_html,
     sprintf('<div class="pic-hm-scroll"><table class="pic-hm"><thead>%s</thead><tbody>%s</tbody></table></div>',
             header, paste(rows, collapse = ""))
@@ -671,9 +687,12 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
       checked = (k == 1L)
     )
   }
-  paste0('<h3>MA / volcano</h3>',
+  paste0('<h3>Differential expression (MA &amp; volcano)</h3>',
          src_note(stats_src),
-         '<p class="pic-note">Volcano y-axis is -log10(pvalue); point color indicates significance by padj (hover shows padj). Use the checkboxes to show/hide each contrast.</p>',
+         '<p class="pic-note">Each gene is one point. The <b>MA plot</b> shows the fold change vs. average expression; ',
+         'the <b>volcano plot</b> shows the fold change vs. statistical significance (&minus;log<sub>10</sub> p-value). ',
+         '<b style="color:#d7301f">Red</b> / <b style="color:#2166ac">blue</b> points are significantly up / down (padj below the FDR); grey is not significant. ',
+         'Hover a point for its gene name, fold change and padj. Tick a comparison below to show it.</p>',
          build_select_group(items))
 }
 
@@ -749,7 +768,9 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL,
     }
   }
   if (length(blocks) == 0) return("")
-  paste0('<p class="pic-note">Mean CPM over the scaled gene body (TSS→TES). Hover for sample/position/value; drag to zoom.</p><div class="pic-plot-grid">',
+  paste0('<p class="pic-note">Average read coverage along the gene body, scaled from the transcription start (TSS) to the end (TES) ',
+         'with short flanks on each side. Each line is one sample, colored by group &mdash; click a group in the legend to show or hide it. ',
+         'This shows where reads accumulate along genes (e.g. a 3&prime; bias).</p><div class="pic-plot-grid">',
          paste(blocks, collapse = ""), '</div>')
 }
 
@@ -824,19 +845,24 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
 build_expression_section <- function(reg, deseq2_dir, project, group_map, group_pal, stats, id, section_id, heading, proj_dir = NULL, sample_order = NULL, group_order = NULL) {
   if (!register_expr_data(reg, id, deseq2_dir, project, group_map, group_pal, stats, sample_order, group_order)) return("")
   countf <- file.path(deseq2_dir, sprintf("normalizedCountTable_%s.csv", project))
+  fdr <- pic_plot_spec()$defaults$fdr
   sprintf(paste0(
     '<section id="%s"><h2>%s</h2>',
-    '<p class="pic-note">Type a Gene ID or symbol (autocomplete from this dataset). ',
-    'Multiple genes allowed (comma or space separated). ',
-    'Default shows the 5 genes with the smallest p-value.</p>',
+    '<p class="pic-note">Compare the expression of individual genes across sample groups. ',
+    'Start typing a gene ID or symbol and pick it from the list to add it as a tag; ',
+    'click <b>&times;</b> on a tag (or press Backspace) to remove it. The plot updates automatically. ',
+    'Each box shows the distribution of normalized counts for one group; dots are individual samples.</p>',
+    '<p class="pic-note">A gene name turns <b style="color:#d7301f">red</b> when its adjusted p-value (padj) ',
+    'is below the significance threshold (FDR = %s) in at least one comparison. ',
+    'Hover over a gene name to see its padj for every comparison.</p>',
     '%s',
     '<div class="pic-expr" data-expr="%s">',
-    '<div class="pic-expr-ctrl">',
-    '<div class="pic-expr-typeahead"><input class="pic-expr-input" type="text" autocomplete="off" placeholder="Gene ID or symbol…">',
+    '<div class="pic-expr-typeahead"><div class="pic-expr-tagbox">',
+    '<input class="pic-expr-input" type="text" autocomplete="off" placeholder="Add a gene…"></div>',
     '<div class="pic-expr-ac"></div></div>',
-    '<button class="pic-expr-go" type="button">Plot</button></div>',
     '<div class="pic-expr-msg"></div><div class="pic-expr-plots"></div></div></section>'),
-    section_id, html_escape(heading), src_note(report_rel_path(countf, proj_dir)), id)
+    section_id, html_escape(heading), format(fdr, trim = TRUE),
+    src_note(report_rel_path(countf, proj_dir)), id)
 }
 
 # DEG クラスタの挙動 (group ごとの rlog 分布) を facet で示す図。
@@ -1040,7 +1066,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
   }
   if (nzchar(gsea_html)) {
     parts <- c(parts, sprintf(
-      '<details class="pic-enrich-group" open><summary>GSEA</summary>%s<p class="pic-note">Select contrasts and methods with the checkboxes; every checked combination is shown.</p>%s</details>',
+      '<details class="pic-enrich-group" open><summary>GSEA &mdash; gene set enrichment</summary>%s<p class="pic-note">GSEA asks which biological terms (GO, pathways&hellip;) are shifted up or down in a comparison, using the whole ranked gene list. Each dot is a term: position is its enrichment score (NES), color its significance (padj), size the number of genes. Tick a comparison and a term set below to view it.</p>%s</details>',
       src_note(report_rel_path(gsea_root, proj_dir)),
       gsea_html
     ))
@@ -1083,16 +1109,22 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         prof_id <- sprintf("%sclusterprofile", id_prefix)
         register_plot(reg, prof_id, list(data = prof_spec$data, layout = prof_spec$layout, config = prof_spec$config))
         ora_inner <- c(ora_inner, sprintf(
-          '<div class="pic-enrich-item"><h4>Cluster expression profiles (per-cluster rlog by group)</h4>%s<div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
+          paste0('<div class="pic-enrich-item"><h4>Cluster expression profiles</h4>',
+                 '<p class="pic-note">The differentially expressed genes are grouped into clusters that share a similar pattern across groups. ',
+                 'Each panel is one cluster; the boxes show its genes&rsquo; expression per group, so you can read off what each cluster represents.</p>',
+                 '%s<div id="%s" class="pic-plot" style="height:%dpx"></div></div>'),
           src_note(report_rel_path(prof_csv, proj_dir)), prof_id, prof_spec$height
         ))
       }
     }
     ora_inner <- c(ora_inner,
-      sprintf('<details class="pic-enrich-method" open><summary>ORA dot plots</summary><p class="pic-note">Use the checkboxes to show/hide each method.</p>%s%s</details>',
+      sprintf(paste0('<details class="pic-enrich-method" open><summary>Enriched terms per cluster</summary>',
+                     '<p class="pic-note">For each cluster above, the biological terms over-represented among its genes. ',
+                     'Dot color is significance (padj), size the gene ratio. Tick a term set to view it.</p>%s%s</details>'),
               src_note(report_rel_path(ora_root, proj_dir)), build_select_group(ora_items)))
     parts <- c(parts, sprintf(
-      '<details class="pic-enrich-group" open><summary>ORA (DEG clusters)</summary>%s</details>',
+      paste0('<details class="pic-enrich-group" open><summary>ORA &mdash; enrichment of gene clusters</summary>',
+             '%s</details>'),
       paste(ora_inner, collapse = "")
     ))
   }
@@ -1177,7 +1209,7 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   # 4. DEG (heatmap + MA/volcano)
   hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order)
   contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, "", report_rel_path(desc$stats_csv, out_dir), group_order)
-  sec_deg <- paste0(sprintf('<section id="deg"><h2>4. DEG (DESeq2; FDR = %s)</h2>', format(fdr, trim = TRUE)),
+  sec_deg <- paste0(sprintf('<section id="deg"><h2>4. Differential expression (DESeq2, FDR = %s)</h2>', format(fdr, trim = TRUE)),
                     if (!is.null(hm_html)) hm_html else "",
                     contrast_html,
                     '</section>')
@@ -1368,7 +1400,7 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
   sid <- paste0(frac_key, "_deg")
   hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order)
   contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir), group_order)
-  secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · DEG (DESeq2; FDR = %s)</h2>%s%s</section>',
+  secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · Differential expression (DESeq2, FDR = %s)</h2>%s%s</section>',
                           sid, n, label, format(fdr, trim = TRUE),
                           if (!is.null(hm_html)) hm_html else "", contrast_html))
   navs <- c(navs, sprintf('<a href="#%s">DESeq2</a>', sid))

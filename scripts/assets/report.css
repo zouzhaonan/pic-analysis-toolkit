@@ -18,10 +18,13 @@ h2{margin-top:0;font-size:21px;border-bottom:2px solid var(--accent);padding-bot
 h3{font-size:18px;margin:22px 0 10px}
 h4{font-size:14px;margin:6px 0;color:var(--muted)}
 .pic-note,.pic-contrast-meta{color:var(--muted);font-size:14px;margin:4px 0}
-/* source 行: 目立たせる (アクセント色 + バッジ) */
-.pic-src{font-size:12.5px;margin:4px 0 12px;color:var(--accent);font-weight:600;display:flex;align-items:center;gap:6px}
-.pic-src::before{content:"\1F4C4";font-size:13px}
-.pic-src code{background:#eaf2fb;color:#1b3a5b;padding:2px 8px;border-radius:5px;border:1px solid #bcd3ea;font-weight:600;font-size:12.5px}
+/* source 行: グレー背景 + 黄色文字のバッジ + コピーボタン */
+.pic-src{font-size:12.5px;margin:4px 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pic-src-label{color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:11px}
+.pic-src-path{background:#3d434b;color:#ffd54a;padding:3px 10px;border-radius:5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+.pic-src-copy{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:5px;padding:3px 10px;font-size:12px;cursor:pointer;font-weight:600}
+.pic-src-copy:hover{background:#eef3fb;color:var(--accent);border-color:#bcd3ea}
+.pic-src-copy.copied{background:#e6f4ea;color:#1a7f37;border-color:#a6d8b4}
 
 /* plotly grid */
 .pic-plot-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
@@ -37,6 +40,8 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-bars{margin:10px 0}
 .pic-bar-ruler{display:flex;justify-content:space-between;margin-left:150px;color:var(--muted);font-size:12px;border-bottom:1px dashed var(--line);padding-bottom:2px}
 .pic-bar-row{display:flex;align-items:center;margin:2px 0}
+.pic-bar-row.pic-grp-start{margin-top:11px}
+.pic-table tr.pic-grp-start td,.pic-table tr.pic-grp-start th{border-top:2px solid #aebccb}
 .pic-bar-label{width:150px;flex:none;font-size:13px;padding-right:8px;text-align:right;color:var(--fg)}
 .pic-bar-track{flex:1;display:flex;height:18px;background:#f0f3f7;border-radius:2px;overflow:hidden;background-image:repeating-linear-gradient(90deg,transparent,transparent 19.9%,rgba(0,0,0,.06) 20%,transparent 20.1%)}
 .pic-seg{height:100%}
@@ -54,10 +59,14 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-databar-val{position:relative;z-index:2;font-variant-numeric:tabular-nums}
 .pic-td-num{font-variant-numeric:tabular-nums}
 
-/* 遺伝子発現 (入力 -> box+beeswarm) */
-.pic-expr-ctrl{display:flex;gap:8px;margin:8px 0;flex-wrap:wrap;align-items:flex-start}
-.pic-expr-typeahead{position:relative;flex:1;min-width:260px}
-.pic-expr-input{width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:14px}
+/* 遺伝子発現 (タグ入力 -> box+beeswarm) */
+.pic-expr-typeahead{position:relative;margin:8px 0;max-width:640px}
+.pic-expr-tagbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:#fff;min-height:42px}
+.pic-expr-tagbox:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px rgba(33,102,172,.12)}
+.pic-expr-chip{display:inline-flex;align-items:center;gap:6px;background:#e7f0fb;color:#1b3a5b;border:1px solid #bcd3ea;border-radius:14px;padding:3px 6px 3px 11px;font-size:13px;font-weight:600}
+.pic-expr-chip button{border:none;background:#c2d6ec;color:#1b3a5b;width:17px;height:17px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0}
+.pic-expr-chip button:hover{background:#d7301f;color:#fff}
+.pic-expr-input{flex:1;min-width:130px;border:none;outline:none;font-size:14px;padding:4px 2px;background:transparent}
 .pic-expr-ac{display:none;position:absolute;z-index:60;left:0;right:0;top:calc(100% + 2px);max-height:280px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
 .pic-expr-ac-item{padding:6px 10px;font-size:13px;cursor:pointer;white-space:nowrap}
 .pic-expr-ac-item:hover{background:#eef3f9}
@@ -66,8 +75,6 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-expr-tip table{border-collapse:collapse}
 .pic-expr-tip th,.pic-expr-tip td{text-align:left;padding:1px 8px 1px 0;font-variant-numeric:tabular-nums}
 .pic-expr-tip th{color:#9aa4af;font-weight:600}
-.pic-expr-go{padding:7px 16px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;font-weight:600;cursor:pointer}
-.pic-expr-go:hover{opacity:.9}
 .pic-expr-msg{color:#b45309;font-size:13px;min-height:1em;margin:2px 0}
 .pic-expr-plots{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
 

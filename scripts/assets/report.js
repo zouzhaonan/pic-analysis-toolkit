@@ -81,11 +81,12 @@
     if (!data || box.dataset.wired) return;
     box.dataset.wired = "1";
     var input = box.querySelector(".pic-expr-input");
-    var btn = box.querySelector(".pic-expr-go");
+    var tagbox = box.querySelector(".pic-expr-tagbox");
     var msg = box.querySelector(".pic-expr-msg");
     var plots = box.querySelector(".pic-expr-plots");
     var ac = box.querySelector(".pic-expr-ac");
     var groups = uniqueInOrder(data.groups);
+    var selected = [];   // 選択中の遺伝子 index (タグの並び順)
 
     // lookup (exact) と候補用の配列
     var lut = {};
@@ -101,9 +102,8 @@
 
     function dispLabel(gi) { return data.ext[gi] ? (data.ext[gi] + " (" + data.ens[gi] + ")") : data.ens[gi]; }
 
-    function plotGenes(idxs, notfound) {
+    function plotGenes(idxs) {
       plots.innerHTML = "";
-      msg.textContent = notfound && notfound.length ? ("not found: " + notfound.join(", ")) : "";
       if (!idxs.length) return;
       var div = document.createElement("div");
       div.className = "pic-plot";
@@ -197,46 +197,52 @@
       });
     }
 
-    function run() {
-      var toks = (input.value || "").split(/[\s,]+/).map(function (t) { return t.trim(); }).filter(Boolean);
-      var idxs = [], seen = {}, notfound = [];
-      toks.forEach(function (t) {
-        var gi = lut[t.toLowerCase()];
-        if (gi === undefined) { notfound.push(t); return; }
-        if (!seen[gi]) { seen[gi] = 1; idxs.push(gi); }
+    function shortLabel(gi) { return data.ext[gi] || data.ens[gi]; }
+
+    // 選択中の遺伝子タグを描画し、プロットを更新する
+    function renderChips() {
+      tagbox.querySelectorAll(".pic-expr-chip").forEach(function (c) { c.remove(); });
+      selected.forEach(function (gi) {
+        var chip = document.createElement("span");
+        chip.className = "pic-expr-chip";
+        chip.appendChild(document.createTextNode(shortLabel(gi)));
+        var b = document.createElement("button");
+        b.type = "button"; b.textContent = "×"; b.title = "remove";
+        b.addEventListener("click", function () { removeGene(gi); });
+        chip.appendChild(b);
+        tagbox.insertBefore(chip, input);
       });
-      plotGenes(idxs, notfound);
+    }
+    function refresh() {
+      renderChips();
+      if (selected.length) { msg.textContent = ""; plotGenes(selected); }
+      else { plots.innerHTML = ""; msg.textContent = "Add a gene above to see its expression across groups."; }
+    }
+    function addGene(gi) {
+      if (gi === undefined || gi === null || selected.indexOf(gi) !== -1) return;
+      selected.push(gi); input.value = ""; hideAc(); refresh(); input.focus();
+    }
+    function removeGene(gi) {
+      selected = selected.filter(function (x) { return x !== gi; });
+      refresh(); input.focus();
     }
 
-    // ---- autocomplete ----
-    function curToken() {
-      var v = input.value, p = input.selectionStart;
-      var before = v.slice(0, p);
-      var m = before.split(/[\s,]+/);
-      return m[m.length - 1];
-    }
-    function replaceToken(tokVal) {
-      var v = input.value, p = input.selectionStart;
-      var before = v.slice(0, p), after = v.slice(p);
-      var parts = before.split(/([\s,]+)/); // keep separators
-      parts[parts.length - 1] = tokVal;
-      input.value = parts.join("") + (after && !/^[\s,]/.test(after) ? ", " : "") + after;
-      hideAc();
-      input.focus();
-    }
+    // ---- autocomplete (選択済みは除外) ----
     function hideAc() { ac.style.display = "none"; ac.innerHTML = ""; }
     function showAc() {
-      var t = curToken().trim().toLowerCase();
+      var t = (input.value || "").trim().toLowerCase();
       if (t.length < 1) { hideAc(); return; }
       var pref = [], sub = [];
       for (var k = 0; k < cand.length && pref.length < 12; k++) {
         var c = cand[k];
+        if (selected.indexOf(c.i) !== -1) continue;
         if (c.low.indexOf(t) === 0 || (c.tok && c.tok.toLowerCase().indexOf(t) === 0)) pref.push(c);
       }
       if (pref.length < 12) {
         for (var k2 = 0; k2 < cand.length && (pref.length + sub.length) < 12; k2++) {
           var c2 = cand[k2];
-          if (pref.indexOf(c2) === -1 && c2.low.indexOf(t) !== -1) sub.push(c2);
+          if (selected.indexOf(c2.i) !== -1 || pref.indexOf(c2) !== -1) continue;
+          if (c2.low.indexOf(t) !== -1) sub.push(c2);
         }
       }
       var list = pref.concat(sub);
@@ -244,8 +250,8 @@
       ac.innerHTML = "";
       list.forEach(function (c) {
         var it = document.createElement("div");
-        it.className = "pic-expr-ac-item"; it.textContent = c.disp;
-        it.addEventListener("mousedown", function (e) { e.preventDefault(); replaceToken(c.tok); });
+        it.className = "pic-expr-ac-item"; it.textContent = c.disp; it._gi = c.i;
+        it.addEventListener("mousedown", function (e) { e.preventDefault(); addGene(c.i); });
         ac.appendChild(it);
       });
       ac.style.display = "block";
@@ -253,18 +259,25 @@
 
     input.addEventListener("input", showAc);
     input.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") { e.preventDefault(); hideAc(); run(); }
-      else if (e.key === "Escape") { hideAc(); }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        var t = (input.value || "").trim();
+        if (!t) return;
+        var gi = lut[t.toLowerCase()];
+        if (gi === undefined) {
+          var first = ac.querySelector(".pic-expr-ac-item");
+          if (first && first._gi !== undefined) addGene(first._gi);
+        } else { addGene(gi); }
+      } else if (e.key === "Backspace" && !input.value && selected.length) {
+        removeGene(selected[selected.length - 1]);
+      } else if (e.key === "Escape") { hideAc(); }
     });
     input.addEventListener("blur", function () { setTimeout(hideAc, 150); });
-    btn.addEventListener("click", run);
 
-    // default: pvalue 最小の 5 遺伝子
-    var def = (data.default || []).map(function (e) { return lut[String(e).toLowerCase()]; }).filter(function (x) { return x !== undefined; });
-    if (def.length) {
-      input.value = def.map(function (gi) { return data.ext[gi] || data.ens[gi]; }).join(", ");
-      plotGenes(def, []);
-    }
+    // 既定: pvalue 最小の 5 遺伝子
+    selected = (data.default || []).map(function (e) { return lut[String(e).toLowerCase()]; })
+      .filter(function (x) { return x !== undefined; });
+    refresh();
   }
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -303,6 +316,27 @@
     document.querySelectorAll(".pic-matrix").forEach(initMatrix);
     // 遺伝子発現 UI を初期化
     document.querySelectorAll(".pic-expr").forEach(initExpr);
+    // source パスのコピーボタン
+    document.querySelectorAll(".pic-src-copy").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var txt = b.dataset.copy || "";
+        function done() {
+          var orig = "copy path";
+          b.textContent = "copied"; b.classList.add("copied");
+          setTimeout(function () { b.textContent = orig; b.classList.remove("copied"); }, 1200);
+        }
+        function fallback() {
+          var ta = document.createElement("textarea");
+          ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0";
+          document.body.appendChild(ta); ta.select();
+          try { document.execCommand("copy"); } catch (e) {}
+          ta.remove(); done();
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(txt).then(done, fallback);
+        } else { fallback(); }
+      });
+    });
   });
 
   // ウィンドウリサイズで再レイアウト
