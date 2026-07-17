@@ -913,9 +913,9 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
 
   traces <- list()
   annotations <- list()
-  # 凡例を strip ラベルより上に置き、重なりを避ける
+  # 凡例を strip ラベルより上に置き、重なりを避ける。boxgap を詰めて箱を太くする。
   layout <- list(margin = list(l = 54, r = 10, t = 58, b = 64), hovermode = "closest",
-                 boxmode = "group", showlegend = TRUE,
+                 showlegend = TRUE, boxgap = 0.2, boxgroupgap = 0,
                  legend = list(orientation = "h", yanchor = "bottom", y = 1.14, x = 0))
   for (i in seq_len(ncl)) {
     cl <- clusters[[i]]
@@ -928,7 +928,8 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
                             categoryorder = "array", categoryarray = as.list(groups),
                             tickangle = -40, automargin = TRUE, showline = TRUE, mirror = TRUE,
                             linecolor = "#cdd7e2")
-    layout[[yname]] <- list(domain = list(0, 1), anchor = xref, automargin = TRUE,
+    # 全パネル 0 起点 (free-y だが下端は 0)
+    layout[[yname]] <- list(domain = list(0, 1), anchor = xref, automargin = TRUE, rangemode = "tozero",
                             title = if (i == 1) list(text = "rlog expression") else list(text = ""),
                             showline = TRUE, mirror = TRUE, linecolor = "#cdd7e2")
     sub <- prof[as.character(prof$cluster_id) == cl, , drop = FALSE]
@@ -939,19 +940,19 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
       traces[[length(traces) + 1L]] <- list(
         y = as.list(gv), x = as.list(rep(g, length(gv))),
         type = "box", name = g, legendgroup = g, showlegend = (i == 1),
-        boxpoints = "all", jitter = 0.5, pointpos = 0, boxmean = FALSE,
+        boxpoints = "all", jitter = 1, pointpos = 0, boxmean = FALSE, whiskerwidth = 0.6,
         fillcolor = hex_to_rgba(col, "0.45"),
-        line = list(color = col, width = 1),
-        marker = list(color = col, size = 2, opacity = 0.55),
+        line = list(color = col, width = 1.2),
+        marker = list(color = col, size = 3, opacity = 0.55),
         xaxis = xref, yaxis = yref,
         hovertemplate = sprintf("%s<br>rlog: %%{y:.2f}<extra></extra>", html_escape(g))
       )
     }
+    # strip ラベルは枠なし (テキストのみ)
     annotations[[length(annotations) + 1L]] <- list(
       text = html_escape(clab(cl)), xref = "paper", yref = "paper",
       x = (x0 + x1) / 2, y = 1.0, xanchor = "center", yanchor = "bottom",
-      showarrow = FALSE, font = list(size = 12, color = "#1f2933"),
-      bgcolor = "#ffffff", bordercolor = "#cdd7e2", borderwidth = 1, borderpad = 3
+      showarrow = FALSE, font = list(size = 13, color = "#1f2933")
     )
   }
   layout$annotations <- annotations

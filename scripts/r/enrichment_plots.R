@@ -295,12 +295,11 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator) {
       x0 = x0, x1 = x1, y0 = 0, y1 = 1,
       line = list(color = "#cdd7e2", width = 1), fillcolor = "rgba(0,0,0,0)"
     )
-    # facet strip: パネル上部に direction (enriched group) 名 (背景白)
+    # facet strip: パネル上部に direction (enriched group) 名 (枠なし)
     annotations[[length(annotations) + 1L]] <- list(
       text = html_escape(d), xref = "paper", yref = "paper",
       x = (x0 + x1) / 2, y = 1.0, xanchor = "center", yanchor = "bottom",
-      showarrow = FALSE, font = list(size = 12, color = "#1f2933"),
-      bgcolor = "#ffffff", bordercolor = "#cdd7e2", borderwidth = 1, borderpad = 3
+      showarrow = FALSE, font = list(size = 13, color = "#1f2933")
     )
   }
   layout$annotations <- annotations
