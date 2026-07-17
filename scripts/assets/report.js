@@ -314,6 +314,29 @@
     });
     // GSEA の contrast × method マトリクスを初期化
     document.querySelectorAll(".pic-matrix").forEach(initMatrix);
+    // contrast 行列: セルに合わせたら行・列とヘッダを強調
+    document.querySelectorAll("table.pic-cmatrix").forEach(function (tbl) {
+      var bodyRows = tbl.querySelectorAll("tbody tr");
+      var head = tbl.querySelector("thead tr");
+      function clear() {
+        tbl.querySelectorAll(".pic-cmx-rowhl,.pic-cmx-colhl,.pic-cmx-hl,.pic-cmx-hit").forEach(function (e) {
+          e.classList.remove("pic-cmx-rowhl", "pic-cmx-colhl", "pic-cmx-hl", "pic-cmx-hit");
+        });
+      }
+      tbl.querySelectorAll("td.pic-cmx-cell").forEach(function (cell) {
+        cell.addEventListener("mouseenter", function () {
+          clear();
+          var tr = cell.parentElement;
+          var idx = Array.prototype.indexOf.call(tr.children, cell);
+          Array.prototype.forEach.call(tr.children, function (c) { c.classList.add("pic-cmx-rowhl"); });
+          bodyRows.forEach(function (r) { if (r.children[idx]) r.children[idx].classList.add("pic-cmx-colhl"); });
+          if (tr.children[0]) tr.children[0].classList.add("pic-cmx-hl");
+          if (head && head.children[idx]) head.children[idx].classList.add("pic-cmx-hl");
+          cell.classList.add("pic-cmx-hit");
+        });
+      });
+      tbl.addEventListener("mouseleave", clear);
+    });
     // 遺伝子発現 UI を初期化
     document.querySelectorAll(".pic-expr").forEach(initExpr);
     // source パスのコピーボタン

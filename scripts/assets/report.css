@@ -99,6 +99,23 @@ table.pic-cmatrix{border-collapse:collapse;font-size:13px}
 .pic-cmx-cell:hover{background:#f3f7fc}
 .pic-cmx-n{font-variant-numeric:tabular-nums;font-weight:600}
 .pic-cmx-empty{background:#fafbfc}
+/* 合わせているセルの行・列を強調 */
+.pic-cmatrix .pic-cmx-rowhl,.pic-cmatrix .pic-cmx-colhl{background:#e8f1fb}
+.pic-cmatrix th.pic-cmx-hl{background:#cfe2f6}
+.pic-cmatrix td.pic-cmx-cell.pic-cmx-hit{background:#bcd8f5}
+
+/* サンプル相関ヒートマップ (HTML テーブル) */
+.pic-cor-wrap{overflow:auto;max-width:100%;margin:6px 0 4px}
+table.pic-cor{border-collapse:collapse;font-size:12px}
+.pic-cor th,.pic-cor td{border:1px solid #fff;padding:3px 7px;text-align:center;white-space:nowrap}
+.pic-cor .pic-cor-corner{background:#fff;border:none;position:sticky;left:0;z-index:3}
+.pic-cor thead th{position:sticky;top:0;background:#fff;z-index:2;font-weight:700;vertical-align:bottom}
+.pic-cor tbody th.pic-cor-rh{position:sticky;left:0;background:#fff;z-index:1;font-weight:700;text-align:left}
+.pic-cor td.val{font-variant-numeric:tabular-nums;font-weight:600}
+.pic-cor .gsep-l{border-left:2px solid #1f2933}
+.pic-cor .gsep-t{border-top:2px solid #1f2933}
+.pic-cor-legend{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin:4px 0 8px}
+.pic-cor-grad{display:inline-block;width:110px;height:12px;border:1px solid var(--line);border-radius:2px;background:linear-gradient(90deg,#2166ac,#f7f7f7,#b2182b)}
 
 /* MA + volcano を横一列 */
 .pic-ma-vol{display:grid;grid-template-columns:1fr 1fr;gap:16px}
