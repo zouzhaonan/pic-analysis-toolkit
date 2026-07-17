@@ -671,15 +671,6 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
     sprintf('<tr><th class="g">%s</th>%s</tr>', html_escape(labels[[i]]), paste(tds, collapse = ""))
   }, character(1))
 
-  legend_html <- ""
-  if (!is.null(group_pal)) {
-    items <- vapply(names(group_pal), function(g) sprintf(
-      '<span class="pic-legend-item"><span class="pic-swatch" style="background:%s"></span>%s</span>',
-      unname(group_pal[[g]]), html_escape(g)
-    ), character(1))
-    legend_html <- sprintf('<div class="pic-legend" style="margin-left:0">%s</div>', paste(items, collapse = ""))
-  }
-
   cap_id <- paste0(id_prefix, "heatmap_cap")
   paste0(
     sprintf('<h3>Expression heatmap (%d differentially expressed genes)</h3>', nrow(z)),
@@ -689,7 +680,6 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
     '<b style="color:#2166ac">blue</b> is lower. Genes are ordered by similarity. Hover a cell for the gene, sample, and z-score.</p>',
     png_button(cap_id, "deg_heatmap"),
     sprintf('<div class="pic-capbox" id="%s">', cap_id),
-    legend_html,
     sprintf('<div class="pic-hm-scroll"><table class="pic-hm"><thead>%s</thead><tbody>%s</tbody></table></div>',
             header, paste(rows, collapse = "")),
     '</div>'
