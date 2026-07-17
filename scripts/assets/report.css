@@ -89,12 +89,13 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 /* contrast を group×group 行列で選択 */
 .pic-cmx-wrap{overflow-x:auto;margin:8px 0 12px}
 table.pic-cmatrix{border-collapse:collapse;font-size:13px}
-.pic-cmatrix th,.pic-cmatrix td{border:1px solid var(--line);padding:4px 9px;text-align:center;white-space:nowrap}
+.pic-cmatrix th,.pic-cmatrix td{border:1px solid var(--line);padding:4px 9px;white-space:nowrap}
 .pic-cmatrix .pic-cmx-corner{background:transparent;border-top:none;border-left:none}
 .pic-cmatrix .pic-cmx-h,.pic-cmatrix .pic-cmx-rh{background:#eef3f9;font-weight:700}
-.pic-cmatrix .pic-cmx-rh{text-align:right}
-.pic-cmx-cell{background:#fff}
-.pic-cmx-cell label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;justify-content:center}
+.pic-cmatrix .pic-cmx-h{text-align:center}
+.pic-cmatrix .pic-cmx-rh{text-align:left}
+.pic-cmx-cell{background:#fff;text-align:right}
+.pic-cmx-cell label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;justify-content:flex-end}
 .pic-cmx-cell:hover{background:#f3f7fc}
 .pic-cmx-n{font-variant-numeric:tabular-nums;font-weight:600}
 .pic-cmx-empty{background:#fafbfc}
@@ -113,6 +114,7 @@ table.pic-hm{border-collapse:separate;border-spacing:0}
 .pic-hm tbody th.g{position:sticky;left:0;z-index:2;background:#fff;text-align:right;font-weight:400;font-size:9px;padding:0 6px;white-space:nowrap}
 .pic-hm tbody td{width:20px;height:13px;border-right:1px solid #fff}
 .pic-hm tbody tr{height:13px}
+.pic-hm thead th.s.gsep,.pic-hm tbody td.gsep{border-left:2px solid #6b7885}
 
 /* enrich */
 details.pic-enrich-group{border:1px solid var(--line);border-radius:8px;margin:12px 0;padding:6px 14px;background:#fff}

@@ -445,51 +445,78 @@ pic_order_contrasts <- function(aspects, group_order) {
   aspects[order(ks)]
 }
 
-# サンプル間相関ヒートマップ (log2 正規化カウントの Pearson 相関)。
+# サンプル間相関ヒートマップ (deseq2/correlation_<project>.csv をそのまま図示)。
+# 赤青の発散配色、セルに相関値 (小数 2 桁)、軸ラベルは group 配色、group 境界に区切り線。
 build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, group_pal = NULL,
                                    sample_order = NULL, id_prefix = "", proj_dir = NULL) {
-  f <- file.path(deseq2_dir, sprintf("normalizedCountTable_%s.csv", project))
+  f <- file.path(deseq2_dir, sprintf("correlation_%s.csv", project))
   if (!file.exists(f)) return("")
   d <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
   d <- as.data.frame(d, check.names = FALSE)
-  scols <- setdiff(colnames(d), c("ens_gene", "ext_gene", "biotype", "chr"))
-  if (length(scols) < 2) return("")
-  scols <- pic_reorder_vec(scols, sample_order)
-  mat <- as.matrix(d[, scols, drop = FALSE]); storage.mode(mat) <- "double"
-  mat <- log2(mat + 1)
-  cormat <- suppressWarnings(stats::cor(mat, method = "pearson"))
-  if (is.null(cormat) || !all(is.finite(cormat[lower.tri(cormat)]))) cormat[!is.finite(cormat)] <- NA
-  n <- length(scols)
-  zrows <- lapply(seq_len(n), function(i) as.list(round(as.numeric(cormat[i, ]), 4)))
-  # 軸ラベルを group 配色に
-  tickcol <- function(s) {
-    g <- if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
-    if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else "#1f2933"
-  }
-  ticktext <- vapply(scols, function(s) sprintf('<span style="color:%s">%s</span>', tickcol(s), html_escape(s)), character(1))
+  if (ncol(d) < 3) return("")
+  rn <- as.character(d[[1]]); d <- d[, -1, drop = FALSE]
+  cn <- colnames(d)
+  samples <- pic_reorder_vec(intersect(cn, rn), sample_order)
+  if (length(samples) < 2) return("")
+  m <- as.matrix(d)[match(samples, rn), match(samples, cn), drop = FALSE]
+  storage.mode(m) <- "double"
+  n <- length(samples)
+
+  zrows <- lapply(seq_len(n), function(i) as.list(round(as.numeric(m[i, ]), 4)))
+  grpof <- function(s) if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
+  tickcol <- function(s) { g <- grpof(s); if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else "#1f2933" }
+  ticktext <- vapply(samples, function(s) sprintf('<span style="color:%s">%s</span>', tickcol(s), html_escape(s)), character(1))
+
   id <- paste0(id_prefix, "sample_cor")
-  zmin <- suppressWarnings(min(cormat[is.finite(cormat)]))
-  if (!is.finite(zmin)) zmin <- 0
+  zmin <- suppressWarnings(min(m[is.finite(m)])); if (!is.finite(zmin)) zmin <- 0
+  mid <- (zmin + 1) / 2
+  # セルに相関値を注記 (2 桁)。暗いセルは白文字。
+  anns <- list()
+  if (n <= 30) {
+    for (i in seq_len(n)) for (j in seq_len(n)) {
+      v <- m[i, j]; if (!is.finite(v)) next
+      dd <- abs(v - mid) / max(1e-9, (1 - mid))
+      fc <- if (dd > 0.5) "#ffffff" else "#1f2933"
+      anns[[length(anns) + 1L]] <- list(x = samples[[j]], y = samples[[i]], text = sprintf("%.2f", v),
+                                        showarrow = FALSE, xref = "x", yref = "y",
+                                        font = list(size = if (n <= 12) 11 else 9, color = fc))
+    }
+  }
+  # group 境界に区切り線 (category 座標 = 0..n-1、境界は index-0.5)
+  grp <- vapply(samples, grpof, character(1))
+  shapes <- list()
+  for (k in 2:n) {
+    if (!identical(grp[[k]], grp[[k - 1]])) {
+      b <- (k - 1) - 0.5
+      shapes[[length(shapes) + 1L]] <- list(type = "line", xref = "x", yref = "paper", x0 = b, x1 = b, y0 = 0, y1 = 1,
+                                            line = list(color = "#1f2933", width = 2))
+      shapes[[length(shapes) + 1L]] <- list(type = "line", yref = "y", xref = "paper", y0 = b, y1 = b, x0 = 0, x1 = 1,
+                                            line = list(color = "#1f2933", width = 2))
+    }
+  }
+
   trace <- list(
-    z = zrows, x = as.list(scols), y = as.list(scols), type = "heatmap",
-    colorscale = "Viridis", zmin = zmin, zmax = 1,
-    xgap = 1, ygap = 1,
-    colorbar = list(title = list(text = "Pearson r", side = "right"), thickness = 12, len = 0.75),
+    z = zrows, x = as.list(samples), y = as.list(samples), type = "heatmap",
+    colorscale = list(list(0, "#2166ac"), list(0.5, "#f7f7f7"), list(1, "#b2182b")),
+    zmin = zmin, zmax = 1, xgap = 1, ygap = 1,
+    colorbar = list(title = list(text = "correlation", side = "right"), thickness = 12, len = 0.75),
     hovertemplate = "%{y} &times; %{x}<br>r = %{z:.3f}<extra></extra>")
   layout <- list(
-    xaxis = list(tickmode = "array", tickvals = as.list(scols), ticktext = as.list(ticktext),
+    xaxis = list(tickmode = "array", tickvals = as.list(samples), ticktext = as.list(ticktext),
                  tickangle = -45, automargin = TRUE, side = "bottom", constrain = "domain"),
-    yaxis = list(tickmode = "array", tickvals = as.list(scols), ticktext = as.list(ticktext),
+    yaxis = list(tickmode = "array", tickvals = as.list(samples), ticktext = as.list(ticktext),
                  automargin = TRUE, autorange = "reversed", scaleanchor = "x", constrain = "domain"),
-    margin = list(l = 10, r = 10, t = 10, b = 10), hovermode = "closest")
+    margin = list(l = 10, r = 10, t = 10, b = 10), hovermode = "closest",
+    annotations = anns, shapes = shapes)
   register_plot(reg, id, list(data = list(trace), layout = layout,
                               config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = FALSE)))
-  h <- max(360L, min(900L, as.integer(90 + n * 30)))
+  dim_px <- as.integer(120 + n * 34)
+  h <- max(360L, min(1100L, dim_px))
   paste0(
     src_note(report_rel_path(f, proj_dir)),
-    '<p class="pic-note">Pearson correlation between samples, computed on log<sub>2</sub> normalized counts. ',
-    'Replicates of the same group should correlate most strongly; a sample that stands out from its group may be an outlier.</p>',
-    sprintf('<div id="%s" class="pic-plot" style="height:%dpx;max-width:%dpx;margin:auto"></div>', id, h, as.integer(90 + n * 30)))
+    '<p class="pic-note">Sample-to-sample correlation. Replicates of the same group should correlate most strongly ',
+    '(<b style="color:#b2182b">red</b>); a sample that stands out from its group (more <b style="color:#2166ac">blue</b>) may be an outlier.</p>',
+    sprintf('<div id="%s" class="pic-plot" style="height:%dpx;max-width:%dpx;margin:auto"></div>', id, h, dim_px))
 }
 
 build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefix = "", proj_dir = NULL) {
@@ -615,19 +642,23 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
   zmax <- max(1, stats::quantile(abs(z), 0.98, names = FALSE, na.rm = TRUE))
   colmat <- matrix(zcolor_vec(as.numeric(z), zmax), nrow = nrow(z))
 
+  # group 境界 (列がグループの先頭なら区切り線)
+  gvec <- vapply(scols, function(s) if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s, character(1))
+  gstart <- c(FALSE, gvec[-1] != gvec[-length(gvec)])
+
   # ヘッダ (サンプル名・グループ色, sticky)
   ths <- vapply(seq_along(scols), function(j) {
     s <- scols[[j]]
     g <- if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
     col <- if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else "#333333"
-    sprintf('<th class="s"><span style="color:%s">%s</span></th>', col, html_escape(s))
+    sprintf('<th class="s%s"><span style="color:%s">%s</span></th>', if (gstart[[j]]) " gsep" else "", col, html_escape(s))
   }, character(1))
   header <- sprintf('<tr><th class="corner"></th>%s</tr>', paste(ths, collapse = ""))
 
   rows <- vapply(seq_len(nrow(z)), function(i) {
     tds <- vapply(seq_len(ncol(z)), function(j) sprintf(
-      '<td style="background:%s" title="Gene: %s&#10;Sample: %s&#10;Z: %.2f"></td>',
-      colmat[i, j], html_escape(labels[[i]]), html_escape(scols[[j]]), z[i, j]
+      '<td class="%s" style="background:%s" title="Gene: %s&#10;Sample: %s&#10;Z: %.2f"></td>',
+      if (gstart[[j]]) "gsep" else "", colmat[i, j], html_escape(labels[[i]]), html_escape(scols[[j]]), z[i, j]
     ), character(1))
     sprintf('<tr><th class="g">%s</th>%s</tr>', html_escape(labels[[i]]), paste(tds, collapse = ""))
   }, character(1))
