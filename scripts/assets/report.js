@@ -38,8 +38,12 @@
   // HTML 要素 (heatmap / QC / correlation テーブル) を PNG 化してダウンロードする。
   // 外部ライブラリ不要: SVG <foreignObject> に要素とレポート CSS を埋めて canvas 描画。
   function capturePng(el, filename, btn) {
+    // レポート自身の CSS のみ (plotly が注入する style は < を含み SVG(XML) を壊すため除外)
     var css = "";
-    document.querySelectorAll("style").forEach(function (s) { css += s.textContent + "\n"; });
+    document.querySelectorAll("style").forEach(function (s) {
+      var t = s.textContent || "";
+      if (t.indexOf(".pic-header") !== -1 || t.indexOf(".pic-hm") !== -1) css += t + "\n";
+    });
     // スクロール/sticky を解除して全体を描く
     css += ".pic-hm-scroll{max-height:none!important;overflow:visible!important}" +
       ".pic-hm thead th,.pic-hm tbody th,.pic-hm thead th.corner," +
@@ -54,7 +58,7 @@
     var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
       '<foreignObject x="0" y="0" width="' + w + '" height="' + h + '">' +
       '<div xmlns="http://www.w3.org/1999/xhtml" style="background:#fff;width:' + w + 'px">' +
-      '<style>' + css + '</style>' + xhtml + '</div></foreignObject></svg>';
+      '<style><![CDATA[' + css + ']]></style>' + xhtml + '</div></foreignObject></svg>';
     var img = new Image();
     img.onload = function () {
       var scale = 2, c = document.createElement("canvas");

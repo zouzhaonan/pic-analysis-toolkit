@@ -41,7 +41,7 @@ report_rel_path <- function(path, base) {
 
 # HTML 要素 (id=cap_id) を PNG 画像でダウンロードするボタン。
 png_button <- function(cap_id, name) {
-  sprintf('<button class="pic-png-btn" type="button" data-cap="%s" data-name="%s">&#8681; PNG</button>',
+  sprintf('<button class="pic-png-btn" type="button" data-cap="%s" data-name="%s">&#8681; Download plot as a png.</button>',
           html_escape(cap_id), html_escape(name))
 }
 
