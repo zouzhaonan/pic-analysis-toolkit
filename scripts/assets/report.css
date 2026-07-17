@@ -120,6 +120,17 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-select-lbl{font-size:13px;font-weight:700;color:var(--muted);margin-right:4px;align-self:center}
 .pic-matrix .pic-select-bar{margin-bottom:6px}
 
+/* ウィジェット内 2ペイン (左=選択 / 右=プロット) */
+.pic-matrix{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:18px;align-items:start}
+.pic-matrix-sel{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px}
+.pic-degsel{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:18px;align-items:start}
+.pic-degsel-ctrl{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px}
+.pic-degsel-ctrl h4{margin:0 0 8px;font-size:13px}
+.pic-selgrid{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start}
+.pic-selgrid-ctrl{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:10px}
+.pic-selgrid-ctrl .pic-select-bar{flex-direction:column;align-items:flex-start;gap:5px;background:transparent;border:none;padding:0;margin:0}
+@media(max-width:900px){.pic-matrix,.pic-degsel,.pic-selgrid{grid-template-columns:1fr}.pic-matrix-sel,.pic-degsel-ctrl,.pic-selgrid-ctrl{position:static}}
+
 /* contrast を group×group 行列で選択 */
 .pic-cmx-wrap{overflow-x:auto;margin:8px 0 12px}
 table.pic-cmatrix{border-collapse:collapse;font-size:13px}

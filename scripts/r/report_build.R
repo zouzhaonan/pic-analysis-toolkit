@@ -78,8 +78,10 @@ build_select_group <- function(items) {
     hid <- if (isTRUE(it$checked)) "" else " hidden"
     sprintf('<div class="pic-select-item" id="%s"%s>%s</div>', html_escape(it$id), hid, it$html)
   }, character(1))
-  paste0('<div class="pic-select-bar">', paste(bar, collapse = ""), '</div>',
-         paste(blk, collapse = ""))
+  # 左 = チェックボックス / 右 = ブロック
+  paste0('<div class="pic-selgrid"><div class="pic-selgrid-ctrl"><div class="pic-select-bar">',
+         paste(bar, collapse = ""), '</div></div><div class="pic-selgrid-view">',
+         paste(blk, collapse = ""), '</div></div>')
 }
 
 # contrast を group×group の行列で選ばせる UI。
@@ -169,7 +171,10 @@ build_matrix_group <- function(rows, cols, cell_html, row_title = "Contrast", co
     }
   }
   if (length(cells) == 0) return("")
-  sprintf('<div class="pic-matrix">%s<div class="pic-select-bar"><span class="pic-select-lbl">%s:</span>%s</div><div class="pic-matrix-cells">%s</div></div>',
+  # 左 (.pic-matrix-sel) = contrast 行列 + method バー、右 (.pic-matrix-cells) = プロット
+  sprintf(paste0('<div class="pic-matrix"><div class="pic-matrix-sel">%s',
+                 '<div class="pic-select-bar"><span class="pic-select-lbl">%s:</span>%s</div></div>',
+                 '<div class="pic-matrix-cells">%s</div></div>'),
           row_sel, html_escape(col_title), paste(col_bar, collapse = ""),
           paste(cells, collapse = ""))
 }
@@ -849,10 +854,13 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
   sel_html <- if (length(items) <= 1) {
     if (length(items) == 1) sprintf('<div class="pic-select-item">%s</div>', items[[1]]$html) else ""
   } else if (nzchar(matrix_html)) {
-    paste0(pick_hint('Select comparisons to show &mdash; tick a cell in the matrix below.'),
+    # 左 = contrast 行列、右 = MA/volcano ブロック
+    paste0('<div class="pic-degsel"><div class="pic-degsel-ctrl"><h4>Comparisons</h4>',
+           pick_hint('Tick a cell to show that comparison.'),
            '<p class="pic-note">Each cell shows the number of differentially expressed genes ',
-           '(padj &lt; FDR) between the two groups; the plots appear underneath.</p>',
-           matrix_html, paste(blocks, collapse = ""))
+           '(padj &lt; FDR) between the two groups.</p>',
+           matrix_html, '</div><div class="pic-degsel-view">',
+           paste(blocks, collapse = ""), '</div></div>')
   } else {
     build_select_group(items)
   }
