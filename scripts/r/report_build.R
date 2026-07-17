@@ -508,13 +508,10 @@ build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, g
     sprintf('<tr>%s%s</tr>', rh, paste(tds, collapse = ""))
   }, character(1))
 
-  legend <- sprintf(paste0('<div class="pic-cor-legend">low <span class="pic-cor-grad"></span> high',
-                           '&nbsp;&nbsp;(r = %.2f&ndash;1.00)</div>'), zmin)
   paste0(
     src_note(report_rel_path(f, proj_dir)),
     '<p class="pic-note">Sample-to-sample correlation. Replicates of the same group should correlate most strongly ',
     '(<b style="color:#b2182b">red</b>); a sample that stands out from its group (more <b style="color:#2166ac">blue</b>) may be an outlier.</p>',
-    legend,
     sprintf('<div class="pic-cor-wrap"><table class="pic-cor"><thead>%s</thead><tbody>%s</tbody></table></div>',
             header, paste(rows, collapse = "")))
 }

@@ -117,8 +117,6 @@ table.pic-cor{border-collapse:collapse;font-size:12px}
 .pic-cor td.val{font-variant-numeric:tabular-nums;font-weight:600}
 .pic-cor .gsep-l{border-left:2px solid #1f2933}
 .pic-cor .gsep-t{border-top:2px solid #1f2933}
-.pic-cor-legend{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin:4px 0 8px}
-.pic-cor-grad{display:inline-block;width:110px;height:12px;border:1px solid var(--line);border-radius:2px;background:linear-gradient(90deg,#2166ac,#f7f7f7,#b2182b)}
 
 /* MA + volcano を横一列 */
 .pic-ma-vol{display:grid;grid-template-columns:1fr 1fr;gap:16px}
