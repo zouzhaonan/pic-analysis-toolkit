@@ -93,20 +93,14 @@ method_output_meta <- function(method, mode = c("ora", "gsea")) {
   )
 }
 
+# enrich 出力は CSV のみ (静的画像は廃止)。csv/ ラッパを外し
+# out_dir/ORA/<method>/, out_dir/GSEA/<method>/ に直接置く。
 ora_csv_dir <- function(out_dir, method) {
-  file.path(out_dir, "csv", "ORA", method)
-}
-
-ora_plot_dir <- function(out_dir) {
-  file.path(out_dir, "plots", "ORA")
+  file.path(out_dir, "ORA", method)
 }
 
 gsea_csv_dir <- function(out_dir, method) {
-  file.path(out_dir, "csv", "GSEA", method)
-}
-
-gsea_plot_dir <- function(out_dir) {
-  file.path(out_dir, "plots", "GSEA")
+  file.path(out_dir, "GSEA", method)
 }
 
 
@@ -128,7 +122,6 @@ run_ora_enrichment <- function(stats, genome, out_dir, project_name,
     unlink(method_dir, recursive = TRUE)
     dir.create(method_dir, recursive = TRUE, showWarnings = FALSE)
   })
-  dir.create(ora_plot_dir(out_dir), recursive = TRUE, showWarnings = FALSE)
 
   build_method_clusters <- function(method_gene_col, method_precomputed_clusters = NULL) {
     method_precomputed_clusters
@@ -263,35 +256,6 @@ run_ora_enrichment <- function(stats, genome, out_dir, project_name,
       )
 
     })
-    meta <- method_output_meta(method, mode = "ora")
-    method_dir <- ora_csv_dir(out_dir, method)
-    csv_files <- list.files(method_dir, pattern = "\\.csv$", full.names = TRUE)
-    if (length(csv_files) == 0) return(invisible(NULL))
-
-    read_ora_csv <- function(fp) {
-      tbl <- suppressMessages(
-        readr::read_csv(fp, show_col_types = FALSE, progress = FALSE, col_types = readr::cols(.default = readr::col_character()))
-      )
-      numeric_cols <- intersect(
-        c("RichFactor", "FoldEnrichment", "zScore", "pvalue", "p.adjust", "qvalue", "Count"),
-        colnames(tbl)
-      )
-      if (length(numeric_cols) > 0) {
-        tbl <- tbl |>
-          dplyr::mutate(dplyr::across(dplyr::all_of(numeric_cols), ~ suppressWarnings(as.numeric(.x))))
-      }
-      tbl
-    }
-
-    ora_all <- purrr::map_dfr(csv_files, function(fp) {
-      read_ora_csv(fp)
-    })
-    plot_obj <- build_cluster_ora_plot(ora_all)
-    if (!is.null(plot_obj)) {
-      save_plot(plot_obj, ora_plot_dir(out_dir), sprintf("%s_cluster_ORA_%s.pdf", meta$prefix, project_name))
-    } else {
-      message(sprintf("[INFO] ORA %s plot skipped: no plottable rows", method))
-    }
   })
 }
 
@@ -309,7 +273,6 @@ run_gsea_enrichment <- function(stats, contrasts, genome, out_dir, project_name,
     unlink(method_dir, recursive = TRUE)
     dir.create(method_dir, recursive = TRUE, showWarnings = FALSE)
   })
-  dir.create(gsea_plot_dir(out_dir), recursive = TRUE, showWarnings = FALSE)
   message(sprintf("[INFO] GSEA contrasts: %d", length(contrasts)))
 
   purrr::walk(methods, function(method) {
@@ -382,60 +345,6 @@ run_gsea_enrichment <- function(stats, contrasts, genome, out_dir, project_name,
         file.path(method_dir, sprintf("%s_%s_%s.csv", meta$prefix, file_label, project_name))
       )
     })
-
-    plot_list <- list()
-    for (contrast_values in contrasts) {
-      numerator <- contrast_values[[2]]
-      denominator <- contrast_values[[3]]
-      display_label <- format_contrast_label(numerator, denominator)
-      csv_path <- file.path(
-        method_dir,
-        sprintf("%s_%s_%s.csv", meta$prefix, format_contrast_file_label(display_label), project_name)
-      )
-      if (!file.exists(csv_path)) {
-        next
-      }
-      gsea_df <- suppressMessages(
-        readr::read_csv(csv_path, show_col_types = FALSE, progress = FALSE)
-      )
-      plot_obj <- build_gsea_plot(gsea_df, numerator, denominator)
-      if (is.null(plot_obj)) {
-        next
-      }
-      plot_obj <- plot_obj + ggplot2::ggtitle(display_label)
-      plot_list[[length(plot_list) + 1]] <- plot_obj
-    }
-
-    if (length(plot_list) == 0) {
-      message(sprintf("[INFO] GSEA %s plot skipped: no plottable contrasts", method))
-      return(invisible(NULL))
-    }
-
-    ecfg <- pic_plot_spec()$plot$enrichment
-    label_counts <- suppressWarnings(as.numeric(vapply(plot_list, function(p) attr(p, "pic_n_y_labels"), numeric(1))))
-    max_labels <- suppressWarnings(max(label_counts, na.rm = TRUE))
-    if (!is.finite(max_labels)) {
-      max_labels <- NA_real_
-    }
-    height_auto <- if (is.finite(max_labels)) {
-      max(ecfg$save_height_min, min(ecfg$save_height_max, 2 + max_labels * ecfg$save_height_per_label))
-    } else {
-      ecfg$save_height
-    }
-
-    out_pdf <- file.path(
-      gsea_plot_dir(out_dir),
-      sprintf("%s_%s.pdf", meta$prefix, project_name)
-    )
-    grDevices::pdf(out_pdf, width = ecfg$save_width, height = height_auto)
-    tryCatch(
-      {
-        purrr::walk(plot_list, print)
-      },
-      finally = {
-        grDevices::dev.off()
-      }
-    )
   })
 }
 

@@ -62,7 +62,6 @@ main <- function() {
 
   if (nrow(deg_count_summary) > 0) {
     readr::write_csv(deg_count_summary, file.path(deg_dir, sprintf("DEG_count_%s.csv", args$project_name)))
-    save_deg_count_plot(deg_count_summary, deg_dir, args$project_name)
   }
 
   if (nrow(degpattern$cluster_gene) > 0) {
@@ -84,14 +83,6 @@ main <- function() {
       readr::write_csv(
         degpattern$merge_map,
         file.path(degpattern_dir, sprintf("DEGCluster_merge_map_%s.csv", args$project_name))
-      )
-    }
-    if (!is.null(degpattern$plot)) {
-      ggplot2::ggsave(
-        file.path(degpattern_dir, sprintf("DEGCluster_profile_%s.pdf", args$project_name)),
-        plot = degpattern$plot,
-        width = 12,
-        height = 8
       )
     }
   } else {

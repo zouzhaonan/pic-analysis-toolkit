@@ -218,19 +218,19 @@ pic_report_discover_projects <- function(out_dir) {
   projects
 }
 
-# enrich ディレクトリ (csv/GSEA を含み project 名に一致するもの) を探す
+# enrich ディレクトリ (GSEA/<method>/*.csv を含み project 名に一致するもの) を探す
 pic_report_find_enrich_dir <- function(out_dir, project) {
   all_csvs <- list.files(out_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE)
   gsea_csvs <- all_csvs[
     grepl("enrich", all_csvs, fixed = TRUE) &
-      grepl(file.path("csv", "GSEA"), all_csvs, fixed = TRUE) &
+      grepl(file.path("GSEA", ""), all_csvs, fixed = TRUE) &
       grepl(paste0(project, ".csv"), basename(all_csvs), fixed = TRUE)
   ]
   if (length(gsea_csvs) == 0) {
     return(NA_character_)
   }
-  # enrich/csv/GSEA/<METHOD>/file -> enrich ルートは 3 階層上
-  enrich_root <- dirname(dirname(dirname(dirname(gsea_csvs[[1]]))))
+  # enrich/<genome>/GSEA/<METHOD>/file -> enrich/<genome> は 3 階層上
+  enrich_root <- dirname(dirname(dirname(gsea_csvs[[1]])))
   enrich_root
 }
 
@@ -1182,7 +1182,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
   }
 
   # ---- GSEA: contrast × method の 2 軸をチェックボックスで選択 ----
-  gsea_root <- file.path(enrich_dir, "csv", "GSEA")
+  gsea_root <- file.path(enrich_dir, "GSEA")
   gsea_html <- ""
   if (dir.exists(gsea_root)) {
     mdirs <- list.dirs(gsea_root, recursive = FALSE, full.names = TRUE)
@@ -1243,7 +1243,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
   }
 
   # ---- ORA: method ごと (cluster をまとめて 1 枚) ----
-  ora_root <- file.path(enrich_dir, "csv", "ORA")
+  ora_root <- file.path(enrich_dir, "ORA")
   ora_items <- list()
   if (dir.exists(ora_root)) {
     methods <- list.dirs(ora_root, recursive = FALSE, full.names = TRUE)
