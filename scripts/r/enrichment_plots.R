@@ -260,7 +260,7 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator) {
   annotations <- list()
   shapes <- list()
   layout <- list(
-    margin = list(l = 10, r = 10, t = 34, b = 46), hovermode = "closest",
+    margin = list(l = 10, r = 10, t = 56, b = 46), hovermode = "closest",
     showlegend = FALSE,
     yaxis = list(tickmode = "array", tickvals = as.list(ypos_all), ticktext = as.list(ylab),
                  automargin = TRUE, range = list(0.5, nrow(plot_df) + 0.5),
@@ -305,7 +305,7 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator) {
   layout$annotations <- annotations
   layout$shapes <- shapes
   list(data = traces, layout = layout, n_terms = nrow(plot_df),
-       config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = FALSE))
+       config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = TRUE))
 }
 
 # ORA (cluster) を plotly の dot plot spec に変換する。
@@ -409,10 +409,10 @@ build_ora_plotly <- function(ora_df) {
                  ticktext = as.list(ylab_levels), automargin = TRUE,
                  range = list(0.5, length(ylab_levels) + 0.5), showline = TRUE, mirror = TRUE,
                  linecolor = "#cdd7e2"),
-    margin = list(l = 10, r = 10, t = 16, b = 80), hovermode = "closest"
+    margin = list(l = 10, r = 10, t = 44, b = 80), hovermode = "closest"
   )
   list(data = list(trace), layout = layout, n_terms = length(ylab_levels),
-       config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = FALSE))
+       config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = TRUE))
 }
 
 # dot plot の term 数からプロット高さ (px) を決める。

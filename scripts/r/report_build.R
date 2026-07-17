@@ -1108,7 +1108,7 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
   traces <- list()
   annotations <- list()
   # 凡例を strip ラベルより上に置き、重なりを避ける。boxgap を詰めて箱を太くする。
-  layout <- list(margin = list(l = 54, r = 10, t = 58, b = 64), hovermode = "closest",
+  layout <- list(margin = list(l = 54, r = 10, t = 74, b = 64), hovermode = "closest",
                  showlegend = TRUE, boxgap = 0.2, boxgroupgap = 0,
                  legend = list(orientation = "h", yanchor = "bottom", y = 1.14, x = 0))
   for (i in seq_len(ncl)) {
@@ -1152,7 +1152,7 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
   }
   layout$annotations <- annotations
   list(data = traces, layout = layout, height = 380L,
-       config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = FALSE))
+       config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = TRUE))
 }
 
 # enrichment セクションの中身 (h3 GSEA / ORA) を返す。<section> ラッパは付けない。
