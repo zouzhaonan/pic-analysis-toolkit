@@ -110,8 +110,9 @@ build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = T
     }
     rows_html <- c(rows_html, sprintf('<tr>%s%s</tr>', rh, paste(cs, collapse = "")))
   }
-  sprintf('<div class="pic-cmx-wrap"><table class="pic-cmatrix"><thead>%s</thead><tbody>%s</tbody></table></div>',
-          header, paste(rows_html, collapse = ""))
+  cls <- if (show_count) "pic-cmatrix" else "pic-cmatrix pic-cmx-nocount"
+  sprintf('<div class="pic-cmx-wrap"><table class="%s"><thead>%s</thead><tbody>%s</tbody></table></div>',
+          cls, header, paste(rows_html, collapse = ""))
 }
 
 # 2 軸 (行 = contrast, 列 = method) をチェックボックスで選び、両方選択のセルのみ表示。
@@ -1218,7 +1219,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
       row_groups <- if (!is.null(group_order) && length(group_order) > 0) group_order else
         unique(unlist(lapply(contrasts, function(a) trimws(strsplit(a, " / ", fixed = TRUE)[[1]]))))
       gsea_html <- build_matrix_group(rows, methods, cell_html, row_groups = row_groups,
-                                      row_counts = deg_counts, group_pal = group_pal)
+                                      row_counts = NULL, group_pal = group_pal)
     }
   }
   if (nzchar(gsea_html)) {

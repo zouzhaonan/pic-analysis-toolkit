@@ -96,6 +96,8 @@ table.pic-cmatrix{border-collapse:collapse;font-size:13px}
 .pic-cmatrix .pic-cmx-rh{text-align:left}
 .pic-cmx-cell{background:#fff;text-align:right}
 .pic-cmx-cell label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;justify-content:flex-end}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell{text-align:center}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell label{justify-content:center}
 .pic-cmx-cell:hover{background:#f3f7fc}
 .pic-cmx-n{font-variant-numeric:tabular-nums;font-weight:600}
 .pic-cmx-empty{background:#fafbfc}
@@ -110,6 +112,7 @@ table.pic-cor{border-collapse:collapse;font-size:12px}
 .pic-cor th,.pic-cor td{border:1px solid #fff;padding:3px 7px;text-align:center;white-space:nowrap}
 .pic-cor .pic-cor-corner{background:#fff;border:none;position:sticky;left:0;z-index:3}
 .pic-cor thead th{position:sticky;top:0;background:#fff;z-index:2;font-weight:700;vertical-align:bottom}
+.pic-cor thead th.pic-cor-ch span{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;display:inline-block}
 .pic-cor tbody th.pic-cor-rh{position:sticky;left:0;background:#fff;z-index:1;font-weight:700;text-align:left}
 .pic-cor td.val{font-variant-numeric:tabular-nums;font-weight:600}
 .pic-cor .gsep-l{border-left:2px solid #1f2933}
