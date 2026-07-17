@@ -815,7 +815,7 @@ build_cluster_profile_png <- function(deseq2_dir, project, tmp_dir, group_pal = 
 }
 
 # enrichment セクションの中身 (h3 GSEA / ORA) を返す。<section> ラッパは付けない。
-enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, proj_dir = NULL, id_prefix = "") {
+enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, proj_dir = NULL, id_prefix = "", reg = NULL) {
   if (is.null(enrich_dir) || is.na(enrich_dir) || !dir.exists(enrich_dir)) return("")
   ecfg <- pic_plot_spec()$plot$enrichment
   parts <- character(0)
@@ -842,17 +842,12 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         sp <- strsplit(contrast, " / ", fixed = TRUE)[[1]]
         numerator <- if (length(sp) >= 1) sp[[1]] else ""
         denominator <- if (length(sp) >= 2) sp[[2]] else ""
-        p <- tryCatch(build_gsea_plot(df, numerator, denominator), error = function(e) NULL)
-        if (is.null(p)) next
-        p <- p + ggplot2::theme(plot.margin = ggplot2::margin(4, 6, 4, 4))
-        n_labels <- suppressWarnings(as.numeric(attr(p, "pic_n_y_labels")))
-        h <- if (is.finite(n_labels)) max(2.2, min(11, 0.9 + n_labels * 0.16)) else 5
-        png_path <- file.path(tmp_dir, sprintf("gsea_%s_%s.png", method, format_contrast_file_label(contrast)))
-        ggplot2::ggsave(png_path, plot = p, width = 9, height = h, dpi = 120, limitsize = FALSE)
-        uri <- png_data_uri(png_path)
-        if (is.na(uri)) next
+        spec <- tryCatch(build_gsea_plotly(df, numerator, denominator), error = function(e) NULL)
+        if (is.null(spec)) next
+        pid <- sprintf("%sgseaplot_%s_%s", id_prefix, method, format_contrast_file_label(contrast))
+        register_plot(reg, pid, list(data = spec$data, layout = spec$layout))
         if (is.null(cellmap[[contrast]])) cellmap[[contrast]] <- list()
-        cellmap[[contrast]][[method]] <- uri
+        cellmap[[contrast]][[method]] <- list(id = pid, h = enrich_plot_height(spec$n_terms))
         methods_seen <- union(methods_seen, method)
       }
     }
@@ -870,10 +865,10 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
       key2contrast <- stats::setNames(contrasts, vapply(contrasts, format_contrast_file_label, character(1)))
       cell_html <- function(rkey, method) {
         contrast <- key2contrast[[rkey]]
-        uri <- cellmap[[contrast]][[method]]
-        if (is.null(uri) || is.na(uri)) return("")
-        sprintf('<div class="pic-enrich-item"><h4>%s &mdash; %s</h4><img loading="lazy" src="%s"></div>',
-                html_escape(contrast), html_escape(method), uri)
+        info <- cellmap[[contrast]][[method]]
+        if (is.null(info)) return("")
+        sprintf('<div class="pic-enrich-item"><h4>%s &mdash; %s</h4><div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
+                html_escape(contrast), html_escape(method), info$id, info$h)
       }
       gsea_html <- build_matrix_group(rows, methods, cell_html)
     }
@@ -900,20 +895,15 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         error = function(e) NULL
       )
       if (is.null(ora_all) || nrow(ora_all) == 0) next
-      p <- tryCatch(build_cluster_ora_plot(ora_all), error = function(e) NULL)
-      if (is.null(p)) next
-      p <- p + ggplot2::theme(plot.margin = ggplot2::margin(4, 6, 4, 4))
-      n_labels <- suppressWarnings(as.numeric(attr(p, "pic_n_y_labels")))
-      h <- if (is.finite(n_labels)) max(2.5, min(13, 0.9 + n_labels * 0.17)) else 7
-      png_path <- file.path(tmp_dir, sprintf("ora_%s.png", method))
-      ggplot2::ggsave(png_path, plot = p, width = 9, height = h, dpi = 120, limitsize = FALSE)
-      uri <- png_data_uri(png_path)
-      if (is.na(uri)) next
+      spec <- tryCatch(build_ora_plotly(ora_all), error = function(e) NULL)
+      if (is.null(spec)) next
+      pid <- sprintf("%soraplot_%s", id_prefix, method)
+      register_plot(reg, pid, list(data = spec$data, layout = spec$layout))
       ora_items[[length(ora_items) + 1L]] <- list(
         id = sprintf("%sora_%s", id_prefix, method),
         label = method,
-        html = sprintf('<div class="pic-enrich-item"><h4>%s</h4><img loading="lazy" src="%s"></div>',
-                       html_escape(method), uri),
+        html = sprintf('<div class="pic-enrich-item"><h4>%s</h4><div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
+                       html_escape(method), pid, enrich_plot_height(spec$n_terms)),
         checked = (length(ora_items) == 0L)
       )
     }
@@ -944,8 +934,8 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
 }
 
 # 通常レポート用の enrichment セクション (<section id="enrich"> でラップ)。
-section_enrichment <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, heading = "4. Enrichment", proj_dir = NULL, id_prefix = "") {
-  inner <- enrichment_blocks(enrich_dir, project, tmp_dir, deg_counts, deseq2_dir, group_pal, proj_dir, id_prefix)
+section_enrichment <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, heading = "4. Enrichment", proj_dir = NULL, id_prefix = "", reg = NULL) {
+  inner <- enrichment_blocks(enrich_dir, project, tmp_dir, deg_counts, deseq2_dir, group_pal, proj_dir, id_prefix, reg)
   if (!nzchar(inner)) inner <- '<p>No enrichment plots were generated.</p>'
   sprintf('<section id="enrich"><h2>%s</h2>%s</section>', heading, inner)
 }
@@ -1021,7 +1011,7 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   sec_expr <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats, "expr", "expr", "5. Gene expression", out_dir)
 
   # 6. Enrichment
-  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "6. Enrichment", out_dir)
+  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "6. Enrichment", out_dir, "", reg)
   if (is.null(sec_enrich)) sec_enrich <- ""
 
   nav <- paste0('<nav class="pic-nav"><a href="#qc">QC</a>',
@@ -1210,7 +1200,7 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
     navs <- c(navs, sprintf('<a href="#%s">Expression</a>', sid))
   }
   # Enrichment
-  enrich_inner <- enrichment_blocks(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, out_dir, id_prefix)
+  enrich_inner <- enrichment_blocks(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, out_dir, id_prefix, reg)
   if (nzchar(enrich_inner)) {
     n <- n + 1L
     sid <- paste0(frac_key, "_enrich")

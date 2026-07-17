@@ -3,6 +3,8 @@
 (function () {
   function renderPlot(el) {
     if (!el || el.dataset.rendered) return;
+    // 非表示ブロック内は描画しない (表示された時に描く)
+    if (el.closest && el.closest(".pic-select-item[hidden]")) return;
     var spec = window.PIC_PLOTS && window.PIC_PLOTS[el.id];
     if (!spec) return;
     var layout = spec.layout || {};
