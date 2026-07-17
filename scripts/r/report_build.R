@@ -1420,12 +1420,17 @@ pic_tab_panel <- function(id, title, view, desc = "", controls = "", active = FA
 }
 
 # 既存のフル <section> HTML からタブを作る (title / inner を抽出して再ラップ)。
-section_to_tab <- function(sec_html, active = FALSE, desc = "", controls = "") {
+# 本文中の説明文 (<p class="pic-note">) は抽出して info(丸i)吹き出しにまとめ、
+# デフォルト非表示にする。選択の合図 (pic-pick) は本文に残す。
+section_to_tab <- function(sec_html, active = FALSE, controls = "") {
   if (!nzchar(sec_html)) return("")
   id <- regmatches(sec_html, regexpr('(?<=<section id=")[^"]+', sec_html, perl = TRUE))
   title <- regmatches(sec_html, regexpr('(?<=<h2>).*?(?=</h2>)', sec_html, perl = TRUE))
   inner <- sub('^<section[^>]*><h2>.*?</h2>', '', sec_html)
   inner <- sub('</section>[[:space:]]*$', '', inner)
+  notes <- unlist(regmatches(inner, gregexpr('<p class="pic-note">.*?</p>', inner, perl = TRUE)))
+  desc <- if (length(notes) > 0) paste(sub('<p class="pic-note">', '<p>', notes), collapse = "") else ""
+  inner <- gsub('<p class="pic-note">.*?</p>', '', inner, perl = TRUE)
   pic_tab_panel(id, title, inner, desc, controls, active)
 }
 
