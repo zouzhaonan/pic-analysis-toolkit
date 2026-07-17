@@ -69,6 +69,12 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-expr-msg{color:#b45309;font-size:13px;min-height:1em;margin:2px 0}
 .pic-expr-plots{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
 
+/* 複数ブロックをチェックボックスで表示選択 */
+.pic-select-bar{display:flex;flex-wrap:wrap;gap:6px 16px;margin:10px 0;padding:8px 12px;background:#f3f7fc;border:1px solid var(--line);border-radius:8px}
+.pic-select-chk{font-size:13px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap}
+.pic-select-chk input{cursor:pointer}
+.pic-select-item[hidden]{display:none}
+
 /* MA + volcano を横一列 */
 .pic-ma-vol{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media(max-width:860px){.pic-ma-vol{grid-template-columns:1fr}}

@@ -45,6 +45,28 @@ src_note <- function(rel) {
   sprintf('<p class="pic-src">source: <code>%s</code></p>', html_escape(rel))
 }
 
+# 複数ブロックをチェックボックスで表示選択する UI。既定は先頭のみ表示。
+# items: list(list(id=, label=, html=, checked=logical), ...)
+# ブロックが 1 つだけなら選択 UI は付けずにそのまま表示する。
+build_select_group <- function(items) {
+  items <- Filter(function(it) !is.null(it$html) && nzchar(it$html), items)
+  if (length(items) == 0) return("")
+  if (length(items) == 1) {
+    return(sprintf('<div class="pic-select-item">%s</div>', items[[1]]$html))
+  }
+  bar <- vapply(items, function(it) {
+    ck <- if (isTRUE(it$checked)) " checked" else ""
+    sprintf('<label class="pic-select-chk"><input type="checkbox" data-target="%s"%s>%s</label>',
+            html_escape(it$id), ck, html_escape(it$label))
+  }, character(1))
+  blk <- vapply(items, function(it) {
+    hid <- if (isTRUE(it$checked)) "" else " hidden"
+    sprintf('<div class="pic-select-item" id="%s"%s>%s</div>', html_escape(it$id), hid, it$html)
+  }, character(1))
+  paste0('<div class="pic-select-bar">', paste(bar, collapse = ""), '</div>',
+         paste(blk, collapse = ""))
+}
+
 # plot 仕様を共有レジストリ env に登録する
 pic_report_registry <- function() {
   reg <- new.env(parent = emptyenv())
@@ -473,7 +495,7 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
   aspects <- aspects[ord]
   deg_per <- deg_per[ord]
 
-  blocks <- character(0)
+  items <- list()
   for (k in seq_along(aspects)) {
     a <- aspects[[k]]
     nd <- deg_per[[k]]
@@ -538,16 +560,18 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
       cells <- c(cells, sprintf('<div class="pic-plot-cell"><h4>volcano</h4><div id="%s" class="pic-plot"></div></div>', id))
     }
 
-    open_attr <- if (k <= 3) " open" else ""
-    blocks <- c(blocks, sprintf(
-      '<details class="pic-contrast"%s><summary>%s — DEG %d</summary>%s<div class="pic-ma-vol">%s</div></details>',
-      open_attr, html_escape(a), as.integer(nd), meta_html, paste(cells, collapse = "")
-    ))
+    item_html <- paste0(meta_html, '<div class="pic-ma-vol">', paste(cells, collapse = ""), '</div>')
+    items[[length(items) + 1L]] <- list(
+      id = sprintf("%ssel_%s", id_prefix, flab),
+      label = sprintf("%s (DEG %d)", a, as.integer(nd)),
+      html = item_html,
+      checked = (k == 1L)
+    )
   }
   paste0('<h3>MA / volcano</h3>',
          src_note(stats_src),
-         '<p class="pic-note">Volcano y-axis is -log10(pvalue); point color indicates significance by padj (hover shows padj).</p>',
-         paste(blocks, collapse = "\n"))
+         '<p class="pic-note">Volcano y-axis is -log10(pvalue); point color indicates significance by padj (hover shows padj). Use the checkboxes to show/hide each contrast.</p>',
+         build_select_group(items))
 }
 
 # ---------------------------------------------------------------------------
@@ -755,7 +779,7 @@ build_cluster_profile_png <- function(deseq2_dir, project, tmp_dir, group_pal = 
 }
 
 # enrichment セクションの中身 (h3 GSEA / ORA) を返す。<section> ラッパは付けない。
-enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, proj_dir = NULL) {
+enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, proj_dir = NULL, id_prefix = "") {
   if (is.null(enrich_dir) || is.na(enrich_dir) || !dir.exists(enrich_dir)) return("")
   ecfg <- pic_plot_spec()$plot$enrichment
   parts <- character(0)
@@ -767,7 +791,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
 
   # ---- GSEA: contrast ごとにグループ化し、配下に method (GO_BP, KEGG, ...) ----
   gsea_root <- file.path(enrich_dir, "csv", "GSEA")
-  gsea_blocks <- character(0)
+  gsea_items <- list()
   if (dir.exists(gsea_root)) {
     mdirs <- list.dirs(gsea_root, recursive = FALSE, full.names = TRUE)
     # records: 各 (method, contrast) -> png uri
@@ -812,24 +836,25 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         '<div class="pic-enrich-item"><h4>%s</h4><img loading="lazy" src="%s"></div>',
         html_escape(r$method), r$uri
       ), character(1))
-      open_attr <- if (length(gsea_blocks) < 2) " open" else ""
-      gsea_blocks <- c(gsea_blocks, sprintf(
-        '<details class="pic-enrich-method"%s><summary>%s (%d method)</summary>%s</details>',
-        open_attr, html_escape(contrast), length(imgs), paste(imgs, collapse = "")
-      ))
+      gsea_items[[length(gsea_items) + 1L]] <- list(
+        id = sprintf("%sgsea_%s", id_prefix, format_contrast_file_label(contrast)),
+        label = sprintf("%s (%d method)", contrast, length(imgs)),
+        html = paste(imgs, collapse = ""),
+        checked = (length(gsea_items) == 0L)
+      )
     }
   }
-  if (length(gsea_blocks) > 0) {
+  if (length(gsea_items) > 0) {
     parts <- c(parts, sprintf(
-      '<details class="pic-enrich-group" open><summary>GSEA</summary>%s<p class="pic-note">Expand a contrast to see GSEA dot plots for GO_BP / KEGG / REACTOME ...</p>%s</details>',
+      '<details class="pic-enrich-group" open><summary>GSEA</summary>%s<p class="pic-note">Use the checkboxes to show/hide GSEA dot plots (GO_BP / KEGG / REACTOME ...) per contrast.</p>%s</details>',
       src_note(report_rel_path(gsea_root, proj_dir)),
-      paste(gsea_blocks, collapse = "\n")
+      build_select_group(gsea_items)
     ))
   }
 
   # ---- ORA: method ごと (cluster をまとめて 1 枚) ----
   ora_root <- file.path(enrich_dir, "csv", "ORA")
-  ora_blocks <- character(0)
+  ora_items <- list()
   if (dir.exists(ora_root)) {
     methods <- list.dirs(ora_root, recursive = FALSE, full.names = TRUE)
     for (mdir in methods) {
@@ -850,13 +875,16 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
       ggplot2::ggsave(png_path, plot = p, width = 9, height = h, dpi = 120, limitsize = FALSE)
       uri <- png_data_uri(png_path)
       if (is.na(uri)) next
-      ora_blocks <- c(ora_blocks, sprintf(
-        '<div class="pic-enrich-item"><h4>ORA — %s</h4><img loading="lazy" src="%s"></div>',
-        html_escape(method), uri
-      ))
+      ora_items[[length(ora_items) + 1L]] <- list(
+        id = sprintf("%sora_%s", id_prefix, method),
+        label = method,
+        html = sprintf('<div class="pic-enrich-item"><h4>ORA — %s</h4><img loading="lazy" src="%s"></div>',
+                       html_escape(method), uri),
+        checked = (length(ora_items) == 0L)
+      )
     }
   }
-  if (length(ora_blocks) > 0) {
+  if (length(ora_items) > 0) {
     ora_inner <- character(0)
     # Cluster expression profiles first (so cluster_N labels are interpretable)
     if (!is.null(deseq2_dir)) {
@@ -870,8 +898,8 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
       }
     }
     ora_inner <- c(ora_inner,
-      sprintf('<details class="pic-enrich-method" open><summary>ORA dot plots (%d method)</summary>%s%s</details>',
-              length(ora_blocks), src_note(report_rel_path(ora_root, proj_dir)), paste(ora_blocks, collapse = "")))
+      sprintf('<details class="pic-enrich-method" open><summary>ORA dot plots (%d method)</summary><p class="pic-note">Use the checkboxes to show/hide each method.</p>%s%s</details>',
+              length(ora_items), src_note(report_rel_path(ora_root, proj_dir)), build_select_group(ora_items)))
     parts <- c(parts, sprintf(
       '<details class="pic-enrich-group" open><summary>ORA (DEG clusters)</summary>%s</details>',
       paste(ora_inner, collapse = "")
@@ -882,8 +910,8 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
 }
 
 # 通常レポート用の enrichment セクション (<section id="enrich"> でラップ)。
-section_enrichment <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, heading = "4. Enrichment", proj_dir = NULL) {
-  inner <- enrichment_blocks(enrich_dir, project, tmp_dir, deg_counts, deseq2_dir, group_pal, proj_dir)
+section_enrichment <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, heading = "4. Enrichment", proj_dir = NULL, id_prefix = "") {
+  inner <- enrichment_blocks(enrich_dir, project, tmp_dir, deg_counts, deseq2_dir, group_pal, proj_dir, id_prefix)
   if (!nzchar(inner)) inner <- '<p>No enrichment plots were generated.</p>'
   sprintf('<section id="enrich"><h2>%s</h2>%s</section>', heading, inner)
 }
@@ -1148,7 +1176,7 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
     navs <- c(navs, sprintf('<a href="#%s">Expression</a>', sid))
   }
   # Enrichment
-  enrich_inner <- enrichment_blocks(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, out_dir)
+  enrich_inner <- enrichment_blocks(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, out_dir, id_prefix)
   if (nzchar(enrich_inner)) {
     n <- n + 1L
     sid <- paste0(frac_key, "_enrich")

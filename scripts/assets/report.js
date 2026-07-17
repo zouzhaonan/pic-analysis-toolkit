@@ -248,9 +248,11 @@
   }
 
   document.addEventListener("DOMContentLoaded", function () {
-    // details 外のプロットは即描画
+    // details 外・非表示ブロック外のプロットは即描画
     document.querySelectorAll(".pic-plot").forEach(function (p) {
-      if (!p.closest("details")) renderPlot(p);
+      if (p.closest("details")) return;
+      if (p.closest(".pic-select-item[hidden]")) return;
+      renderPlot(p);
     });
     // details は開いた時に描画
     document.querySelectorAll("details").forEach(function (d) {
@@ -258,6 +260,23 @@
       if (d.open) renderWithin(d);
       d.addEventListener("toggle", function () {
         if (d.open) renderWithin(d);
+      });
+    });
+    // チェックボックスでブロックを表示/非表示 (表示時に遅延描画)
+    document.querySelectorAll(".pic-select-bar input[type=checkbox]").forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        var t = document.getElementById(cb.dataset.target);
+        if (!t) return;
+        if (cb.checked) {
+          t.hidden = false;
+          renderWithin(t);
+          // 既描画のプロットは再表示時にサイズを再計算
+          t.querySelectorAll(".pic-plot").forEach(function (p) {
+            if (p.dataset.rendered) { try { Plotly.Plots.resize(p); } catch (e) {} }
+          });
+        } else {
+          t.hidden = true;
+        }
       });
     });
     // 遺伝子発現 UI を初期化
