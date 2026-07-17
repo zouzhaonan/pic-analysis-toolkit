@@ -74,6 +74,8 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-select-chk{font-size:13px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap}
 .pic-select-chk input{cursor:pointer}
 .pic-select-item[hidden]{display:none}
+.pic-select-lbl{font-size:12px;font-weight:700;color:var(--muted);margin-right:4px;align-self:center}
+.pic-matrix .pic-select-bar{margin-bottom:6px}
 
 /* MA + volcano を横一列 */
 .pic-ma-vol{display:grid;grid-template-columns:1fr 1fr;gap:16px}

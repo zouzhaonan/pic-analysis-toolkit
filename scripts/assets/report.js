@@ -32,6 +32,23 @@
     root.querySelectorAll(".pic-plot").forEach(renderPlot);
   }
 
+  // contrast × method の 2 軸チェックボックス。両軸が選択されたセルのみ表示。
+  function initMatrix(root) {
+    function refresh() {
+      var rk = {}, ck = {};
+      root.querySelectorAll("input[data-axis=r]").forEach(function (cb) { if (cb.checked) rk[cb.dataset.key] = 1; });
+      root.querySelectorAll("input[data-axis=c]").forEach(function (cb) { if (cb.checked) ck[cb.dataset.key] = 1; });
+      root.querySelectorAll(".pic-matrix-cells > .pic-select-item").forEach(function (cell) {
+        var vis = rk[cell.dataset.r] && ck[cell.dataset.c];
+        cell.hidden = !vis;
+        if (vis) renderWithin(cell);
+      });
+    }
+    root.querySelectorAll("input[type=checkbox]").forEach(function (cb) {
+      cb.addEventListener("change", refresh);
+    });
+  }
+
   // ---- 遺伝子発現 (normalized counts) の box + beeswarm ----
   function hexToRgba(hex, a) {
     var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || "");
@@ -279,6 +296,8 @@
         }
       });
     });
+    // GSEA の contrast × method マトリクスを初期化
+    document.querySelectorAll(".pic-matrix").forEach(initMatrix);
     // 遺伝子発現 UI を初期化
     document.querySelectorAll(".pic-expr").forEach(initExpr);
   });

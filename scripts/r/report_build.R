@@ -67,6 +67,42 @@ build_select_group <- function(items) {
          paste(blk, collapse = ""))
 }
 
+# 2 軸 (行 = contrast, 列 = method) をそれぞれチェックボックスで選び、
+# 両方が選択されたセルのみ表示する UI。既定は先頭の行×列 1 セルのみ表示。
+# rows: list(list(key=, label=), ...)  cols: character vector
+# cell_html: function(row_key, col) -> html ("" ならセルなし)
+build_matrix_group <- function(rows, cols, cell_html, row_title = "Contrast", col_title = "Method") {
+  if (length(rows) == 0 || length(cols) == 0) return("")
+  first_row <- rows[[1]]$key
+  first_col <- cols[[1]]
+  row_bar <- vapply(seq_along(rows), function(i) {
+    ck <- if (i == 1L) " checked" else ""
+    sprintf('<label class="pic-select-chk"><input type="checkbox" data-axis="r"%s data-key="%s">%s</label>',
+            ck, html_escape(rows[[i]]$key), html_escape(rows[[i]]$label))
+  }, character(1))
+  col_bar <- vapply(seq_along(cols), function(i) {
+    ck <- if (i == 1L) " checked" else ""
+    sprintf('<label class="pic-select-chk"><input type="checkbox" data-axis="c"%s data-key="%s">%s</label>',
+            ck, html_escape(cols[[i]]), html_escape(cols[[i]]))
+  }, character(1))
+  cells <- character(0)
+  for (r in rows) {
+    for (co in cols) {
+      h <- cell_html(r$key, co)
+      if (is.null(h) || !nzchar(h)) next
+      vis <- (r$key == first_row && co == first_col)
+      hid <- if (vis) "" else " hidden"
+      cells <- c(cells, sprintf('<div class="pic-select-item" data-r="%s" data-c="%s"%s>%s</div>',
+                                html_escape(r$key), html_escape(co), hid, h))
+    }
+  }
+  if (length(cells) == 0) return("")
+  sprintf('<div class="pic-matrix"><div class="pic-select-bar"><span class="pic-select-lbl">%s:</span>%s</div><div class="pic-select-bar"><span class="pic-select-lbl">%s:</span>%s</div><div class="pic-matrix-cells">%s</div></div>',
+          html_escape(row_title), paste(row_bar, collapse = ""),
+          html_escape(col_title), paste(col_bar, collapse = ""),
+          paste(cells, collapse = ""))
+}
+
 # plot 仕様を共有レジストリ env に登録する
 pic_report_registry <- function() {
   reg <- new.env(parent = emptyenv())
@@ -517,7 +553,7 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     dir <- ifelse(is_sig & lfc > 0, "up", ifelse(is_sig & lfc < 0, "down", "ns"))
 
     legend_top <- list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0)
-    meta_html <- sprintf('<p class="pic-contrast-meta">DEG (padj &lt; %.2g): <b>%d</b></p>', fdr, as.integer(nd))
+    meta_html <- sprintf('<p class="pic-contrast-meta"><b>%s</b></p>', html_escape(a))
     cells <- character(0)
 
     # ---- MA (hover に padj) ----
@@ -563,7 +599,7 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     item_html <- paste0(meta_html, '<div class="pic-ma-vol">', paste(cells, collapse = ""), '</div>')
     items[[length(items) + 1L]] <- list(
       id = sprintf("%ssel_%s", id_prefix, flab),
-      label = sprintf("%s (DEG %d)", a, as.integer(nd)),
+      label = a,
       html = item_html,
       checked = (k == 1L)
     )
@@ -789,13 +825,13 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
     c(method_order[method_order %in% ms], sort(setdiff(ms, method_order)))
   }
 
-  # ---- GSEA: contrast ごとにグループ化し、配下に method (GO_BP, KEGG, ...) ----
+  # ---- GSEA: contrast × method の 2 軸をチェックボックスで選択 ----
   gsea_root <- file.path(enrich_dir, "csv", "GSEA")
-  gsea_items <- list()
+  gsea_html <- ""
   if (dir.exists(gsea_root)) {
     mdirs <- list.dirs(gsea_root, recursive = FALSE, full.names = TRUE)
-    # records: 各 (method, contrast) -> png uri
-    by_contrast <- list()
+    cellmap <- list()          # cellmap[[contrast]][[method]] = uri
+    methods_seen <- character(0)
     for (mdir in mdirs) {
       method <- basename(mdir)
       csvs <- list.files(mdir, pattern = paste0(project, "\\.csv$"), full.names = TRUE)
@@ -815,40 +851,38 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         ggplot2::ggsave(png_path, plot = p, width = 9, height = h, dpi = 120, limitsize = FALSE)
         uri <- png_data_uri(png_path)
         if (is.na(uri)) next
-        rec <- list(method = method, uri = uri)
-        by_contrast[[contrast]] <- c(by_contrast[[contrast]], list(rec))
+        if (is.null(cellmap[[contrast]])) cellmap[[contrast]] <- list()
+        cellmap[[contrast]][[method]] <- uri
+        methods_seen <- union(methods_seen, method)
       }
     }
-    # contrast の並び順: DEG 数降順 (なければ名前順)
-    contrasts <- names(by_contrast)
-    if (!is.null(deg_counts)) {
-      keyv <- vapply(contrasts, function(a) if (a %in% names(deg_counts)) deg_counts[[a]] else 0, numeric(1))
-      contrasts <- contrasts[order(keyv, decreasing = TRUE)]
-    } else {
-      contrasts <- sort(contrasts)
-    }
-    for (contrast in contrasts) {
-      recs <- by_contrast[[contrast]]
-      ms <- vapply(recs, function(r) r$method, character(1))
-      ord <- match(order_methods(ms), ms)
-      recs <- recs[ord[!is.na(ord)]]
-      imgs <- vapply(recs, function(r) sprintf(
-        '<div class="pic-enrich-item"><h4>%s</h4><img loading="lazy" src="%s"></div>',
-        html_escape(r$method), r$uri
-      ), character(1))
-      gsea_items[[length(gsea_items) + 1L]] <- list(
-        id = sprintf("%sgsea_%s", id_prefix, format_contrast_file_label(contrast)),
-        label = sprintf("%s (%d method)", contrast, length(imgs)),
-        html = paste(imgs, collapse = ""),
-        checked = (length(gsea_items) == 0L)
-      )
+    contrasts <- names(cellmap)
+    if (length(contrasts) > 0) {
+      # contrast の並び順: DEG 数降順 (なければ名前順)
+      if (!is.null(deg_counts)) {
+        keyv <- vapply(contrasts, function(a) if (a %in% names(deg_counts)) deg_counts[[a]] else 0, numeric(1))
+        contrasts <- contrasts[order(keyv, decreasing = TRUE)]
+      } else {
+        contrasts <- sort(contrasts)
+      }
+      methods <- order_methods(methods_seen)
+      rows <- lapply(contrasts, function(cc) list(key = format_contrast_file_label(cc), label = cc))
+      key2contrast <- stats::setNames(contrasts, vapply(contrasts, format_contrast_file_label, character(1)))
+      cell_html <- function(rkey, method) {
+        contrast <- key2contrast[[rkey]]
+        uri <- cellmap[[contrast]][[method]]
+        if (is.null(uri) || is.na(uri)) return("")
+        sprintf('<div class="pic-enrich-item"><h4>%s &mdash; %s</h4><img loading="lazy" src="%s"></div>',
+                html_escape(contrast), html_escape(method), uri)
+      }
+      gsea_html <- build_matrix_group(rows, methods, cell_html)
     }
   }
-  if (length(gsea_items) > 0) {
+  if (nzchar(gsea_html)) {
     parts <- c(parts, sprintf(
-      '<details class="pic-enrich-group" open><summary>GSEA</summary>%s<p class="pic-note">Use the checkboxes to show/hide GSEA dot plots (GO_BP / KEGG / REACTOME ...) per contrast.</p>%s</details>',
+      '<details class="pic-enrich-group" open><summary>GSEA</summary>%s<p class="pic-note">Select contrasts and methods with the checkboxes; every checked combination is shown.</p>%s</details>',
       src_note(report_rel_path(gsea_root, proj_dir)),
-      build_select_group(gsea_items)
+      gsea_html
     ))
   }
 
@@ -878,7 +912,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
       ora_items[[length(ora_items) + 1L]] <- list(
         id = sprintf("%sora_%s", id_prefix, method),
         label = method,
-        html = sprintf('<div class="pic-enrich-item"><h4>ORA — %s</h4><img loading="lazy" src="%s"></div>',
+        html = sprintf('<div class="pic-enrich-item"><h4>%s</h4><img loading="lazy" src="%s"></div>',
                        html_escape(method), uri),
         checked = (length(ora_items) == 0L)
       )
@@ -898,8 +932,8 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
       }
     }
     ora_inner <- c(ora_inner,
-      sprintf('<details class="pic-enrich-method" open><summary>ORA dot plots (%d method)</summary><p class="pic-note">Use the checkboxes to show/hide each method.</p>%s%s</details>',
-              length(ora_items), src_note(report_rel_path(ora_root, proj_dir)), build_select_group(ora_items)))
+      sprintf('<details class="pic-enrich-method" open><summary>ORA dot plots</summary><p class="pic-note">Use the checkboxes to show/hide each method.</p>%s%s</details>',
+              src_note(report_rel_path(ora_root, proj_dir)), build_select_group(ora_items)))
     parts <- c(parts, sprintf(
       '<details class="pic-enrich-group" open><summary>ORA (DEG clusters)</summary>%s</details>',
       paste(ora_inner, collapse = "")
