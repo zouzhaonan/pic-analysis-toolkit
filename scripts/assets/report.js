@@ -49,12 +49,18 @@
       ".pic-hm thead th,.pic-hm tbody th,.pic-hm thead th.corner," +
       ".pic-cor thead th,.pic-cor tbody th,.pic-cor .pic-cor-corner{position:static!important}" +
       ".pic-png-btn{display:none!important}";
-    var w = Math.max(el.scrollWidth, el.offsetWidth);
-    var h = Math.max(el.scrollHeight, el.offsetHeight);
+    // クローンをオフスクリーンに一時配置してスクロール領域を展開し、フルサイズを実測する
     var clone = el.cloneNode(true);
+    clone.querySelectorAll(".pic-hm-scroll").forEach(function (n) { n.style.maxHeight = "none"; n.style.overflow = "visible"; });
+    clone.style.position = "absolute"; clone.style.left = "-100000px"; clone.style.top = "0"; clone.style.background = "#fff";
+    document.body.appendChild(clone);
+    var w = Math.ceil(clone.scrollWidth), h = Math.ceil(clone.scrollHeight);
+    // 計測用の配置スタイルは描画前に外す
+    clone.style.position = ""; clone.style.left = ""; clone.style.top = "";
     var xhtml;
     try { xhtml = new XMLSerializer().serializeToString(clone); }
-    catch (e) { if (btn) btn.textContent = "PNG error"; return; }
+    catch (e) { document.body.removeChild(clone); if (btn) btn.textContent = "PNG error"; return; }
+    document.body.removeChild(clone);
     var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
       '<foreignObject x="0" y="0" width="' + w + '" height="' + h + '">' +
       '<div xmlns="http://www.w3.org/1999/xhtml" style="background:#fff;width:' + w + 'px">' +
