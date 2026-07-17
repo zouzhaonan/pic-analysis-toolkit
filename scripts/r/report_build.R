@@ -814,6 +814,82 @@ build_cluster_profile_png <- function(deseq2_dir, project, tmp_dir, group_pal = 
   png_data_uri(png_path)
 }
 
+# hex 色を rgba() 文字列に変換 (box の半透明塗り用)。
+hex_to_rgba <- function(hex, alpha) {
+  hex <- sub("^#", "", hex)
+  if (nchar(hex) != 6) return(sprintf("rgba(136,136,136,%s)", alpha))
+  r <- strtoi(substr(hex, 1, 2), 16L); g <- strtoi(substr(hex, 3, 4), 16L); b <- strtoi(substr(hex, 5, 6), 16L)
+  sprintf("rgba(%d,%d,%d,%s)", r, g, b, alpha)
+}
+
+# Cluster expression profiles を plotly のインタラクティブ版に変換する。
+# cluster ごとにパネル (free_y) を横に並べ、各パネルで group ごとの box + beeswarm。
+# 戻り値: list(data, layout, height) もしくは NULL。
+build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) {
+  f <- file.path(deseq2_dir, "DEG", "DEGCluster", sprintf("DEGCluster_profile_%s.csv", project))
+  if (!file.exists(f)) return(NULL)
+  prof <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
+  if (nrow(prof) == 0 || !all(c("rlog_expr", "cluster_id", "group") %in% colnames(prof))) return(NULL)
+
+  summ_f <- file.path(deseq2_dir, "DEG", "DEGCluster", sprintf("DEGCluster_summary_%s.csv", project))
+  nmap <- NULL
+  if (file.exists(summ_f)) {
+    summ <- suppressMessages(readr::read_csv(summ_f, show_col_types = FALSE, progress = FALSE))
+    if (all(c("cluster_id", "gene_count") %in% colnames(summ))) nmap <- stats::setNames(summ$gene_count, summ$cluster_id)
+  }
+  clusters <- unique(as.character(prof$cluster_id))
+  clab <- function(cl) if (!is.null(nmap) && cl %in% names(nmap)) sprintf("%s (n=%s)", cl, nmap[[cl]]) else cl
+  groups <- unique(as.character(prof$group))
+  pal <- if (!is.null(group_pal)) group_pal else group_palette(groups)
+
+  ncl <- length(clusters)
+  gap <- 0.045
+  panelw <- (1 - gap * (ncl - 1)) / ncl
+
+  traces <- list()
+  annotations <- list()
+  layout <- list(margin = list(l = 54, r = 10, t = 30, b = 64), hovermode = "closest",
+                 boxmode = "group", showlegend = TRUE,
+                 legend = list(orientation = "h", yanchor = "bottom", y = 1.05, x = 0))
+  for (i in seq_len(ncl)) {
+    cl <- clusters[[i]]
+    x0 <- (i - 1) * (panelw + gap); x1 <- x0 + panelw
+    xref <- if (i == 1) "x" else paste0("x", i)
+    yref <- if (i == 1) "y" else paste0("y", i)
+    xname <- if (i == 1) "xaxis" else paste0("xaxis", i)
+    yname <- if (i == 1) "yaxis" else paste0("yaxis", i)
+    layout[[xname]] <- list(domain = list(x0, x1), anchor = yref, type = "category",
+                            categoryorder = "array", categoryarray = as.list(groups),
+                            tickangle = -40, automargin = TRUE)
+    layout[[yname]] <- list(domain = list(0, 1), anchor = xref, automargin = TRUE,
+                            title = if (i == 1) list(text = "rlog expression") else list(text = ""))
+    sub <- prof[as.character(prof$cluster_id) == cl, , drop = FALSE]
+    for (g in groups) {
+      gv <- as.numeric(sub$rlog_expr[as.character(sub$group) == g])
+      if (length(gv) == 0) next
+      col <- if (g %in% names(pal)) pal[[g]] else "#888888"
+      traces[[length(traces) + 1L]] <- list(
+        y = as.list(gv), x = as.list(rep(g, length(gv))),
+        type = "box", name = g, legendgroup = g, showlegend = (i == 1),
+        boxpoints = "all", jitter = 0.5, pointpos = 0, boxmean = FALSE,
+        fillcolor = hex_to_rgba(col, "0.45"),
+        line = list(color = col, width = 1),
+        marker = list(color = col, size = 2, opacity = 0.55),
+        xaxis = xref, yaxis = yref,
+        hovertemplate = sprintf("%s<br>rlog: %%{y:.2f}<extra></extra>", html_escape(g))
+      )
+    }
+    annotations[[length(annotations) + 1L]] <- list(
+      text = html_escape(clab(cl)), xref = "paper", yref = "paper",
+      x = (x0 + x1) / 2, y = 1.012, xanchor = "center", yanchor = "bottom",
+      showarrow = FALSE, font = list(size = 12, color = "#1f2933"),
+      bgcolor = "#eef3f9", bordercolor = "#cdd7e2", borderwidth = 1, borderpad = 3
+    )
+  }
+  layout$annotations <- annotations
+  list(data = traces, layout = layout, height = 380L)
+}
+
 # enrichment セクションの中身 (h3 GSEA / ORA) を返す。<section> ラッパは付けない。
 enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, proj_dir = NULL, id_prefix = "", reg = NULL) {
   if (is.null(enrich_dir) || is.na(enrich_dir) || !dir.exists(enrich_dir)) return("")
@@ -912,12 +988,14 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
     ora_inner <- character(0)
     # Cluster expression profiles first (so cluster_N labels are interpretable)
     if (!is.null(deseq2_dir)) {
-      prof_uri <- tryCatch(build_cluster_profile_png(deseq2_dir, project, tmp_dir, group_pal), error = function(e) NULL)
-      if (!is.null(prof_uri) && !is.na(prof_uri)) {
+      prof_spec <- tryCatch(build_cluster_profile_plotly(deseq2_dir, project, group_pal), error = function(e) NULL)
+      if (!is.null(prof_spec)) {
         prof_csv <- file.path(deseq2_dir, "DEG", "DEGCluster", sprintf("DEGCluster_profile_%s.csv", project))
+        prof_id <- sprintf("%sclusterprofile", id_prefix)
+        register_plot(reg, prof_id, list(data = prof_spec$data, layout = prof_spec$layout))
         ora_inner <- c(ora_inner, sprintf(
-          '<div class="pic-enrich-item"><h4>Cluster expression profiles (per-cluster rlog by group)</h4>%s<img loading="lazy" src="%s"></div>',
-          src_note(report_rel_path(prof_csv, proj_dir)), prof_uri
+          '<div class="pic-enrich-item"><h4>Cluster expression profiles (per-cluster rlog by group)</h4>%s<div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
+          src_note(report_rel_path(prof_csv, proj_dir)), prof_id, prof_spec$height
         ))
       }
     }

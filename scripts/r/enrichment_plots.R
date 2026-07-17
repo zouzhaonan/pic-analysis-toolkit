@@ -212,7 +212,9 @@ enrich_colorscale <- function() {
 }
 
 # GSEA を plotly の dot plot spec (list(data, layout, n_terms)) に変換する。
-# x=NES, y=term, color=p.adjust, size=setSize。NES 符号で numerator/denominator を左右に分ける。
+# 元の facet_grid(. ~ direction, scales="free_x") と同様に、direction ごとに
+# 独立した x 軸 (free_x) のパネルを左右に並べ、y (term ラベル) は共有して左端に揃える。
+# color=p.adjust, size=setSize。
 build_gsea_plotly <- function(gsea_df, numerator, denominator) {
   ecfg <- pic_plot_spec()$plot$enrichment
   required_cols <- c("Description", "NES", "setSize", "p.adjust", "direction")
@@ -240,45 +242,59 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator) {
 
   desc_full <- as.character(plot_df$Description)
   ylab <- substr(sanitize_plot_label(plot_df$Description), 1, ecfg$term_label_max_chars)
-  ypos <- seq_along(term_levels)
-  nes <- as.numeric(plot_df$NES)
-  padj <- as.numeric(plot_df$p.adjust)
-  setsz <- as.numeric(plot_df$setSize)
-  dirv <- as.character(plot_df$direction)
+  ypos_all <- seq_len(nrow(plot_df))
+  padj_all <- as.numeric(plot_df$p.adjust)
+  size_all <- plotly_marker_size(as.numeric(plot_df$setSize))
+  cmin <- min(padj_all); cmax <- max(padj_all)
 
-  cd <- lapply(seq_len(nrow(plot_df)), function(i) list(desc_full[i], setsz[i], padj[i], dirv[i]))
   ht <- paste0("<b>%{customdata[0]}</b><br>enriched in: %{customdata[3]}<br>",
                "NES: %{x:.2f}<br>setSize: %{customdata[1]}<br>p.adjust: %{customdata[2]:.3g}<extra></extra>")
 
-  trace <- list(
-    x = as.list(nes), y = as.list(ypos), customdata = cd,
-    mode = "markers", type = "scatter",
-    marker = list(
-      size = as.list(plotly_marker_size(setsz)),
-      color = as.list(padj), colorscale = enrich_colorscale(),
-      colorbar = list(title = list(text = "p.adjust", side = "right"), thickness = 12, len = 0.6),
-      showscale = TRUE, line = list(width = 0.5, color = "rgba(0,0,0,.35)"),
-      opacity = ecfg$point_alpha
-    ),
-    hovertemplate = ht
-  )
+  dirs <- levels(plot_df$direction)
+  dirs <- dirs[dirs %in% unique(as.character(plot_df$direction))]
+  ndir <- length(dirs)
+  gap <- 0.035
+  panelw <- (1 - gap * (ndir - 1)) / ndir
+
+  traces <- list()
+  annotations <- list()
   layout <- list(
-    xaxis = list(title = "NES", zeroline = TRUE, zerolinecolor = "#888", zerolinewidth = 1),
-    yaxis = list(tickmode = "array", tickvals = as.list(ypos), ticktext = as.list(ylab),
-                 automargin = TRUE, range = list(0.5, length(ypos) + 0.5)),
     margin = list(l = 10, r = 10, t = 30, b = 46), hovermode = "closest",
-    shapes = list(list(type = "line", x0 = 0, x1 = 0, yref = "paper", y0 = 0, y1 = 1,
-                       line = list(color = "#888", width = 1, dash = "dot"))),
-    annotations = list(
-      list(text = sprintf("◀ %s", denominator), xref = "paper", yref = "paper",
-           x = 0.01, y = 1.02, xanchor = "left", showarrow = FALSE,
-           font = list(size = 11, color = "#2166ac")),
-      list(text = sprintf("%s ▶", numerator), xref = "paper", yref = "paper",
-           x = 0.99, y = 1.02, xanchor = "right", showarrow = FALSE,
-           font = list(size = 11, color = "#d7301f"))
-    )
+    yaxis = list(tickmode = "array", tickvals = as.list(ypos_all), ticktext = as.list(ylab),
+                 automargin = TRUE, range = list(0.5, nrow(plot_df) + 0.5),
+                 domain = list(0, 1), anchor = "x")
   )
-  list(data = list(trace), layout = layout, n_terms = length(ypos))
+  for (i in seq_len(ndir)) {
+    d <- dirs[[i]]
+    idx <- which(as.character(plot_df$direction) == d)
+    x0 <- (i - 1) * (panelw + gap); x1 <- x0 + panelw
+    axref <- if (i == 1) "x" else paste0("x", i)
+    axname <- if (i == 1) "xaxis" else paste0("xaxis", i)
+    layout[[axname]] <- list(title = list(text = "NES"), domain = list(x0, x1),
+                             anchor = "y", zeroline = FALSE, automargin = TRUE)
+    showscale <- (i == ndir)
+    mk <- list(size = as.list(size_all[idx]), color = as.list(padj_all[idx]),
+               colorscale = enrich_colorscale(), cmin = cmin, cmax = cmax,
+               showscale = showscale, line = list(width = 0.5, color = "rgba(0,0,0,.35)"),
+               opacity = ecfg$point_alpha)
+    if (showscale) mk$colorbar <- list(title = list(text = "p.adjust", side = "right"),
+                                        thickness = 12, len = 0.6)
+    traces[[length(traces) + 1L]] <- list(
+      x = as.list(as.numeric(plot_df$NES[idx])), y = as.list(ypos_all[idx]),
+      xaxis = axref, yaxis = "y",
+      customdata = lapply(idx, function(j) list(desc_full[j], as.numeric(plot_df$setSize[j]), padj_all[j], d)),
+      mode = "markers", type = "scatter", marker = mk, hovertemplate = ht
+    )
+    # facet strip: パネル上部に direction (enriched group) 名
+    annotations[[length(annotations) + 1L]] <- list(
+      text = html_escape(d), xref = "paper", yref = "paper",
+      x = (x0 + x1) / 2, y = 1.012, xanchor = "center", yanchor = "bottom",
+      showarrow = FALSE, font = list(size = 12, color = "#1f2933"),
+      bgcolor = "#eef3f9", bordercolor = "#cdd7e2", borderwidth = 1, borderpad = 3
+    )
+  }
+  layout$annotations <- annotations
+  list(data = traces, layout = layout, n_terms = nrow(plot_df))
 }
 
 # ORA (cluster) を plotly の dot plot spec に変換する。
