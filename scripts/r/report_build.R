@@ -34,6 +34,7 @@ fmt_ratio <- function(x, digits = 1) {
 pic_report_registry <- function() {
   reg <- new.env(parent = emptyenv())
   reg$plots <- list()
+  reg$expr <- list()   # 遺伝子発現データ (id -> normalized counts など)
   reg
 }
 
@@ -598,6 +599,87 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "") {
          paste(blocks, collapse = ""), '</div>')
 }
 
+# 正規化カウント (normalizedCountTable) を id 付きで登録する (HTML に埋め込む用)。
+# stats があれば pvalue 最小の 5 遺伝子を default として保持する。
+register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pal, stats = NULL) {
+  f <- file.path(deseq2_dir, sprintf("normalizedCountTable_%s.csv", project))
+  if (!file.exists(f)) return(FALSE)
+  d <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
+  d <- as.data.frame(d, check.names = FALSE)
+  ann <- c("ens_gene", "ext_gene", "biotype", "chr")
+  sample_cols <- setdiff(colnames(d), ann)
+  if (length(sample_cols) < 1 || nrow(d) < 1) return(FALSE)
+  # サンプルを group 順に並べる
+  grp <- vapply(sample_cols, function(s) if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else "all", character(1))
+  ord <- order(grp, sample_cols)
+  sample_cols <- sample_cols[ord]; grp <- unname(grp[ord])
+  ug <- unique(grp)
+  pal <- if (!is.null(group_pal)) group_pal else group_palette(ug)
+  miss <- setdiff(ug, names(pal)); if (length(miss) > 0) pal <- c(pal, group_palette(miss))
+  mat <- as.matrix(d[, sample_cols, drop = FALSE]); storage.mode(mat) <- "double"
+  mat <- round(mat, 2)
+  ens_all <- as.character(d$ens_gene)
+  ext <- if ("ext_gene" %in% colnames(d)) as.character(d$ext_gene) else rep(NA_character_, nrow(d))
+
+  # default = pvalue 最小の 5 遺伝子 (contrast 横断で遺伝子ごとに min pvalue)、
+  # および contrast ごとの padj (q-value, hover 表示用)。
+  default_ens <- character(0)
+  contrasts <- character(0)
+  qval <- NULL
+  if (!is.null(stats) && all(c("ens_gene", "aspect") %in% colnames(stats))) {
+    stats$ens_gene <- as.character(stats$ens_gene)
+    if ("pvalue" %in% colnames(stats)) {
+      st <- stats[!is.na(stats$pvalue), c("ens_gene", "pvalue")]
+      if (nrow(st) > 0) {
+        agg <- stats::aggregate(pvalue ~ ens_gene, data = st, FUN = min)
+        cand <- as.character(agg$ens_gene[order(agg$pvalue)])
+        default_ens <- head(cand[cand %in% ens_all], 5)
+      }
+    }
+    if ("padj" %in% colnames(stats)) {
+      contrasts <- unique(as.character(stats$aspect))
+      qmat <- matrix(NA_real_, nrow = length(ens_all), ncol = length(contrasts))
+      for (ci in seq_along(contrasts)) {
+        sub <- stats[as.character(stats$aspect) == contrasts[ci], c("ens_gene", "padj")]
+        idx <- match(ens_all, sub$ens_gene)
+        qmat[, ci] <- signif(as.numeric(sub$padj)[idx], 3)
+      }
+      qval <- lapply(seq_len(nrow(qmat)), function(i) as.numeric(qmat[i, ]))
+    }
+  }
+
+  reg$expr[[id]] <- list(
+    samples = as.list(sample_cols),
+    groups = as.list(grp),
+    palette = as.list(pal[ug]),
+    ens = as.list(ens_all),
+    ext = as.list(ext),
+    counts = lapply(seq_len(nrow(mat)), function(i) as.numeric(mat[i, ])),
+    default = as.list(default_ens),
+    contrasts = as.list(contrasts),
+    qval = qval,
+    fdr = pic_plot_spec()$defaults$fdr
+  )
+  TRUE
+}
+
+# 遺伝子発現セクション: 入力した Gene ID/symbol を box+beeswarm で表示する UI。
+build_expression_section <- function(reg, deseq2_dir, project, group_map, group_pal, stats, id, section_id, heading) {
+  if (!register_expr_data(reg, id, deseq2_dir, project, group_map, group_pal, stats)) return("")
+  sprintf(paste0(
+    '<section id="%s"><h2>%s</h2>',
+    '<p class="pic-note">Type a Gene ID or symbol (autocomplete from this dataset). ',
+    'Multiple genes allowed (comma or space separated). ',
+    'Default shows the 5 genes with the smallest p-value.</p>',
+    '<div class="pic-expr" data-expr="%s">',
+    '<div class="pic-expr-ctrl">',
+    '<div class="pic-expr-typeahead"><input class="pic-expr-input" type="text" autocomplete="off" placeholder="Gene ID or symbol…">',
+    '<div class="pic-expr-ac"></div></div>',
+    '<button class="pic-expr-go" type="button">Plot</button></div>',
+    '<div class="pic-expr-msg"></div><div class="pic-expr-plots"></div></div></section>'),
+    section_id, html_escape(heading), id)
+}
+
 # DEG クラスタの挙動 (group ごとの rlog 分布) を facet で示す図。
 # 各 cluster_N が何を意味するか (どの group で高い/低い) を ORA の前に提示する。
 build_cluster_profile_png <- function(deseq2_dir, project, tmp_dir, group_pal = NULL) {
@@ -847,14 +929,19 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
                     contrast_html,
                     '</section>')
 
-  # 5. Enrichment
-  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "5. Enrichment")
+  # 5. Gene expression (normalized counts, interactive)
+  sec_expr <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats, "expr", "expr", "5. Gene expression")
+
+  # 6. Enrichment
+  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "6. Enrichment")
   if (is.null(sec_enrich)) sec_enrich <- ""
 
   nav <- paste0('<nav class="pic-nav"><a href="#qc">QC</a>',
                 if (nzchar(sec_agg)) '<a href="#aggregate">Aggregation</a>' else "",
-                '<a href="#pca">PCA</a><a href="#deg">DEG</a><a href="#enrich">Enrichment</a></nav>')
-  body <- paste0(sec_qc, sec_agg, sec_pca, sec_deg, sec_enrich)
+                '<a href="#pca">PCA</a><a href="#deg">DEG</a>',
+                if (nzchar(sec_expr)) '<a href="#expr">Expression</a>' else "",
+                '<a href="#enrich">Enrichment</a></nav>')
+  body <- paste0(sec_qc, sec_agg, sec_pca, sec_deg, sec_expr, sec_enrich)
   out_html <- file.path(out_dir, sprintf("report_%s.html", project))
   render_report_page(project, nav, body, reg, asset_dir, out_html)
   unlink(tmp_dir, recursive = TRUE)
@@ -864,6 +951,8 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
 # HTML ページを組み立てて書き出す (plotly を内包)。
 render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_html) {
   plots_json <- jsonlite::toJSON(reg$plots, auto_unbox = TRUE, null = "null", na = "null", digits = 6)
+  expr_json <- jsonlite::toJSON(if (length(reg$expr) > 0) reg$expr else stats::setNames(list(), character(0)),
+                                auto_unbox = TRUE, null = "null", na = "null", digits = 6)
   plotly_js <- paste(readLines(file.path(asset_dir, "plotly.min.js"), warn = FALSE), collapse = "\n")
   page <- paste0(
     '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">',
@@ -876,7 +965,7 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
     nav_html,
     '<main>', body_html, '</main>',
     '<script>', plotly_js, '</script>',
-    '<script>var PIC_PLOTS=', plots_json, ';</script>',
+    '<script>var PIC_PLOTS=', plots_json, ';var PIC_EXPR=', expr_json, ';</script>',
     '<script>', report_runtime_js(), '</script>',
     '</body></html>'
   )
@@ -1022,6 +1111,15 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
                           sid, n, label, format(fdr, trim = TRUE),
                           if (!is.null(hm_html)) hm_html else "", contrast_html))
   navs <- c(navs, sprintf('<a href="#%s">DESeq2</a>', sid))
+  # Gene expression (normalized counts)
+  sid <- paste0(frac_key, "_expr")
+  expr_html <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats,
+                                        paste0(frac_key, "__expr"), sid, sprintf("%d. %s · Expression", n + 1L, label))
+  if (nzchar(expr_html)) {
+    n <- n + 1L
+    secs <- c(secs, expr_html)
+    navs <- c(navs, sprintf('<a href="#%s">Expression</a>', sid))
+  }
   # Enrichment
   enrich_inner <- enrichment_blocks(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal)
   if (nzchar(enrich_inner)) {

@@ -50,6 +50,23 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-databar-val{position:relative;z-index:2;font-variant-numeric:tabular-nums}
 .pic-td-num{font-variant-numeric:tabular-nums}
 
+/* 遺伝子発現 (入力 -> box+beeswarm) */
+.pic-expr-ctrl{display:flex;gap:8px;margin:8px 0;flex-wrap:wrap;align-items:flex-start}
+.pic-expr-typeahead{position:relative;flex:1;min-width:260px}
+.pic-expr-input{width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:14px}
+.pic-expr-ac{display:none;position:absolute;z-index:60;left:0;right:0;top:calc(100% + 2px);max-height:280px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.pic-expr-ac-item{padding:6px 10px;font-size:13px;cursor:pointer;white-space:nowrap}
+.pic-expr-ac-item:hover{background:#eef3f9}
+.pic-expr-tip{position:fixed;z-index:200;pointer-events:none;background:#1f2933;color:#fff;border-radius:6px;padding:6px 8px;font-size:12px;max-width:320px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.pic-expr-tip-h{font-weight:700;margin-bottom:4px}
+.pic-expr-tip table{border-collapse:collapse}
+.pic-expr-tip th,.pic-expr-tip td{text-align:left;padding:1px 8px 1px 0;font-variant-numeric:tabular-nums}
+.pic-expr-tip th{color:#9aa4af;font-weight:600}
+.pic-expr-go{padding:7px 16px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;font-weight:600;cursor:pointer}
+.pic-expr-go:hover{opacity:.9}
+.pic-expr-msg{color:#b45309;font-size:13px;min-height:1em;margin:2px 0}
+.pic-expr-plots{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+
 /* MA + volcano を横一列 */
 .pic-ma-vol{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media(max-width:860px){.pic-ma-vol{grid-template-columns:1fr}}
