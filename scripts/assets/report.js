@@ -426,31 +426,30 @@
     });
     // 遺伝子発現 UI を初期化
     document.querySelectorAll(".pic-expr").forEach(initExpr);
-    // group トグル (plotly): タブ内の全プロットで該当 group の trace を on/off
-    document.querySelectorAll(".pic-gtoggle").forEach(function (cb) {
-      cb.addEventListener("change", function () {
-        var tab = cb.closest("section.pic-tab"); if (!tab) return;
-        var g = cb.dataset.group, vis = cb.checked ? true : "legendonly";
-        tab.querySelectorAll(".pic-plot").forEach(function (div) {
-          if (!div.dataset.rendered || !div.data) return;
-          var idx = [];
-          div.data.forEach(function (t, i) { if (t.legendgroup === g || t.name === g) idx.push(i); });
-          if (idx.length) { try { Plotly.restyle(div, { visible: vis }, idx); } catch (e) {} }
+    // group トグル: plotly の trace を on/off + HTML テーブルの行/列を隠す
+    function applyGroupToggles(tab) {
+      var hide = {};
+      tab.querySelectorAll(".pic-gtoggle").forEach(function (c) { if (!c.checked) hide[c.dataset.group] = 1; });
+      // plotly: group ごとに trace の visible を設定
+      tab.querySelectorAll(".pic-plot").forEach(function (div) {
+        if (!div.dataset.rendered || !div.data) return;
+        var groups = {};
+        div.data.forEach(function (t, i) { var g = (t.legendgroup != null) ? t.legendgroup : t.name; if (g != null) (groups[g] = groups[g] || []).push(i); });
+        Object.keys(groups).forEach(function (g) {
+          try { Plotly.restyle(div, { visible: hide[g] ? "legendonly" : true }, groups[g]); } catch (e) {}
         });
       });
-    });
-    // sample トグル (HTML テーブル): 行・列を隠す
-    document.querySelectorAll(".pic-stoggle").forEach(function (cb) {
+      // HTML テーブル: 行 (data-group/data-grow) と列 (data-gcol) を隠す
+      tab.querySelectorAll("[data-group],[data-grow]").forEach(function (r) {
+        r.style.display = hide[r.dataset.group || r.dataset.grow] ? "none" : "";
+      });
+      tab.querySelectorAll("[data-gcol]").forEach(function (c) {
+        c.style.display = hide[c.dataset.gcol] ? "none" : "";
+      });
+    }
+    document.querySelectorAll(".pic-gtoggle").forEach(function (cb) {
       cb.addEventListener("change", function () {
-        var tab = cb.closest("section.pic-tab"); if (!tab) return;
-        var hide = {};
-        tab.querySelectorAll(".pic-stoggle").forEach(function (c) { if (!c.checked) hide[c.dataset.sample] = 1; });
-        tab.querySelectorAll(".pic-bar-row[data-sample],tr[data-sample],tr[data-srow]").forEach(function (r) {
-          r.style.display = hide[r.dataset.sample || r.dataset.srow] ? "none" : "";
-        });
-        tab.querySelectorAll("[data-scol]").forEach(function (c) {
-          c.style.display = hide[c.dataset.scol] ? "none" : "";
-        });
+        var tab = cb.closest("section.pic-tab"); if (tab) applyGroupToggles(tab);
       });
     });
     // HTML テーブルの Download PNG ボタン

@@ -1,11 +1,11 @@
 :root{
   --fg:#1f2933; --muted:#647280; --line:#e2e8f0; --bg:#ffffff; --accent:#2166ac;
+  --ctrl-w:240px;
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Noto Sans JP",Meiryo,sans-serif;color:var(--fg);background:#f7f9fc;line-height:1.6}
-.pic-header{background:linear-gradient(90deg,#1b3a5b,#2166ac);color:#fff;padding:22px 28px}
-.pic-header h1{margin:0;font-size:24px}
-.pic-sub{opacity:.9;font-size:15px;margin-top:4px}
+.pic-header{background:linear-gradient(90deg,#1b3a5b,#2166ac);color:#fff;padding:9px 28px}
+.pic-header h1{margin:0;font-size:19px;font-weight:700}
 .pic-nav{position:sticky;top:0;z-index:50;background:#4a5560;border-bottom:1px solid #3a434d;padding:9px max(28px, calc((100vw - 1120px) / 2));display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 14px}
 .pic-nav a{color:#fff;text-decoration:none;font-size:15px;font-weight:600}
 .pic-nav a:hover{text-decoration:underline}
@@ -31,7 +31,7 @@ section.pic-tab.active{display:block}
 .pic-info:hover .pic-info-pop,.pic-info:focus .pic-info-pop{display:block}
 .pic-info-pop b{color:#ffd54a}
 /* 2 ペイン (左=コントロール / 右=プロット) */
-.pic-2pane{display:grid;grid-template-columns:250px minmax(0,1fr);gap:18px;align-items:start}
+.pic-2pane{display:grid;grid-template-columns:var(--ctrl-w) minmax(0,1fr);gap:18px;align-items:start}
 .pic-2pane.pic-1pane{grid-template-columns:minmax(0,1fr)}
 .pic-ctrl{position:sticky;top:60px;align-self:start;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:13px;max-height:calc(100vh - 80px);overflow:auto}
 .pic-ctrl h4{margin:2px 0 8px;color:var(--fg);font-size:13px}
@@ -94,7 +94,7 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-td-num{font-variant-numeric:tabular-nums}
 
 /* 遺伝子発現 (左=タグ入力 / 右=box+beeswarm) */
-.pic-expr{display:grid;grid-template-columns:290px minmax(0,1fr);gap:18px;align-items:start}
+.pic-expr{display:grid;grid-template-columns:var(--ctrl-w) minmax(0,1fr);gap:18px;align-items:start}
 .pic-expr-side{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px}
 .pic-expr-side h4{margin:0 0 8px;font-size:13px;color:var(--fg)}
 @media(max-width:900px){.pic-expr{grid-template-columns:1fr}.pic-expr-side{position:static}}
@@ -124,13 +124,13 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-select-lbl{font-size:13px;font-weight:700;color:var(--muted);margin-right:4px;align-self:center}
 .pic-matrix .pic-select-bar{margin-bottom:6px}
 
-/* ウィジェット内 2ペイン (左=選択 / 右=プロット) */
-.pic-matrix{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:18px;align-items:start}
-.pic-matrix-sel{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px}
-.pic-degsel{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:18px;align-items:start}
-.pic-degsel-ctrl{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px}
+/* ウィジェット内 2ペイン (左=選択 / 右=プロット)。左幅は全タブ共通 (--ctrl-w) */
+.pic-matrix{display:grid;grid-template-columns:var(--ctrl-w) minmax(0,1fr);gap:18px;align-items:start}
+.pic-matrix-sel{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;max-height:calc(100vh - 80px)}
+.pic-degsel{display:grid;grid-template-columns:var(--ctrl-w) minmax(0,1fr);gap:18px;align-items:start}
+.pic-degsel-ctrl{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;max-height:calc(100vh - 80px)}
 .pic-degsel-ctrl h4{margin:0 0 8px;font-size:13px}
-.pic-selgrid{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start}
+.pic-selgrid{display:grid;grid-template-columns:var(--ctrl-w) minmax(0,1fr);gap:18px;align-items:start}
 .pic-selgrid-ctrl{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:10px}
 .pic-selgrid-ctrl .pic-select-bar{flex-direction:column;align-items:flex-start;gap:5px;background:transparent;border:none;padding:0;margin:0}
 @media(max-width:900px){.pic-matrix,.pic-degsel,.pic-selgrid{grid-template-columns:1fr}.pic-matrix-sel,.pic-degsel-ctrl,.pic-selgrid-ctrl{position:static}}
@@ -141,7 +141,8 @@ table.pic-cmatrix{border-collapse:collapse;font-size:13px}
 .pic-cmatrix th,.pic-cmatrix td{border:1px solid var(--line);padding:4px 9px;white-space:nowrap}
 .pic-cmatrix .pic-cmx-corner{background:transparent;border-top:none;border-left:none}
 .pic-cmatrix .pic-cmx-h,.pic-cmatrix .pic-cmx-rh{background:#eef3f9;font-weight:700}
-.pic-cmatrix .pic-cmx-h{text-align:center}
+.pic-cmatrix .pic-cmx-h{text-align:center;vertical-align:bottom;padding:4px 3px}
+.pic-cmatrix .pic-cmx-h span{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;display:inline-block}
 .pic-cmatrix .pic-cmx-rh{text-align:left}
 .pic-cmx-cell{background:#fff;text-align:right}
 .pic-cmx-cell label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;justify-content:flex-end}

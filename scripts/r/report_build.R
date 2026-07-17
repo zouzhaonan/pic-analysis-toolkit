@@ -329,8 +329,8 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
         ))
       }
       rows <- c(rows, sprintf(
-        '<div class="pic-bar-row%s" data-sample="%s"><div class="pic-bar-label" style="color:%s;font-weight:600">%s</div><div class="pic-bar-track">%s</div></div>',
-        sep_cls, html_escape(sample), scol(sample), html_escape(sample), paste(segs, collapse = "")
+        '<div class="pic-bar-row%s" data-group="%s"><div class="pic-bar-label" style="color:%s;font-weight:600">%s</div><div class="pic-bar-track">%s</div></div>',
+        sep_cls, html_escape(if (is.na(g_cur)) sample else g_cur), scol(sample), html_escape(sample), paste(segs, collapse = "")
       ))
     }
     legend_items <- vapply(fate_cols, function(cc) sprintf(
@@ -338,11 +338,11 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
       PIC_FATE_COLORS[[cc]], PIC_FATE_LABELS[[cc]]
     ), character(1))
     parts <- c(parts,
+      sprintf('<div class="pic-legend" style="margin-left:0;margin-bottom:6px">%s</div>', paste(legend_items, collapse = "")),
       '<div class="pic-bars">',
       ruler,
       paste(rows, collapse = "\n"),
-      '</div>',
-      sprintf('<div class="pic-legend">%s</div>', paste(legend_items, collapse = ""))
+      '</div>'
     )
   }
 
@@ -395,7 +395,8 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
       v <- suppressWarnings(as.numeric(msum[[cc]][[i]]))
       cells <- paste0(cells, sprintf('<td class="pic-td-num">%s</td>', if (is.finite(v)) fmt_ratio(v) else "NA"))
     }
-    trows <- c(trows, sprintf('<tr class="%s" data-sample="%s">%s</tr>', trimws(sep_cls), html_escape(as.character(msum$sample[[i]])), cells))
+    g_row <- if ("group" %in% colnames(msum)) as.character(msum$group[[i]]) else as.character(msum$sample[[i]])
+    trows <- c(trows, sprintf('<tr class="%s" data-group="%s">%s</tr>', trimws(sep_cls), html_escape(g_row), cells))
   }
 
   parts <- c(parts,
@@ -525,10 +526,10 @@ build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, g
   gstart <- c(FALSE, grp[-1] != grp[-length(grp)])   # 各サンプルが group の先頭か
   zmin <- suppressWarnings(min(m[is.finite(m)])); if (!is.finite(zmin)) zmin <- 0
 
-  # ヘッダ (列ラベル: 上部・横書き・group 配色)。data-scol でサンプル列を識別。
+  # ヘッダ (列ラベル: 上部・縦書き・group 配色)。data-gcol で group 列を識別。
   ths <- vapply(seq_len(n), function(j)
-    sprintf('<th class="pic-cor-ch%s" data-scol="%s"><span style="color:%s">%s</span></th>',
-            if (gstart[[j]]) " gsep-l" else "", html_escape(samples[[j]]), gcol(samples[[j]]), html_escape(samples[[j]])),
+    sprintf('<th class="pic-cor-ch%s" data-gcol="%s"><span style="color:%s">%s</span></th>',
+            if (gstart[[j]]) " gsep-l" else "", html_escape(grpof(samples[[j]])), gcol(samples[[j]]), html_escape(samples[[j]])),
     character(1))
   header <- sprintf('<tr><th class="pic-cor-corner"></th>%s</tr>', paste(ths, collapse = ""))
 
@@ -541,10 +542,10 @@ build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, g
       bg <- if (is.finite(v)) cor_color(v, zmin) else "#ffffff"
       fc <- contrast_text(bg)
       cls <- paste0("val", if (gstart[[j]]) " gsep-l" else "", if (gstart[[i]]) " gsep-t" else "")
-      sprintf('<td class="%s" data-scol="%s" style="background:%s;color:%s">%s</td>', cls, html_escape(samples[[j]]), bg, fc,
+      sprintf('<td class="%s" data-gcol="%s" style="background:%s;color:%s">%s</td>', cls, html_escape(grpof(samples[[j]])), bg, fc,
               if (is.finite(v)) sprintf("%.2f", v) else "")
     }, character(1))
-    sprintf('<tr data-srow="%s">%s%s</tr>', html_escape(samples[[i]]), rh, paste(tds, collapse = ""))
+    sprintf('<tr data-grow="%s">%s%s</tr>', html_escape(grpof(samples[[i]])), rh, paste(tds, collapse = ""))
   }, character(1))
 
   cap_id <- paste0(id_prefix, "cor_cap")
@@ -1424,12 +1425,11 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "7. Enrichment", out_dir, "", reg, group_order)
   if (is.null(sec_enrich)) sec_enrich <- ""
 
-  samp_panel <- sample_toggle_panel(if (!is.null(msum)) as.character(msum$sample) else character(0), group_map, group_pal)
   grp_panel  <- group_toggle_panel(group_pal)
   tb <- build_tabs(list(
-    list(html = sec_qc,     label = "QC",          controls = samp_panel),
+    list(html = sec_qc,     label = "QC",          controls = grp_panel),
     list(html = sec_agg,    label = "Aggregation", controls = grp_panel),
-    list(html = sec_cor,    label = "Correlation", controls = samp_panel),
+    list(html = sec_cor,    label = "Correlation", controls = grp_panel),
     list(html = sec_pca,    label = "PCA",         controls = grp_panel),
     list(html = sec_deg,    label = "DEG"),
     list(html = sec_expr,   label = "Expression"),
@@ -1496,8 +1496,7 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
     '<title>pic report — ', html_escape(title), '</title>',
     '<style>', report_css(), '</style>',
     '</head><body>',
-    '<header class="pic-header"><h1>pic analysis report</h1>',
-    '<div class="pic-sub">project: <b>', html_escape(title), '</b></div></header>',
+    '<header class="pic-header"><h1>', html_escape(title), ' Report</h1></header>',
     nav_html,
     '<main class="pic-main">', body_html, '</main>',
     '<script>', plotly_js, '</script>',
