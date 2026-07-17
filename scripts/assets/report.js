@@ -295,8 +295,8 @@
         if (d.open) renderWithin(d);
       });
     });
-    // チェックボックスでブロックを表示/非表示 (表示時に遅延描画)
-    document.querySelectorAll(".pic-select-bar input[type=checkbox]").forEach(function (cb) {
+    // チェックボックス (バー or group 行列) でブロックを表示/非表示 (表示時に遅延描画)
+    document.querySelectorAll("input[type=checkbox][data-target]").forEach(function (cb) {
       cb.addEventListener("change", function () {
         var t = document.getElementById(cb.dataset.target);
         if (!t) return;

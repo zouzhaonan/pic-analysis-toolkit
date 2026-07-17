@@ -71,19 +71,75 @@ build_select_group <- function(items) {
          paste(blk, collapse = ""))
 }
 
-# 2 軸 (行 = contrast, 列 = method) をそれぞれチェックボックスで選び、
-# 両方が選択されたセルのみ表示する UI。既定は先頭の行×列 1 セルのみ表示。
-# rows: list(list(key=, label=), ...)  cols: character vector
-# cell_html: function(row_key, col) -> html ("" ならセルなし)
-build_matrix_group <- function(rows, cols, cell_html, row_title = "Contrast", col_title = "Method") {
+# contrast を group×group の行列で選ばせる UI。
+# 各セル (group i × group j) に、その 2 群の比較があれば DEG 数 + チェックボックス。
+# entries: list(list(aspect=, count=, checked=, attr=))
+#   attr は checkbox に付与する属性 (例: 'data-target="id"' や 'data-axis="r" data-key="k"')。
+# groups: 表示順の group ベクトル (contrast は大文字小文字を無視して照合)。
+build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = TRUE) {
+  if (length(groups) < 2 || length(entries) == 0) return("")
+  gl <- tolower(groups)
+  cellmap <- list()
+  for (e in entries) {
+    sp <- strsplit(e$aspect, " / ", fixed = TRUE)[[1]]
+    a <- tolower(trimws(sp[[1]])); b <- if (length(sp) >= 2) tolower(trimws(sp[[2]])) else ""
+    ia <- match(a, gl); ib <- match(b, gl)
+    if (is.na(ia) || is.na(ib)) next
+    cellmap[[paste0(min(ia, ib), "_", max(ia, ib))]] <- e
+  }
+  if (length(cellmap) == 0) return("")
+  hcol <- function(g) if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else "#1f2933"
+  n <- length(groups)
+  ths <- paste(vapply(seq_len(n), function(j)
+    sprintf('<th class="pic-cmx-h"><span style="color:%s">%s</span></th>', hcol(groups[[j]]), html_escape(groups[[j]])),
+    character(1)), collapse = "")
+  header <- sprintf('<tr><th class="pic-cmx-corner"></th>%s</tr>', ths)
+  rows_html <- character(0)
+  for (i in seq_len(n)) {
+    rh <- sprintf('<th class="pic-cmx-rh"><span style="color:%s">%s</span></th>', hcol(groups[[i]]), html_escape(groups[[i]]))
+    cs <- character(0)
+    for (j in seq_len(n)) {
+      # 各比較は上三角 (row < col) の 1 セルにのみ表示し、重複を避ける
+      e <- if (i < j) cellmap[[paste0(i, "_", j)]] else NULL
+      if (is.null(e)) { cs <- c(cs, '<td class="pic-cmx-empty"></td>'); next }
+      ck <- if (isTRUE(e$checked)) " checked" else ""
+      cnt <- if (show_count && !is.null(e$count) && is.finite(suppressWarnings(as.numeric(e$count))))
+               sprintf('<span class="pic-cmx-n">%s</span>', fmt_int(e$count)) else ""
+      cs <- c(cs, sprintf('<td class="pic-cmx-cell" title="%s"><label>%s<input type="checkbox" %s%s></label></td>',
+                          html_escape(e$aspect), cnt, e$attr, ck))
+    }
+    rows_html <- c(rows_html, sprintf('<tr>%s%s</tr>', rh, paste(cs, collapse = "")))
+  }
+  sprintf('<div class="pic-cmx-wrap"><table class="pic-cmatrix"><thead>%s</thead><tbody>%s</tbody></table></div>',
+          header, paste(rows_html, collapse = ""))
+}
+
+# 2 軸 (行 = contrast, 列 = method) をチェックボックスで選び、両方選択のセルのみ表示。
+# row_groups を渡すと、行 (contrast) の選択を group×group 行列で提示する。
+build_matrix_group <- function(rows, cols, cell_html, row_title = "Contrast", col_title = "Method",
+                               row_groups = NULL, row_counts = NULL, group_pal = NULL) {
   if (length(rows) == 0 || length(cols) == 0) return("")
   first_row <- rows[[1]]$key
   first_col <- cols[[1]]
-  row_bar <- vapply(seq_along(rows), function(i) {
-    ck <- if (i == 1L) " checked" else ""
-    sprintf('<label class="pic-select-chk"><input type="checkbox" data-axis="r"%s data-key="%s">%s</label>',
-            ck, html_escape(rows[[i]]$key), html_escape(rows[[i]]$label))
-  }, character(1))
+  # 行 (contrast) セレクタ: group 行列 or 線形バー
+  gm <- ""
+  if (!is.null(row_groups) && length(row_groups) >= 2) {
+    entries <- lapply(seq_along(rows), function(i) list(
+      aspect = rows[[i]]$label,
+      count = if (!is.null(row_counts) && rows[[i]]$label %in% names(row_counts)) row_counts[[rows[[i]]$label]] else NULL,
+      checked = (i == 1L),
+      attr = sprintf('data-axis="r" data-key="%s"', html_escape(rows[[i]]$key))))
+    gm <- build_group_matrix(entries, row_groups, group_pal, show_count = !is.null(row_counts))
+  }
+  row_sel <- if (nzchar(gm)) gm else {
+    row_bar <- vapply(seq_along(rows), function(i) {
+      ck <- if (i == 1L) " checked" else ""
+      sprintf('<label class="pic-select-chk"><input type="checkbox" data-axis="r"%s data-key="%s">%s</label>',
+              ck, html_escape(rows[[i]]$key), html_escape(rows[[i]]$label))
+    }, character(1))
+    sprintf('<div class="pic-select-bar"><span class="pic-select-lbl">%s:</span>%s</div>',
+            html_escape(row_title), paste(row_bar, collapse = ""))
+  }
   col_bar <- vapply(seq_along(cols), function(i) {
     ck <- if (i == 1L) " checked" else ""
     sprintf('<label class="pic-select-chk"><input type="checkbox" data-axis="c"%s data-key="%s">%s</label>',
@@ -101,9 +157,8 @@ build_matrix_group <- function(rows, cols, cell_html, row_title = "Contrast", co
     }
   }
   if (length(cells) == 0) return("")
-  sprintf('<div class="pic-matrix"><div class="pic-select-bar"><span class="pic-select-lbl">%s:</span>%s</div><div class="pic-select-bar"><span class="pic-select-lbl">%s:</span>%s</div><div class="pic-matrix-cells">%s</div></div>',
-          html_escape(row_title), paste(row_bar, collapse = ""),
-          html_escape(col_title), paste(col_bar, collapse = ""),
+  sprintf('<div class="pic-matrix">%s<div class="pic-select-bar"><span class="pic-select-lbl">%s:</span>%s</div><div class="pic-matrix-cells">%s</div></div>',
+          row_sel, html_escape(col_title), paste(col_bar, collapse = ""),
           paste(cells, collapse = ""))
 }
 
@@ -390,6 +445,53 @@ pic_order_contrasts <- function(aspects, group_order) {
   aspects[order(ks)]
 }
 
+# サンプル間相関ヒートマップ (log2 正規化カウントの Pearson 相関)。
+build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, group_pal = NULL,
+                                   sample_order = NULL, id_prefix = "", proj_dir = NULL) {
+  f <- file.path(deseq2_dir, sprintf("normalizedCountTable_%s.csv", project))
+  if (!file.exists(f)) return("")
+  d <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
+  d <- as.data.frame(d, check.names = FALSE)
+  scols <- setdiff(colnames(d), c("ens_gene", "ext_gene", "biotype", "chr"))
+  if (length(scols) < 2) return("")
+  scols <- pic_reorder_vec(scols, sample_order)
+  mat <- as.matrix(d[, scols, drop = FALSE]); storage.mode(mat) <- "double"
+  mat <- log2(mat + 1)
+  cormat <- suppressWarnings(stats::cor(mat, method = "pearson"))
+  if (is.null(cormat) || !all(is.finite(cormat[lower.tri(cormat)]))) cormat[!is.finite(cormat)] <- NA
+  n <- length(scols)
+  zrows <- lapply(seq_len(n), function(i) as.list(round(as.numeric(cormat[i, ]), 4)))
+  # 軸ラベルを group 配色に
+  tickcol <- function(s) {
+    g <- if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
+    if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else "#1f2933"
+  }
+  ticktext <- vapply(scols, function(s) sprintf('<span style="color:%s">%s</span>', tickcol(s), html_escape(s)), character(1))
+  id <- paste0(id_prefix, "sample_cor")
+  zmin <- suppressWarnings(min(cormat[is.finite(cormat)]))
+  if (!is.finite(zmin)) zmin <- 0
+  trace <- list(
+    z = zrows, x = as.list(scols), y = as.list(scols), type = "heatmap",
+    colorscale = "Viridis", zmin = zmin, zmax = 1,
+    xgap = 1, ygap = 1,
+    colorbar = list(title = list(text = "Pearson r", side = "right"), thickness = 12, len = 0.75),
+    hovertemplate = "%{y} &times; %{x}<br>r = %{z:.3f}<extra></extra>")
+  layout <- list(
+    xaxis = list(tickmode = "array", tickvals = as.list(scols), ticktext = as.list(ticktext),
+                 tickangle = -45, automargin = TRUE, side = "bottom", constrain = "domain"),
+    yaxis = list(tickmode = "array", tickvals = as.list(scols), ticktext = as.list(ticktext),
+                 automargin = TRUE, autorange = "reversed", scaleanchor = "x", constrain = "domain"),
+    margin = list(l = 10, r = 10, t = 10, b = 10), hovermode = "closest")
+  register_plot(reg, id, list(data = list(trace), layout = layout,
+                              config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = FALSE)))
+  h <- max(360L, min(900L, as.integer(90 + n * 30)))
+  paste0(
+    src_note(report_rel_path(f, proj_dir)),
+    '<p class="pic-note">Pearson correlation between samples, computed on log<sub>2</sub> normalized counts. ',
+    'Replicates of the same group should correlate most strongly; a sample that stands out from its group may be an outlier.</p>',
+    sprintf('<div id="%s" class="pic-plot" style="height:%dpx;max-width:%dpx;margin:auto"></div>', id, h, as.integer(90 + n * 30)))
+}
+
 build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefix = "", proj_dir = NULL) {
   f <- file.path(deseq2_dir, "PCA", sprintf("PCA_RegLog_%s.csv", project))
   if (!file.exists(f)) return(NULL)
@@ -595,7 +697,7 @@ scatter_traces_by_dir <- function(df, x, y, numerator, denominator, hovertemplat
   traces
 }
 
-build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", stats_src = "", group_order = NULL) {
+build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", stats_src = "", group_order = NULL, group_pal = NULL) {
   aspects <- unique(stats$aspect)
   # contrast の並び順: sample_sheet の group 順 (なければ DEG 数で降順)
   if (!is.null(group_order)) {
@@ -682,18 +784,40 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     item_html <- paste0(meta_html, '<div class="pic-ma-vol">', paste(cells, collapse = ""), '</div>')
     items[[length(items) + 1L]] <- list(
       id = sprintf("%ssel_%s", id_prefix, flab),
-      label = a,
+      label = a, aspect = a, count = nd,
       html = item_html,
       checked = (k == 1L)
     )
   }
-  paste0('<h3>Differential expression (MA &amp; volcano)</h3>',
-         src_note(stats_src),
-         '<p class="pic-note">Each gene is one point. The <b>MA plot</b> shows the fold change vs. average expression; ',
-         'the <b>volcano plot</b> shows the fold change vs. statistical significance (&minus;log<sub>10</sub> p-value). ',
-         '<b style="color:#d7301f">Red</b> / <b style="color:#2166ac">blue</b> points are significantly up / down (padj below the FDR); grey is not significant. ',
-         'Hover a point for its gene name, fold change and padj. Tick a comparison below to show it.</p>',
-         build_select_group(items))
+
+  note <- paste0('<h3>Differential expression (MA &amp; volcano)</h3>',
+    src_note(stats_src),
+    '<p class="pic-note">Each gene is one point. The <b>MA plot</b> shows the fold change vs. average expression; ',
+    'the <b>volcano plot</b> shows the fold change vs. statistical significance (&minus;log<sub>10</sub> p-value). ',
+    '<b style="color:#d7301f">Red</b> / <b style="color:#2166ac">blue</b> points are significantly up / down (padj below the FDR); grey is not significant. ',
+    'Hover a point for its gene name, fold change and padj.</p>')
+
+  # contrast 選択: group×group 行列 (各セルに DEG 数 + チェックボックス)。1 つだけなら行列不要。
+  groups <- if (!is.null(group_order) && length(group_order) > 0) group_order else
+    unique(unlist(lapply(aspects, function(a) trimws(strsplit(a, " / ", fixed = TRUE)[[1]]))))
+  entries <- lapply(items, function(it) list(
+    aspect = it$aspect, count = it$count, checked = it$checked,
+    attr = sprintf('data-target="%s"', it$id)))
+  matrix_html <- build_group_matrix(entries, groups, group_pal, show_count = TRUE)
+  blocks <- vapply(items, function(it) {
+    hid <- if (isTRUE(it$checked)) "" else " hidden"
+    sprintf('<div class="pic-select-item" id="%s"%s>%s</div>', it$id, hid, it$html)
+  }, character(1))
+  sel_html <- if (length(items) <= 1) {
+    if (length(items) == 1) sprintf('<div class="pic-select-item">%s</div>', items[[1]]$html) else ""
+  } else if (nzchar(matrix_html)) {
+    paste0('<p class="pic-note">Pick comparisons to display from the matrix below &mdash; each cell shows the number of ',
+           'differentially expressed genes (padj &lt; FDR) between the two groups.</p>',
+           matrix_html, paste(blocks, collapse = ""))
+  } else {
+    build_select_group(items)
+  }
+  paste0(note, sel_html)
 }
 
 # ---------------------------------------------------------------------------
@@ -1061,7 +1185,10 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         sprintf('<div class="pic-enrich-item"><h4>%s &mdash; %s</h4><div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
                 html_escape(contrast), html_escape(method), info$id, info$h)
       }
-      gsea_html <- build_matrix_group(rows, methods, cell_html)
+      row_groups <- if (!is.null(group_order) && length(group_order) > 0) group_order else
+        unique(unlist(lapply(contrasts, function(a) trimws(strsplit(a, " / ", fixed = TRUE)[[1]]))))
+      gsea_html <- build_matrix_group(rows, methods, cell_html, row_groups = row_groups,
+                                      row_counts = deg_counts, group_pal = group_pal)
     }
   }
   if (nzchar(gsea_html)) {
@@ -1192,7 +1319,7 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
     group_pal <- group_palette(go)
   }
 
-  # セクション組み立て (順序: QC -> Aggregation -> PCA -> DEG -> Enrichment)
+  # セクション組み立て (QC -> Correlation -> Aggregation -> PCA -> DEG -> Expr -> Enrichment)
   msum_file <- { mf <- list.files(out_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = TRUE); if (length(mf) > 0) mf[[1]] else "" }
   sec_qc <- if (!is.null(msum)) section_mapping_qc(msum, "qc", "1. Mapping QC", report_rel_path(msum_file, out_dir), group_map, group_pal) else ""
 
@@ -1200,33 +1327,38 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   agg_html <- build_aggregate_html(reg, out_dir, "", out_dir, sample_order, group_pal)
   sec_agg <- if (nzchar(agg_html)) paste0('<section id="aggregate"><h2>2. Aggregation (TSS-TES)</h2>', agg_html, '</section>') else ""
 
-  # 3. PCA
+  # 3. Sample correlation
+  cor_html <- build_correlation_html(reg, desc$deseq2_dir, project, group_map, group_pal, sample_order, "", out_dir)
+  sec_cor <- if (nzchar(cor_html)) paste0('<section id="cor"><h2>3. Sample correlation</h2>', cor_html, '</section>') else ""
+
+  # 4. PCA
   pca_html <- build_pca_plots(reg, desc$deseq2_dir, project, group_pal, "", out_dir)
-  sec_pca <- paste0('<section id="pca"><h2>3. PCA</h2>',
+  sec_pca <- paste0('<section id="pca"><h2>4. PCA</h2>',
                     if (!is.null(pca_html)) pca_html else "<p>No PCA data.</p>",
                     '</section>')
 
-  # 4. DEG (heatmap + MA/volcano)
+  # 5. DEG (heatmap + MA/volcano)
   hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order)
-  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, "", report_rel_path(desc$stats_csv, out_dir), group_order)
-  sec_deg <- paste0(sprintf('<section id="deg"><h2>4. Differential expression (DESeq2, FDR = %s)</h2>', format(fdr, trim = TRUE)),
+  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, "", report_rel_path(desc$stats_csv, out_dir), group_order, group_pal)
+  sec_deg <- paste0(sprintf('<section id="deg"><h2>5. Differential expression (DESeq2, FDR = %s)</h2>', format(fdr, trim = TRUE)),
                     if (!is.null(hm_html)) hm_html else "",
                     contrast_html,
                     '</section>')
 
-  # 5. Gene expression (normalized counts, interactive)
-  sec_expr <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats, "expr", "expr", "5. Gene expression", out_dir, sample_order, group_order)
+  # 6. Gene expression (normalized counts, interactive)
+  sec_expr <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats, "expr", "expr", "6. Gene expression", out_dir, sample_order, group_order)
 
-  # 6. Enrichment
-  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "6. Enrichment", out_dir, "", reg, group_order)
+  # 7. Enrichment
+  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "7. Enrichment", out_dir, "", reg, group_order)
   if (is.null(sec_enrich)) sec_enrich <- ""
 
   nav <- paste0('<nav class="pic-nav"><a href="#qc">QC</a>',
                 if (nzchar(sec_agg)) '<a href="#aggregate">Aggregation</a>' else "",
+                if (nzchar(sec_cor)) '<a href="#cor">Correlation</a>' else "",
                 '<a href="#pca">PCA</a><a href="#deg">DEG</a>',
                 if (nzchar(sec_expr)) '<a href="#expr">Expression</a>' else "",
                 '<a href="#enrich">Enrichment</a></nav>')
-  body <- paste0(sec_qc, sec_agg, sec_pca, sec_deg, sec_expr, sec_enrich)
+  body <- paste0(sec_qc, sec_agg, sec_cor, sec_pca, sec_deg, sec_expr, sec_enrich)
   out_html <- file.path(out_dir, sprintf("report_%s.html", project))
   render_report_page(project, nav, body, reg, asset_dir, out_html)
   unlink(tmp_dir, recursive = TRUE)
@@ -1388,6 +1520,14 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
     secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · Aggregation (TSS-TES)</h2>%s</section>', sid, n, label, agg_html))
     navs <- c(navs, sprintf('<a href="#%s">Aggregation</a>', sid))
   }
+  # Sample correlation
+  cor_html <- build_correlation_html(reg, desc$deseq2_dir, project, group_map, group_pal, sample_order, id_prefix, out_dir)
+  if (nzchar(cor_html)) {
+    n <- n + 1L
+    sid <- paste0(frac_key, "_cor")
+    secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · Sample correlation</h2>%s</section>', sid, n, label, cor_html))
+    navs <- c(navs, sprintf('<a href="#%s">Correlation</a>', sid))
+  }
   # PCA
   n <- n + 1L
   sid <- paste0(frac_key, "_pca")
@@ -1399,7 +1539,7 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
   n <- n + 1L
   sid <- paste0(frac_key, "_deg")
   hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order)
-  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir), group_order)
+  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir), group_order, group_pal)
   secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · Differential expression (DESeq2, FDR = %s)</h2>%s%s</section>',
                           sid, n, label, format(fdr, trim = TRUE),
                           if (!is.null(hm_html)) hm_html else "", contrast_html))
