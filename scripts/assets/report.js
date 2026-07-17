@@ -426,6 +426,33 @@
     });
     // 遺伝子発現 UI を初期化
     document.querySelectorAll(".pic-expr").forEach(initExpr);
+    // group トグル (plotly): タブ内の全プロットで該当 group の trace を on/off
+    document.querySelectorAll(".pic-gtoggle").forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        var tab = cb.closest("section.pic-tab"); if (!tab) return;
+        var g = cb.dataset.group, vis = cb.checked ? true : "legendonly";
+        tab.querySelectorAll(".pic-plot").forEach(function (div) {
+          if (!div.dataset.rendered || !div.data) return;
+          var idx = [];
+          div.data.forEach(function (t, i) { if (t.legendgroup === g || t.name === g) idx.push(i); });
+          if (idx.length) { try { Plotly.restyle(div, { visible: vis }, idx); } catch (e) {} }
+        });
+      });
+    });
+    // sample トグル (HTML テーブル): 行・列を隠す
+    document.querySelectorAll(".pic-stoggle").forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        var tab = cb.closest("section.pic-tab"); if (!tab) return;
+        var hide = {};
+        tab.querySelectorAll(".pic-stoggle").forEach(function (c) { if (!c.checked) hide[c.dataset.sample] = 1; });
+        tab.querySelectorAll(".pic-bar-row[data-sample],tr[data-sample],tr[data-srow]").forEach(function (r) {
+          r.style.display = hide[r.dataset.sample || r.dataset.srow] ? "none" : "";
+        });
+        tab.querySelectorAll("[data-scol]").forEach(function (c) {
+          c.style.display = hide[c.dataset.scol] ? "none" : "";
+        });
+      });
+    });
     // HTML テーブルの Download PNG ボタン
     document.querySelectorAll(".pic-png-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {

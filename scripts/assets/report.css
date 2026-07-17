@@ -36,6 +36,10 @@ section.pic-tab.active{display:block}
 .pic-ctrl{position:sticky;top:60px;align-self:start;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:13px;max-height:calc(100vh - 80px);overflow:auto}
 .pic-ctrl h4{margin:2px 0 8px;color:var(--fg);font-size:13px}
 .pic-view{min-width:0}
+/* 表示/非表示トグル (サンプル・group) */
+.pic-tgl-list{display:flex;flex-direction:column;gap:3px}
+.pic-tgl{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;white-space:nowrap}
+.pic-tgl input{cursor:pointer;flex:none}
 @media(max-width:900px){.pic-2pane{grid-template-columns:1fr}.pic-ctrl{position:static;max-height:none}}
 h2{margin-top:0;font-size:21px;border-bottom:2px solid var(--accent);padding-bottom:6px}
 h3{font-size:18px;margin:22px 0 10px}

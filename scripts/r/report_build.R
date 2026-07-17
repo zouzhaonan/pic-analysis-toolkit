@@ -39,6 +39,26 @@ report_rel_path <- function(path, base) {
   if (startsWith(p, b2)) substring(p, nchar(b2) + 1) else basename(p)
 }
 
+# group 表示切替パネル (plotly 用: trace を on/off)。
+group_toggle_panel <- function(group_pal) {
+  if (is.null(group_pal) || length(group_pal) == 0) return("")
+  items <- vapply(names(group_pal), function(g) sprintf(
+    '<label class="pic-tgl"><input type="checkbox" class="pic-gtoggle" data-group="%s" checked><span class="pic-swatch" style="background:%s"></span>%s</label>',
+    html_escape(g), unname(group_pal[[g]]), html_escape(g)), character(1))
+  paste0('<h4>Groups</h4><div class="pic-tgl-list">', paste(items, collapse = ""), '</div>')
+}
+
+# sample 表示切替パネル (HTML テーブル用: 行/列を隠す)。ラベルは group 配色。
+sample_toggle_panel <- function(samples, group_map = NULL, group_pal = NULL) {
+  if (length(samples) == 0) return("")
+  scol <- function(s) { g <- if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
+    if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else "#333333" }
+  items <- vapply(samples, function(s) sprintf(
+    '<label class="pic-tgl"><input type="checkbox" class="pic-stoggle" data-sample="%s" checked><span style="color:%s;font-weight:600">%s</span></label>',
+    html_escape(s), scol(s), html_escape(s)), character(1))
+  paste0('<h4>Samples</h4><div class="pic-tgl-list">', paste(items, collapse = ""), '</div>')
+}
+
 # 「ここで選択」を明示する目立つ案内バッジ。
 pick_hint <- function(text) {
   sprintf('<div class="pic-pick"><span class="pic-pick-ic">&#128071;</span><span>%s</span></div>', text)
@@ -309,8 +329,8 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
         ))
       }
       rows <- c(rows, sprintf(
-        '<div class="pic-bar-row%s"><div class="pic-bar-label" style="color:%s;font-weight:600">%s</div><div class="pic-bar-track">%s</div></div>',
-        sep_cls, scol(sample), html_escape(sample), paste(segs, collapse = "")
+        '<div class="pic-bar-row%s" data-sample="%s"><div class="pic-bar-label" style="color:%s;font-weight:600">%s</div><div class="pic-bar-track">%s</div></div>',
+        sep_cls, html_escape(sample), scol(sample), html_escape(sample), paste(segs, collapse = "")
       ))
     }
     legend_items <- vapply(fate_cols, function(cc) sprintf(
@@ -375,7 +395,7 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
       v <- suppressWarnings(as.numeric(msum[[cc]][[i]]))
       cells <- paste0(cells, sprintf('<td class="pic-td-num">%s</td>', if (is.finite(v)) fmt_ratio(v) else "NA"))
     }
-    trows <- c(trows, sprintf('<tr class="%s">%s</tr>', trimws(sep_cls), cells))
+    trows <- c(trows, sprintf('<tr class="%s" data-sample="%s">%s</tr>', trimws(sep_cls), html_escape(as.character(msum$sample[[i]])), cells))
   }
 
   parts <- c(parts,
@@ -505,10 +525,10 @@ build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, g
   gstart <- c(FALSE, grp[-1] != grp[-length(grp)])   # 各サンプルが group の先頭か
   zmin <- suppressWarnings(min(m[is.finite(m)])); if (!is.finite(zmin)) zmin <- 0
 
-  # ヘッダ (列ラベル: 上部・横書き・group 配色)
+  # ヘッダ (列ラベル: 上部・横書き・group 配色)。data-scol でサンプル列を識別。
   ths <- vapply(seq_len(n), function(j)
-    sprintf('<th class="pic-cor-ch%s"><span style="color:%s">%s</span></th>',
-            if (gstart[[j]]) " gsep-l" else "", gcol(samples[[j]]), html_escape(samples[[j]])),
+    sprintf('<th class="pic-cor-ch%s" data-scol="%s"><span style="color:%s">%s</span></th>',
+            if (gstart[[j]]) " gsep-l" else "", html_escape(samples[[j]]), gcol(samples[[j]]), html_escape(samples[[j]])),
     character(1))
   header <- sprintf('<tr><th class="pic-cor-corner"></th>%s</tr>', paste(ths, collapse = ""))
 
@@ -521,10 +541,10 @@ build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, g
       bg <- if (is.finite(v)) cor_color(v, zmin) else "#ffffff"
       fc <- contrast_text(bg)
       cls <- paste0("val", if (gstart[[j]]) " gsep-l" else "", if (gstart[[i]]) " gsep-t" else "")
-      sprintf('<td class="%s" style="background:%s;color:%s">%s</td>', cls, bg, fc,
+      sprintf('<td class="%s" data-scol="%s" style="background:%s;color:%s">%s</td>', cls, html_escape(samples[[j]]), bg, fc,
               if (is.finite(v)) sprintf("%.2f", v) else "")
     }, character(1))
-    sprintf('<tr>%s%s</tr>', rh, paste(tds, collapse = ""))
+    sprintf('<tr data-srow="%s">%s%s</tr>', html_escape(samples[[i]]), rh, paste(tds, collapse = ""))
   }, character(1))
 
   cap_id <- paste0(id_prefix, "cor_cap")
@@ -1404,11 +1424,13 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "7. Enrichment", out_dir, "", reg, group_order)
   if (is.null(sec_enrich)) sec_enrich <- ""
 
+  samp_panel <- sample_toggle_panel(if (!is.null(msum)) as.character(msum$sample) else character(0), group_map, group_pal)
+  grp_panel  <- group_toggle_panel(group_pal)
   tb <- build_tabs(list(
-    list(html = sec_qc,     label = "QC"),
-    list(html = sec_agg,    label = "Aggregation"),
-    list(html = sec_cor,    label = "Correlation"),
-    list(html = sec_pca,    label = "PCA"),
+    list(html = sec_qc,     label = "QC",          controls = samp_panel),
+    list(html = sec_agg,    label = "Aggregation", controls = grp_panel),
+    list(html = sec_cor,    label = "Correlation", controls = samp_panel),
+    list(html = sec_pca,    label = "PCA",         controls = grp_panel),
     list(html = sec_deg,    label = "DEG"),
     list(html = sec_expr,   label = "Expression"),
     list(html = sec_enrich, label = "Enrichment")
@@ -1455,7 +1477,8 @@ build_tabs <- function(tabs) {
     id <- regmatches(tabs[[i]]$html, regexpr('(?<=<section id=")[^"]+', tabs[[i]]$html, perl = TRUE))
     btns <- c(btns, sprintf('<button class="pic-tabbtn%s" type="button" data-target="%s">%s</button>',
                             if (active) " active" else "", id, html_escape(tabs[[i]]$label)))
-    panels <- c(panels, section_to_tab(tabs[[i]]$html, active))
+    ctrl <- if (!is.null(tabs[[i]]$controls)) tabs[[i]]$controls else ""
+    panels <- c(panels, section_to_tab(tabs[[i]]$html, active, controls = ctrl))
   }
   list(bar = sprintf('<nav class="pic-tabs">%s</nav>', paste(btns, collapse = "")),
        panels = paste(panels, collapse = "\n"))
