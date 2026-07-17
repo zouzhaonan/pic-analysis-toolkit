@@ -35,6 +35,46 @@
     root.querySelectorAll(".pic-plot").forEach(renderPlot);
   }
 
+  // HTML 要素 (heatmap / QC / correlation テーブル) を PNG 化してダウンロードする。
+  // 外部ライブラリ不要: SVG <foreignObject> に要素とレポート CSS を埋めて canvas 描画。
+  function capturePng(el, filename, btn) {
+    var css = "";
+    document.querySelectorAll("style").forEach(function (s) { css += s.textContent + "\n"; });
+    // スクロール/sticky を解除して全体を描く
+    css += ".pic-hm-scroll{max-height:none!important;overflow:visible!important}" +
+      ".pic-hm thead th,.pic-hm tbody th,.pic-hm thead th.corner," +
+      ".pic-cor thead th,.pic-cor tbody th,.pic-cor .pic-cor-corner{position:static!important}" +
+      ".pic-png-btn{display:none!important}";
+    var w = Math.max(el.scrollWidth, el.offsetWidth);
+    var h = Math.max(el.scrollHeight, el.offsetHeight);
+    var clone = el.cloneNode(true);
+    var xhtml;
+    try { xhtml = new XMLSerializer().serializeToString(clone); }
+    catch (e) { if (btn) btn.textContent = "PNG error"; return; }
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
+      '<foreignObject x="0" y="0" width="' + w + '" height="' + h + '">' +
+      '<div xmlns="http://www.w3.org/1999/xhtml" style="background:#fff;width:' + w + 'px">' +
+      '<style>' + css + '</style>' + xhtml + '</div></foreignObject></svg>';
+    var img = new Image();
+    img.onload = function () {
+      var scale = 2, c = document.createElement("canvas");
+      c.width = Math.ceil(w * scale); c.height = Math.ceil(h * scale);
+      var ctx = c.getContext("2d"); ctx.scale(scale, scale);
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0);
+      c.toBlob(function (blob) {
+        if (!blob) { if (btn) btn.textContent = "PNG error"; return; }
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob); a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+        if (btn) { var t = btn.textContent; btn.textContent = "✓ saved"; setTimeout(function () { btn.textContent = t; }, 1200); }
+      }, "image/png");
+    };
+    img.onerror = function () { if (btn) btn.textContent = "PNG error"; };
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  }
+
   // contrast × method の 2 軸チェックボックス。両軸が選択されたセルのみ表示。
   function initMatrix(root) {
     function refresh() {
@@ -339,6 +379,13 @@
     });
     // 遺伝子発現 UI を初期化
     document.querySelectorAll(".pic-expr").forEach(initExpr);
+    // HTML テーブルの Download PNG ボタン
+    document.querySelectorAll(".pic-png-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var el = document.getElementById(btn.dataset.cap);
+        if (el) capturePng(el, (btn.dataset.name || "figure") + ".png", btn);
+      });
+    });
     // source パスのコピーボタン
     document.querySelectorAll(".pic-src-copy").forEach(function (b) {
       b.addEventListener("click", function () {

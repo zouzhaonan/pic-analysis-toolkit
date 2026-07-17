@@ -25,6 +25,9 @@ h4{font-size:14px;margin:6px 0;color:var(--muted)}
 .pic-src-copy{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:5px;padding:3px 10px;font-size:12px;cursor:pointer;font-weight:600}
 .pic-src-copy:hover{background:#eef3fb;color:var(--accent);border-color:#bcd3ea}
 .pic-src-copy.copied{background:#e6f4ea;color:#1a7f37;border-color:#a6d8b4}
+/* HTML テーブルの PNG ダウンロードボタン */
+.pic-png-btn{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:6px;padding:3px 12px;font-size:12px;font-weight:600;cursor:pointer;margin:2px 0 8px}
+.pic-png-btn:hover{background:#eef3fb;color:var(--accent);border-color:#bcd3ea}
 
 /* plotly grid */
 .pic-plot-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}

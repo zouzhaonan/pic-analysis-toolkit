@@ -39,6 +39,12 @@ report_rel_path <- function(path, base) {
   if (startsWith(p, b2)) substring(p, nchar(b2) + 1) else basename(p)
 }
 
+# HTML 要素 (id=cap_id) を PNG 画像でダウンロードするボタン。
+png_button <- function(cap_id, name) {
+  sprintf('<button class="pic-png-btn" type="button" data-cap="%s" data-name="%s">&#8681; PNG</button>',
+          html_escape(cap_id), html_escape(name))
+}
+
 # 元データの場所を示すキャプション (グレー背景 + 黄色文字 + コピーボタン)。
 src_note <- function(rel) {
   if (is.null(rel) || !nzchar(rel)) return("")
@@ -255,7 +261,10 @@ read_mapping_sum <- function(path) {
 section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC", src = "", group_map = NULL, group_pal = NULL) {
   fate_cols <- names(PIC_FATE_COLORS)
   have_fate <- all(fate_cols %in% colnames(msum))
-  parts <- c(sprintf('<section id="%s"><h2>%s</h2>', section_id, heading), src_note(src))
+  cap_id <- paste0(section_id, "_cap")
+  parts <- c(sprintf('<section id="%s"><h2>%s</h2>', section_id, heading), src_note(src),
+             png_button(cap_id, "mapping_qc"),
+             sprintf('<div class="pic-capbox" id="%s">', cap_id))
 
   # サンプル名を group 配色で (heatmap と同じ)
   scol <- function(s) {
@@ -367,7 +376,7 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
     '</tbody></table>'
   )
 
-  parts <- c(parts, '</section>')
+  parts <- c(parts, '</div></section>')
   paste(parts, collapse = "\n")
 }
 
@@ -508,12 +517,14 @@ build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, g
     sprintf('<tr>%s%s</tr>', rh, paste(tds, collapse = ""))
   }, character(1))
 
+  cap_id <- paste0(id_prefix, "cor_cap")
   paste0(
     src_note(report_rel_path(f, proj_dir)),
     '<p class="pic-note">Sample-to-sample correlation. Replicates of the same group should correlate most strongly ',
     '(<b style="color:#b2182b">red</b>); a sample that stands out from its group (more <b style="color:#2166ac">blue</b>) may be an outlier.</p>',
-    sprintf('<div class="pic-cor-wrap"><table class="pic-cor"><thead>%s</thead><tbody>%s</tbody></table></div>',
-            header, paste(rows, collapse = "")))
+    png_button(cap_id, "sample_correlation"),
+    sprintf('<div class="pic-capbox" id="%s"><div class="pic-cor-wrap"><table class="pic-cor"><thead>%s</thead><tbody>%s</tbody></table></div></div>',
+            cap_id, header, paste(rows, collapse = "")))
 }
 
 build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefix = "", proj_dir = NULL) {
@@ -607,7 +618,7 @@ zcolor_vec <- function(v, zmax) {
 }
 
 # DEG ヒートマップを、サンプル行ヘッダ固定・縦スクロール可能な HTML 表として生成する。
-build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal = NULL, proj_dir = NULL, sample_order = NULL) {
+build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal = NULL, proj_dir = NULL, sample_order = NULL, id_prefix = "") {
   f <- file.path(deseq2_dir, "DEG", sprintf("DEG_normalizedCountTable_%s.csv", project))
   if (!file.exists(f)) return(NULL)
   d <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
@@ -669,15 +680,19 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
     legend_html <- sprintf('<div class="pic-legend" style="margin-left:0">%s</div>', paste(items, collapse = ""))
   }
 
+  cap_id <- paste0(id_prefix, "heatmap_cap")
   paste0(
     sprintf('<h3>Expression heatmap (%d differentially expressed genes)</h3>', nrow(z)),
     src_note(report_rel_path(f, proj_dir)),
     '<p class="pic-note">Each row is a gene, each column a sample (grouped by color). ',
     'Cell color is the gene&rsquo;s z-score across samples &mdash; <b style="color:#b2182b">red</b> is higher than that gene&rsquo;s average, ',
     '<b style="color:#2166ac">blue</b> is lower. Genes are ordered by similarity. Hover a cell for the gene, sample, and z-score.</p>',
+    png_button(cap_id, "deg_heatmap"),
+    sprintf('<div class="pic-capbox" id="%s">', cap_id),
     legend_html,
     sprintf('<div class="pic-hm-scroll"><table class="pic-hm"><thead>%s</thead><tbody>%s</tbody></table></div>',
-            header, paste(rows, collapse = ""))
+            header, paste(rows, collapse = "")),
+    '</div>'
   )
 }
 
@@ -1566,7 +1581,7 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
   # DEG (heatmap + MA/volcano)
   n <- n + 1L
   sid <- paste0(frac_key, "_deg")
-  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order)
+  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order, id_prefix)
   contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir), group_order, group_pal)
   secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · Differential expression (DESeq2, FDR = %s)</h2>%s%s</section>',
                           sid, n, label, format(fdr, trim = TRUE),
