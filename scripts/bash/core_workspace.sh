@@ -8,7 +8,8 @@
 #   処理ごとに必要な作業フォルダや出力ファイルを作成・削除する。
 
 prepare_workspace_dirs() {
-  mkdir -p "$OUTPUT_DIR" "$TMP_DIR" "$DEFTABLE_DIR"
+  # log/ は診断ログを実行中から直接書き込む先。tmp/ は scratch 専用。
+  mkdir -p "$OUTPUT_DIR" "$TMP_DIR" "$LOG_DIR" "$DEFTABLE_DIR"
 }
 
 is_protected_workspace_path() {
@@ -100,7 +101,9 @@ prepare_workspace_for_bigwig() {
 finalize_outputs() {
   local count_file
 
-  mv "$TMP_DIR" "$LOG_DIR"
+  # 診断ログは既に log/ に直接書かれている。scratch の tmp/ は破棄する
+  # (run_primary_command の RETURN trap でも掃除されるが、成功時はここで確実に消す)。
+  safe_rm_rf "$TMP_DIR"
 
   shopt -s nullglob
   for count_file in "${COUNTS_DIR:?}/"*; do

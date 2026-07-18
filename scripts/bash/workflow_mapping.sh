@@ -157,8 +157,11 @@ build_mapping_paths() {
   local output_stem
 
   output_stem="$(mapping_output_stem "$sample_name" "$read_limit")"
+  # scratch (fastq/bam/feature.tsv 等) は tmp/、診断ログは log/ に分離する。
   MAPPING_JOB_PREFIX="${TMP_DIR}/${output_stem}"
-  MAPPING_JOB_LOG="${TMP_DIR}/${output_stem}.mapping_tools.log"
+  MAPPING_JOB_LOG="${LOG_DIR}/${output_stem}.mapping_tools.log"
+  MAPPING_JOB_SUMMARY="${LOG_DIR}/${output_stem}.mapping.log"
+  MAPPING_JOB_FC_SUMMARY="${LOG_DIR}/${output_stem}.feature.tsv.summary"
   OUTPUT_BAM="${BAM_DIR}/${output_stem}.bam"
   INPUT_FASTQ="$(demux_fastq_path "$sample_name")"
 }
@@ -214,7 +217,7 @@ run_hisat2_alignment() {
       -x "$hisat2_index_prefix" \
       "${hisat2_args[@]}" \
       -U "${MAPPING_JOB_PREFIX}_trimmed.fq.gz" \
-      --summary-file "${MAPPING_JOB_PREFIX}.mapping.log" |
+      --summary-file "${MAPPING_JOB_SUMMARY}" |
       samtools view -@ "$THREADS" -huS |
       samtools sort -@ "$THREADS" -o "${MAPPING_JOB_PREFIX}.bam"
   } >>"$MAPPING_JOB_LOG" 2>&1
@@ -226,9 +229,12 @@ run_feature_counts() {
 
   gtf_path="$(pic_get_gtf_path "$genome_name")"
 
+  # featureCounts は summary を -o の隣 (tmp/) に書くため、生成後に log/ へ移す
+  # (count 本体 .feature.tsv は scratch なので tmp/ のまま cleanup で破棄)。
   featureCounts -T "$THREADS" -s1 -a "$gtf_path" \
     -o "${MAPPING_JOB_PREFIX}.feature.tsv" -R BAM "${MAPPING_JOB_PREFIX}.bam" \
     >>"$MAPPING_JOB_LOG" 2>&1
+  mv "${MAPPING_JOB_PREFIX}.feature.tsv.summary" "${MAPPING_JOB_FC_SUMMARY}"
 }
 
 finalize_mapping_bam() {
@@ -358,7 +364,7 @@ mapping_sum() {
       "ambiguity" "assigned" "umis" "genes" "umis/genes" "assigned/umis"
 
     awk -F"\t" -v OFS="\t" \
-      -v tmp_dir="$TMP_DIR" -v count_dir="$COUNTS_DIR" \
+      -v log_dir="$LOG_DIR" -v count_dir="$COUNTS_DIR" \
       -v job_queue="$JOB_QUEUE" -f "$MAP_SUMMARY_AWK" \
       "$TOTAL_READS" | sort -k1,1 -k4,4n
   } >"$MAP_SUMMARY"
@@ -501,6 +507,9 @@ run_primary_command() {
   validate_sample_sheet_genome_registration
   log_info "Preparing workspace"
   prepare_workspace_for_run
+  # scratch の tmp/ は関数終了時 (成功・失敗どちらでも) に掃除する。診断ログは
+  # log/ に直接書かれるため、失敗しても log/ は残る。
+  trap 'safe_rm_rf "$TMP_DIR"' RETURN
   log_info "Formatting sample sheet"
   format_sample_sheet
 
