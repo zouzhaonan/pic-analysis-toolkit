@@ -732,7 +732,7 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
     register_plot(reg, paste0(id_prefix, "pca_scree"), list(data = scree, layout = list(
       xaxis = list(title = ""),
       yaxis = list(title = "% variance", rangemode = "tozero"),  # 上限は自動 (100% までは不要)
-      hovermode = "x", margin = list(l = 56, r = 16, t = 20, b = 40), showlegend = FALSE  # 1 色なので凡例不要
+      hovermode = "x", margin = list(l = 56, r = 16, t = 8, b = 28), showlegend = FALSE  # 1 色なので凡例不要
     )))
   }
   scree_block <- sprintf('<div class="pic-plot-cell"><h4>Variance explained</h4><div id="%spca_scree" class="pic-plot"></div></div>', id_prefix)
