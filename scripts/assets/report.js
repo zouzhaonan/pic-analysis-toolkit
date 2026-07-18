@@ -375,12 +375,12 @@
       }
       activateTab(initial);
     }
-    // Overview のセクション見出しをクリック/Enter でそのタブへ
+    // Overview の「open tab →」でそのタブへ (summary の折りたたみは発火させない)
     document.querySelectorAll(".pic-ov-jump[data-target]").forEach(function (jump) {
       function go() { activateTab(jump.dataset.target); }
-      jump.addEventListener("click", function () { go(); });
+      jump.addEventListener("click", function (e) { e.preventDefault(); e.stopPropagation(); go(); });
       jump.addEventListener("keydown", function (e) {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); go(); }
       });
     });
     // アクティブなタブのプロットを描画 (renderPlot が非表示を自己判定)

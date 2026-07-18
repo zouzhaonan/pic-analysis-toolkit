@@ -219,17 +219,27 @@ table.pic-hm{border-collapse:separate;border-spacing:0}
 .pic-notes h3{margin-top:8px}
 code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 
-/* Overview & downloads (全 csv/tsv を HTML 埋め込み・クリックで DL、説明つき) */
+/* Overview & Downloads (全 csv/tsv を HTML 埋め込み・折りたたみ・クリックで DL) */
 .pic-ov-intro{font-size:15px;color:var(--fg);margin:6px 0 22px}
-.pic-ov-groups{display:flex;flex-direction:column;gap:14px}
-.pic-ov-group{border:1px solid var(--line);border-radius:10px;padding:12px 18px;background:#fcfdff}
-.pic-ov-jump,.pic-ov-cat{display:inline-block;font-size:15px;font-weight:700;color:var(--accent);margin-bottom:2px}
-.pic-ov-jump{cursor:pointer;text-decoration:none}
+.pic-ov-groups{display:flex;flex-direction:column;gap:10px}
+.pic-ov-sec{border:1px solid var(--line);border-radius:10px;background:#fcfdff;padding:2px 16px}
+.pic-ov-sec>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:12px;padding:12px 0;font-weight:700}
+.pic-ov-sec>summary::-webkit-details-marker{display:none}
+.pic-ov-sec>summary::before{content:"\25B8";color:var(--muted);font-size:12px;transition:transform .12s}
+.pic-ov-sec[open]>summary::before{transform:rotate(90deg)}
+.pic-ov-cat{font-size:15px;font-weight:700;color:var(--fg)}
+.pic-ov-jump{margin-left:auto;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer;text-decoration:none}
 .pic-ov-jump:hover{text-decoration:underline}
-.pic-ov-cat{color:var(--fg)}
-.pic-ov-list{list-style:none;margin:8px 0 2px;padding:0;display:flex;flex-direction:column;gap:6px}
+.pic-ov-sub{border-top:1px solid var(--line);margin:0}
+.pic-ov-sub>summary{cursor:pointer;list-style:none;padding:8px 0;font-weight:600;font-size:13.5px;color:var(--accent)}
+.pic-ov-sub>summary::-webkit-details-marker{display:none}
+.pic-ov-sub>summary::before{content:"\25B8 ";color:var(--muted);font-size:11px}
+.pic-ov-sub[open]>summary::before{content:"\25BE "}
+.pic-ov-n{color:var(--muted);font-weight:400}
+.pic-ov-list{list-style:none;margin:4px 0 12px;padding:0 0 0 6px;display:flex;flex-direction:column;gap:6px}
 .pic-ov-list li{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
-.pic-ov-file{flex:none;cursor:pointer;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;color:#fff;background:var(--accent);border:1px solid var(--accent);border-radius:5px;padding:3px 10px;text-decoration:none;white-space:nowrap}
-.pic-ov-file::before{content:"\2913 ";font-weight:700}
-.pic-ov-file:hover{background:#17518f}
+.pic-ov-dl{flex:none}
+.pic-ov-fname{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;color:var(--fg)}
 .pic-ov-desc{color:var(--muted);font-size:13px;min-width:0}
+/* プロット内の右寄せ DL 行 (GSEA セル等) */
+.pic-dl-row{display:flex;justify-content:flex-end;margin:0 0 6px}

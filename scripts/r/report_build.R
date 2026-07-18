@@ -116,17 +116,25 @@ file_desc <- function(rel) {
   "Source data table."
 }
 
-# 相対パスからカタログ用のカテゴリ (見出し + 対応タブ id) を返す。
+# ダウンロード対象から除外するファイル (冗長・派生的なもの)。
+file_excluded <- function(rel) {
+  b <- basename(rel)
+  grepl("^sample_sheet", b) || grepl("^Num_UMIs_genes", b) ||
+    grepl("^DEG_count", b) || grepl("^DEG_normalizedCountTable", b) ||
+    grepl("^DEGCluster_summary", b) || grepl("^DEGCluster_gene_for_ora", b) ||
+    grepl("^DEGCluster_merge_map", b)
+}
+
+# 相対パスからカタログ用のカテゴリ (見出し + 対応タブ id) を返す。タブ順に並べる。
 file_category <- function(rel) {
-  if (grepl("^enrich/GSEA", rel)) return(list(key = "enrich-gsea", title = "Enrichment — GSEA", tab = "enrich"))
-  if (grepl("^enrich/ORA", rel))  return(list(key = "enrich-ora",  title = "Enrichment — ORA",  tab = "enrich"))
-  if (grepl("^aggregate/", rel))  return(list(key = "aggregate", title = "Aggregation", tab = "aggregate"))
-  if (grepl("DEGCluster", rel))   return(list(key = "deg-cluster", title = "DESeq2 — DEG clusters", tab = "deg"))
-  if (grepl("PCA", rel))          return(list(key = "pca", title = "PCA", tab = "pca"))
-  if (grepl("correlation", rel))  return(list(key = "cor", title = "Sample correlation", tab = "cor"))
-  if (grepl("^deseq2/.*DEG", rel)) return(list(key = "deg", title = "DESeq2 — differential expression", tab = "deg"))
-  if (grepl("^deseq2/", rel))     return(list(key = "deseq2", title = "DESeq2 — count tables & stats", tab = "expr"))
-  if (grepl("^counts/", rel))     return(list(key = "counts", title = "Counts (per-sample)", tab = "qc"))
+  b <- basename(rel)
+  if (grepl("^enrich/GSEA", rel)) return(list(key = "gsea", title = "Enrichment — GSEA", tab = "enrich"))
+  if (grepl("^enrich/ORA", rel))  return(list(key = "ora",  title = "Enrichment — ORA",  tab = "enrich"))
+  if (grepl("^aggregate/", rel))  return(list(key = "agg", title = "Aggregation", tab = "aggregate"))
+  if (grepl("correlation", b))    return(list(key = "cor", title = "Sample Correlation", tab = "cor"))
+  if (grepl("PCA", b))            return(list(key = "pca", title = "PCA", tab = "pca"))
+  if (grepl("^stats|DEG", b))     return(list(key = "deg", title = "Differential Expression", tab = "deg"))
+  if (grepl("UMI_count|normalizedCountTable", b)) return(list(key = "expr", title = "Gene Expression", tab = "expr"))
   list(key = "mapping", title = "Mapping", tab = "qc")
 }
 
@@ -134,6 +142,7 @@ file_category <- function(rel) {
 register_file <- function(rel) {
   reg <- getOption("pic.report.reg"); proj <- getOption("pic.report.projdir")
   if (is.null(reg) || is.null(proj) || is.null(rel) || !nzchar(rel)) return(NULL)
+  if (file_excluded(rel)) return(NULL)
   if (is.null(reg$files)) reg$files <- list()
   id <- gsub("[^A-Za-z0-9]+", "_", rel)
   if (!is.null(reg$files[[id]])) return(id)
@@ -187,6 +196,13 @@ group_color <- function(g, group_pal) {
 group_span <- function(g, group_pal) {
   col <- group_color(g, group_pal)
   if (!is.null(col)) sprintf('<span style="color:%s">%s</span>', col, html_escape(g)) else html_escape(g)
+}
+
+# "a_vs_b" 形式の contrast を group 色付きの "a / b" にする。
+color_vs_contrast <- function(cf, group_pal) {
+  parts <- strsplit(cf, "_vs_", fixed = TRUE)[[1]]
+  paste(vapply(parts, function(p) group_span(p, group_pal), character(1)),
+        collapse = ' <span style="color:var(--muted)">/</span> ')
 }
 
 # contrast 名 ("groupA / groupB") の各 group をその group 色で装飾する。
@@ -1399,10 +1415,10 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         contrast <- key2contrast[[rkey]]
         info <- cellmap[[contrast]][[method]]
         if (is.null(info)) return("")
-        title <- sprintf('%s &mdash; %s', color_contrast(contrast, group_pal), html_escape(method))
+        # タイトル行は不要 (左パネルで contrast/method を選択済み)。DL ボタンのみ右寄せ。
         dl <- if (!is.null(info$csv) && nzchar(info$csv)) src_note(info$csv) else ""
-        sprintf('<div class="pic-enrich-item">%s<div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
-                sub_head(title, dl), info$id, info$h)
+        sprintf('<div class="pic-enrich-item"><div class="pic-dl-row">%s</div><div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
+                dl, info$id, info$h)
       }
       row_groups <- if (!is.null(group_order) && length(group_order) > 0) group_order else
         unique(unlist(lapply(contrasts, function(a) trimws(strsplit(a, " / ", fixed = TRUE)[[1]]))))
@@ -1600,7 +1616,7 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
       list(label = "GSEA", id = "enrich-gsea", marker = ""),
       list(label = "ORA",  id = "enrich-ora",  marker = '<div class="pic-enrich-ora">')))
   )
-  overview_sec <- build_overview_section(data_tabs, run, genome)
+  overview_sec <- build_overview_section(data_tabs, run, genome, group_pal)
   tb <- build_tabs(c(list(list(html = overview_sec, label = "Overview")), data_tabs))
   out_html <- file.path(out_dir, sprintf("report_%s.html", project))
   render_report_page(run, tb$bar, tb$panels, reg, asset_dir, out_html)
@@ -1732,9 +1748,9 @@ pic_tab_src_paths <- function(tab_html) {
   paths
 }
 
-# Overview & downloads セクション。全幅の説明 + プロジェクトの全 csv/tsv を
-# カテゴリ別に列挙 (各ファイルは HTML 埋め込み、クリックで DL、簡単な説明つき)。
-build_overview_section <- function(tabs, run, genome) {
+# Overview & Downloads セクション。全幅の説明 + プロジェクトの全 csv/tsv を
+# カテゴリ別 (折りたたみ) に列挙。各ファイルは HTML 埋め込み・クリックで DL。
+build_overview_section <- function(tabs, run, genome, group_pal = NULL) {
   proj <- getOption("pic.report.projdir")
   if (!is.null(proj)) {
     all <- list.files(proj, pattern = "\\.(csv|tsv)$", recursive = TRUE)
@@ -1743,33 +1759,59 @@ build_overview_section <- function(tabs, run, genome) {
   }
   reg <- getOption("pic.report.reg")
   files <- if (!is.null(reg) && !is.null(reg$files)) reg$files else list()
-  order_cats <- c("Mapping", "Counts (per-sample)", "DESeq2 — count tables & stats",
-                  "Sample correlation", "PCA", "DESeq2 — differential expression",
-                  "DESeq2 — DEG clusters", "Aggregation", "Enrichment — GSEA", "Enrichment — ORA")
+  proj_name <- paste0(genome, "_", run)
+
+  dl_btn <- function(i, label) sprintf('<a class="pic-dlcsv pic-ov-dl" role="button" tabindex="0" data-file="%s">%s</a>', i, label)
+  ext_label <- function(name) { ext <- toupper(tools::file_ext(name)); if (nzchar(ext)) sprintf("Download %s", ext) else "Download" }
+  file_li <- function(i) {
+    f <- files[[i]]
+    sprintf('<li>%s<code class="pic-ov-fname">%s</code><span class="pic-ov-desc">%s</span></li>',
+            dl_btn(i, ext_label(f$name)), html_escape(f$name), html_escape(f$desc))
+  }
+
+  order_cats <- c("Mapping", "Aggregation", "Sample Correlation", "PCA",
+                  "Differential Expression", "Gene Expression",
+                  "Enrichment — GSEA", "Enrichment — ORA")
   cats <- unique(vapply(files, function(f) f$cat, character(1)))
   cats <- c(intersect(order_cats, cats), setdiff(cats, order_cats))
-  groups <- character(0)
+
+  sections <- character(0); first <- TRUE
   for (ct in cats) {
     ids <- names(files)[vapply(files, function(f) identical(f$cat, ct), logical(1))]
-    ids <- ids[order(vapply(ids, function(i) files[[i]]$name, character(1)))]
+    if (length(ids) == 0) next
     tab <- files[[ids[[1]]]]$tab
-    lis <- paste(vapply(ids, function(i) {
-      f <- files[[i]]
-      sprintf('<li><a class="pic-ov-file" role="button" tabindex="0" data-file="%s">%s</a><span class="pic-ov-desc">%s</span></li>',
-              i, html_escape(f$name), html_escape(f$desc))
-    }, character(1)), collapse = "")
-    hd <- if (!is.null(tab) && nzchar(tab))
-      sprintf('<a class="pic-ov-jump" data-target="%s" tabindex="0">%s</a>', tab, html_escape(ct))
-      else sprintf('<span class="pic-ov-cat">%s</span>', html_escape(ct))
-    groups <- c(groups, sprintf('<div class="pic-ov-group">%s<ul class="pic-ov-list">%s</ul></div>', hd, lis))
+    if (identical(ct, "Enrichment — GSEA")) {
+      meth_order <- strsplit(pic_plot_spec()$defaults$enrich_methods_csv, ",", fixed = TRUE)[[1]]
+      order_meths <- function(ms) c(meth_order[meth_order %in% ms], sort(setdiff(ms, meth_order)))
+      meth <- vapply(ids, function(i) { p <- strsplit(files[[i]]$path, "/", fixed = TRUE)[[1]]; if (length(p) >= 3) p[[3]] else "GSEA" }, character(1))
+      subs <- character(0)
+      for (mth in order_meths(unique(meth))) {
+        mids <- ids[meth == mth]
+        clis <- vapply(mids, function(i) {
+          cf <- sub(paste0("^GSEA_", mth, "_"), "", files[[i]]$name)
+          cf <- sub(paste0("_", proj_name, ".csv"), "", cf, fixed = TRUE)
+          sprintf('<li>%s<span class="pic-ov-fname">%s</span></li>', dl_btn(i, "Download CSV"), color_vs_contrast(cf, group_pal))
+        }, character(1))
+        subs <- c(subs, sprintf('<details class="pic-ov-sub"><summary>%s <span class="pic-ov-n">(%d)</span></summary><ul class="pic-ov-list">%s</ul></details>',
+                                html_escape(mth), length(mids), paste(clis, collapse = "")))
+      }
+      body <- paste(subs, collapse = "")
+    } else {
+      ids <- ids[order(vapply(ids, function(i) files[[i]]$name, character(1)))]
+      ids <- ids[!duplicated(vapply(ids, function(i) files[[i]]$name, character(1)))]  # 同名は 1 つに
+      body <- sprintf('<ul class="pic-ov-list">%s</ul>', paste(vapply(ids, file_li, character(1)), collapse = ""))
+    }
+    jump <- if (!is.null(tab) && nzchar(tab)) sprintf('<a class="pic-ov-jump" data-target="%s" tabindex="0">open tab &rarr;</a>', tab) else ""
+    sections <- c(sections, sprintf('<details class="pic-ov-sec"%s><summary><span class="pic-ov-cat">%s</span>%s</summary>%s</details>',
+                                    if (first) " open" else "", html_escape(ct), jump, body))
+    first <- FALSE
   }
   intro <- sprintf(paste0('<p class="pic-ov-intro">Interactive analysis report for run <b>%s</b>, ',
-    'mapped to <b>%s</b>. <b>Every source table is embedded in this file</b> &mdash; click any file ',
-    'below (or a <b>Download</b> button on a tab) to save it, no separate data files needed. ',
-    'Click a section title to jump to its figures.</p>'),
+    'mapped to <b>%s</b>. <b>Every source table is embedded in this file</b> &mdash; expand a section and ',
+    'click a file to download it (or use the <b>Download</b> button on any figure). No separate data files needed.</p>'),
     html_escape(run), html_escape(genome))
-  sprintf('<section id="overview"><h2>Overview &amp; downloads</h2>%s<div class="pic-ov-groups">%s</div></section>',
-          intro, paste(groups, collapse = ""))
+  sprintf('<section id="overview"><h2>Overview &amp; Downloads</h2>%s<div class="pic-ov-groups">%s</div></section>',
+          intro, paste(sections, collapse = ""))
 }
 
 # タブバー + パネルを組み立てる。tabs: list(list(html=, label=, controls=, subs=, shared_controls=))。
