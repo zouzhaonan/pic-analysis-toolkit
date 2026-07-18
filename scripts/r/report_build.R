@@ -70,37 +70,36 @@ png_button <- function(cap_id, name) {
           html_escape(cap_id), html_escape(name))
 }
 
-# 元データの場所を示すキャプション (グレー背景 + 黄色文字 + コピーボタン)。
+# 元データの場所を示すキャプション。クリックで CSV を開くリンク (report からの相対パス)。
 src_note <- function(rel) {
   if (is.null(rel) || !nzchar(rel)) return("")
   e <- html_escape(rel)
-  sprintf(paste0('<p class="pic-src"><span class="pic-src-label">source</span>',
-                 '<code class="pic-src-path">%s</code>',
-                 '<button class="pic-src-copy" type="button" data-copy="%s">copy path</button></p>'),
+  sprintf(paste0('<span class="pic-src"><span class="pic-src-label">source</span>',
+                 '<a class="pic-src-path" href="%s" target="_blank" title="open the source file">%s</a></span>'),
           e, e)
 }
 
 # 複数ブロックをチェックボックスで表示選択する UI。既定は先頭のみ表示。
 # items: list(list(id=, label=, html=, checked=logical), ...)
 # ブロックが 1 つだけなら選択 UI は付けずにそのまま表示する。
-build_select_group <- function(items) {
+build_select_group <- function(items, prefix = "", ctrl_title = NULL) {
   items <- Filter(function(it) !is.null(it$html) && nzchar(it$html), items)
-  if (length(items) == 0) return("")
-  if (length(items) == 1) {
-    return(sprintf('<div class="pic-select-item">%s</div>', items[[1]]$html))
-  }
+  if (length(items) == 0) return(if (nzchar(prefix)) sprintf('<div class="pic-select-item">%s</div>', prefix) else "")
+  rname <- paste0("sel_", gsub("[^A-Za-z0-9_]", "", items[[1]]$id))
   bar <- vapply(items, function(it) {
     ck <- if (isTRUE(it$checked)) " checked" else ""
-    sprintf('<label class="pic-select-chk"><input type="checkbox" data-target="%s"%s>%s</label>',
-            html_escape(it$id), ck, html_escape(it$label))
+    sprintf('<label class="pic-select-chk"><input type="radio" name="%s" data-target="%s"%s>%s</label>',
+            rname, html_escape(it$id), ck, html_escape(it$label))
   }, character(1))
   blk <- vapply(items, function(it) {
     hid <- if (isTRUE(it$checked)) "" else " hidden"
     sprintf('<div class="pic-select-item" id="%s"%s>%s</div>', html_escape(it$id), hid, it$html)
   }, character(1))
-  # 左 = チェックボックス / 右 = ブロック
-  paste0('<div class="pic-selgrid"><div class="pic-selgrid-ctrl"><div class="pic-select-bar">',
-         paste(bar, collapse = ""), '</div></div><div class="pic-selgrid-view">',
+  head_html <- if (!is.null(ctrl_title)) sprintf('<h4>%s</h4>', html_escape(ctrl_title)) else ""
+  # 左 = ラジオ選択 / 右 = (prefix +) 選択ブロック
+  paste0('<div class="pic-selgrid"><div class="pic-selgrid-ctrl">', head_html,
+         '<div class="pic-select-bar">', paste(bar, collapse = ""),
+         '</div></div><div class="pic-selgrid-view">', prefix,
          paste(blk, collapse = ""), '</div></div>')
 }
 
@@ -109,7 +108,7 @@ build_select_group <- function(items) {
 # entries: list(list(aspect=, count=, checked=, attr=))
 #   attr は checkbox に付与する属性 (例: 'data-target="id"' や 'data-axis="r" data-key="k"')。
 # groups: 表示順の group ベクトル (contrast は大文字小文字を無視して照合)。
-build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = TRUE) {
+build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = TRUE, radio_name = NULL) {
   if (length(groups) < 2 || length(entries) == 0) return("")
   gl <- tolower(groups)
   cellmap <- list()
@@ -138,8 +137,9 @@ build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = T
       ck <- if (isTRUE(e$checked)) " checked" else ""
       cnt <- if (show_count && !is.null(e$count) && is.finite(suppressWarnings(as.numeric(e$count))))
                sprintf('<span class="pic-cmx-n">%s</span>', fmt_int(e$count)) else ""
-      cs <- c(cs, sprintf('<td class="pic-cmx-cell" title="%s"><label>%s<input type="checkbox" %s%s></label></td>',
-                          html_escape(e$aspect), cnt, e$attr, ck))
+      inp <- if (!is.null(radio_name)) sprintf('type="radio" name="%s"', html_escape(radio_name)) else 'type="checkbox"'
+      cs <- c(cs, sprintf('<td class="pic-cmx-cell" title="%s"><label>%s<input %s %s%s></label></td>',
+                          html_escape(e$aspect), cnt, inp, e$attr, ck))
     }
     rows_html <- c(rows_html, sprintf('<tr>%s%s</tr>', rh, paste(cs, collapse = "")))
   }
@@ -156,28 +156,30 @@ build_matrix_group <- function(rows, cols, cell_html, row_title = "Contrast", co
   first_row <- rows[[1]]$key
   first_col <- cols[[1]]
   # 行 (contrast) セレクタ: group 行列 or 線形バー
+  rname <- paste0("gseacon_", gsub("[^A-Za-z0-9_]", "", rows[[1]]$key))
   gm <- ""
   if (!is.null(row_groups) && length(row_groups) >= 2) {
     entries <- lapply(seq_along(rows), function(i) list(
       aspect = rows[[i]]$label,
-      count = if (!is.null(row_counts) && rows[[i]]$label %in% names(row_counts)) row_counts[[rows[[i]]$label]] else NULL,
+      count = NULL,
       checked = (i == 1L),
       attr = sprintf('data-axis="r" data-key="%s"', html_escape(rows[[i]]$key))))
-    gm <- build_group_matrix(entries, row_groups, group_pal, show_count = !is.null(row_counts))
+    gm <- build_group_matrix(entries, row_groups, group_pal, show_count = FALSE, radio_name = rname)
   }
   row_sel <- if (nzchar(gm)) gm else {
     row_bar <- vapply(seq_along(rows), function(i) {
       ck <- if (i == 1L) " checked" else ""
-      sprintf('<label class="pic-select-chk"><input type="checkbox" data-axis="r"%s data-key="%s">%s</label>',
-              ck, html_escape(rows[[i]]$key), html_escape(rows[[i]]$label))
+      sprintf('<label class="pic-select-chk"><input type="radio" name="%s" data-axis="r"%s data-key="%s">%s</label>',
+              rname, ck, html_escape(rows[[i]]$key), html_escape(rows[[i]]$label))
     }, character(1))
     sprintf('<div class="pic-select-bar"><span class="pic-select-lbl">%s:</span>%s</div>',
             html_escape(row_title), paste(row_bar, collapse = ""))
   }
+  cname <- paste0("gseameth_", gsub("[^A-Za-z0-9_]", "", cols[[1]]))
   col_bar <- vapply(seq_along(cols), function(i) {
     ck <- if (i == 1L) " checked" else ""
-    sprintf('<label class="pic-select-chk"><input type="checkbox" data-axis="c"%s data-key="%s">%s</label>',
-            ck, html_escape(cols[[i]]), html_escape(cols[[i]]))
+    sprintf('<label class="pic-select-chk"><input type="radio" name="%s" data-axis="c"%s data-key="%s">%s</label>',
+            cname, ck, html_escape(cols[[i]]), html_escape(cols[[i]]))
   }, character(1))
   cells <- character(0)
   for (r in rows) {
@@ -868,9 +870,10 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
   groups <- if (!is.null(group_order) && length(group_order) > 0) group_order else
     unique(unlist(lapply(aspects, function(a) trimws(strsplit(a, " / ", fixed = TRUE)[[1]]))))
   entries <- lapply(items, function(it) list(
-    aspect = it$aspect, count = it$count, checked = it$checked,
+    aspect = it$aspect, count = NULL, checked = it$checked,
     attr = sprintf('data-target="%s"', it$id)))
-  matrix_html <- build_group_matrix(entries, groups, group_pal, show_count = TRUE)
+  matrix_html <- build_group_matrix(entries, groups, group_pal, show_count = FALSE,
+                                    radio_name = paste0(id_prefix, "degcon"))
   blocks <- vapply(items, function(it) {
     hid <- if (isTRUE(it$checked)) "" else " hidden"
     sprintf('<div class="pic-select-item" id="%s"%s>%s</div>', it$id, hid, it$html)
@@ -878,11 +881,8 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
   sel_html <- if (length(items) <= 1) {
     if (length(items) == 1) sprintf('<div class="pic-select-item">%s</div>', items[[1]]$html) else ""
   } else if (nzchar(matrix_html)) {
-    # 左 = contrast 行列、右 = MA/volcano ブロック
-    paste0('<div class="pic-degsel"><div class="pic-degsel-ctrl"><h4>Comparisons</h4>',
-           pick_hint('Tick a cell to show that comparison.'),
-           '<p class="pic-note">Each cell shows the number of differentially expressed genes ',
-           '(padj &lt; FDR) between the two groups.</p>',
+    # 左 = contrast 行列 (radio)、右 = MA/volcano ブロック
+    paste0('<div class="pic-degsel"><div class="pic-degsel-ctrl"><h4>Comparison</h4>',
            matrix_html, '</div><div class="pic-degsel-view">',
            paste(blocks, collapse = ""), '</div></div>')
   } else {
@@ -1266,10 +1266,9 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
   }
   if (nzchar(gsea_html)) {
     parts <- c(parts, sprintf(
-      paste0('<details class="pic-enrich-group" open><summary>GSEA &mdash; gene set enrichment</summary>%s',
+      paste0('<div class="pic-enrich-gsea">%s',
              '<p class="pic-note">GSEA asks which biological terms (GO, pathways&hellip;) are shifted up or down in a comparison, using the whole ranked gene list. Each dot is a term: position is its enrichment score (NES), color its significance (padj), size the number of genes.</p>',
-             pick_hint('Select what to view &mdash; tick a <b>Contrast</b> cell and a <b>Method</b> below.'),
-             '%s</details>'),
+             '%s</div>'),
       src_note(report_rel_path(gsea_root, proj_dir)),
       gsea_html
     ))
@@ -1303,32 +1302,29 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
     }
   }
   if (length(ora_items) > 0) {
-    ora_inner <- character(0)
-    # Cluster expression profiles first (so cluster_N labels are interpretable)
+    # 右ビューの先頭に常時表示する cluster expression profiles (cluster_N ラベルの意味づけ)
+    prefix_html <- ""
     if (!is.null(deseq2_dir)) {
       prof_spec <- tryCatch(build_cluster_profile_plotly(deseq2_dir, project, group_pal), error = function(e) NULL)
       if (!is.null(prof_spec)) {
         prof_csv <- file.path(deseq2_dir, "DEG", "DEGCluster", sprintf("DEGCluster_profile_%s.csv", project))
         prof_id <- sprintf("%sclusterprofile", id_prefix)
         register_plot(reg, prof_id, list(data = prof_spec$data, layout = prof_spec$layout, config = prof_spec$config))
-        ora_inner <- c(ora_inner, sprintf(
+        prefix_html <- sprintf(
           paste0('<div class="pic-enrich-item"><h4>Cluster expression profiles</h4>',
                  '<p class="pic-note">The differentially expressed genes are grouped into clusters that share a similar pattern across groups. ',
                  'Each panel is one cluster; the boxes show its genes&rsquo; expression per group, so you can read off what each cluster represents.</p>',
                  '%s<div id="%s" class="pic-plot" style="height:%dpx"></div></div>'),
           src_note(report_rel_path(prof_csv, proj_dir)), prof_id, prof_spec$height
-        ))
+        )
       }
     }
-    ora_inner <- c(ora_inner,
-      sprintf(paste0('<details class="pic-enrich-method" open><summary>Enriched terms per cluster</summary>',
-                     '<p class="pic-note">For each cluster above, the biological terms over-represented among its genes. ',
-                     'Dot color is significance (padj), size the gene ratio. Tick a term set to view it.</p>%s%s</details>'),
-              src_note(report_rel_path(ora_root, proj_dir)), build_select_group(ora_items)))
     parts <- c(parts, sprintf(
-      paste0('<details class="pic-enrich-group" open><summary>ORA &mdash; enrichment of gene clusters</summary>',
-             '%s</details>'),
-      paste(ora_inner, collapse = "")
+      paste0('<div class="pic-enrich-ora">%s',
+             '<p class="pic-note">ORA takes the differentially expressed genes in each cluster and asks which biological terms are over-represented among them. ',
+             'Dot color is significance (padj), size the gene ratio. Pick a term set on the left to view it.</p>%s</div>'),
+      src_note(report_rel_path(ora_root, proj_dir)),
+      build_select_group(ora_items, prefix = prefix_html, ctrl_title = "Term set")
     ))
   }
 
@@ -1442,7 +1438,7 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
     list(html = sec_expr,   label = "Expression"),
     list(html = sec_enrich, label = "Enrichment", subs = list(
       list(label = "GSEA", id = "enrich-gsea", marker = ""),
-      list(label = "ORA",  id = "enrich-ora",  marker = '<details class="pic-enrich-group" open><summary>ORA')))
+      list(label = "ORA",  id = "enrich-ora",  marker = '<div class="pic-enrich-ora">')))
   ))
   out_html <- file.path(out_dir, sprintf("report_%s.html", project))
   render_report_page(project, tb$bar, tb$panels, reg, asset_dir, out_html)
@@ -1460,7 +1456,11 @@ pic_extract_section <- function(sec_html) {
   notes <- unlist(regmatches(inner, gregexpr('<p class="pic-note">.*?</p>', inner, perl = TRUE)))
   desc <- if (length(notes) > 0) paste(sub('<p class="pic-note">', '<p>', notes), collapse = "") else ""
   inner <- gsub('<p class="pic-note">.*?</p>', '', inner, perl = TRUE)
-  list(id = id, title = title, inner = inner, desc = desc)
+  # source を抽出してヘッダ右に移す (重複は除去)
+  srcs <- unique(unlist(regmatches(inner, gregexpr('<span class="pic-src">.*?</a></span>', inner, perl = TRUE))))
+  src <- paste(srcs, collapse = "")
+  inner <- gsub('<span class="pic-src">.*?</a></span>', '', inner, perl = TRUE)
+  list(id = id, title = title, inner = inner, desc = desc, src = src)
 }
 
 info_badge <- function(desc) {
@@ -1490,11 +1490,12 @@ pic_split_inner <- function(inner, markers) {
 pic_tab_panel <- function(sec_html, active = FALSE, controls = "", subs = NULL, shared_controls = "") {
   x <- pic_extract_section(sec_html)
   info <- info_badge(x$desc)
+  head_r <- function(extra) sprintf('<div class="pic-head-right">%s%s</div>', x$src, extra)
   if (is.null(subs)) {
     pane_cls <- if (nzchar(controls)) "pic-2pane" else "pic-2pane pic-1pane"
     ctrl <- if (nzchar(controls)) sprintf('<aside class="pic-ctrl">%s</aside>', controls) else ""
-    return(sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s</div><div class="%s">%s<div class="pic-view">%s</div></div></section>',
-                   if (active) " active" else "", x$id, x$title, info, pane_cls, ctrl, x$inner))
+    return(sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s%s</div><div class="%s">%s<div class="pic-view">%s</div></div></section>',
+                   if (active) " active" else "", x$id, x$title, info, head_r(""), pane_cls, ctrl, x$inner))
   }
   chunks <- pic_split_inner(x$inner, vapply(subs, function(s) s$marker, character(1)))
   btns <- vapply(seq_along(subs), function(i) sprintf(
@@ -1508,7 +1509,7 @@ pic_tab_panel <- function(sec_html, active = FALSE, controls = "", subs = NULL, 
             shared_controls, paste(panels, collapse = ""))
   } else paste(panels, collapse = "")
   sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s%s</div>%s</section>',
-          if (active) " active" else "", x$id, x$title, info, subtab_bar, body)
+          if (active) " active" else "", x$id, x$title, info, head_r(subtab_bar), body)
 }
 
 # タブバー + パネルを組み立てる。tabs: list(list(html=, label=, controls=, subs=, shared_controls=))。

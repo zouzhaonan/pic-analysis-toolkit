@@ -1,6 +1,6 @@
 :root{
   --fg:#1f2933; --muted:#647280; --line:#e2e8f0; --bg:#ffffff; --accent:#2166ac;
-  --ctrl-w:240px;
+  --ctrl-w:300px;
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Noto Sans JP",Meiryo,sans-serif;color:var(--fg);background:#f7f9fc;line-height:1.6}
@@ -52,13 +52,12 @@ h2{margin-top:0;font-size:21px;border-bottom:2px solid var(--accent);padding-bot
 h3{font-size:18px;margin:22px 0 10px}
 h4{font-size:14px;margin:6px 0;color:var(--muted)}
 .pic-note,.pic-contrast-meta{color:var(--muted);font-size:14px;margin:4px 0}
-/* source 行: グレー背景 + 黄色文字のバッジ + コピーボタン */
-.pic-src{font-size:12.5px;margin:4px 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.pic-src-label{color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:11px}
-.pic-src-path{background:#3d434b;color:#ffd54a;padding:3px 10px;border-radius:5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
-.pic-src-copy{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:5px;padding:3px 10px;font-size:12px;cursor:pointer;font-weight:600}
-.pic-src-copy:hover{background:#eef3fb;color:var(--accent);border-color:#bcd3ea}
-.pic-src-copy.copied{background:#e6f4ea;color:#1a7f37;border-color:#a6d8b4}
+/* source: グレー背景+黄色文字のリンク (クリックで CSV を開く) */
+.pic-src{font-size:12px;display:inline-flex;align-items:center;gap:6px}
+.pic-src-label{color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px}
+.pic-src-path{background:#3d434b;color:#ffd54a;padding:3px 9px;border-radius:5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;text-decoration:none;cursor:pointer;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pic-src-path:hover{background:#4a5560;text-decoration:underline}
+.pic-head-right{margin-left:auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 /* HTML テーブルの PNG ダウンロードボタン */
 .pic-png-btn{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:6px;padding:3px 12px;font-size:12px;font-weight:600;cursor:pointer;margin:2px 0 8px}
 .pic-png-btn:hover{background:#eef3fb;color:var(--accent);border-color:#bcd3ea}
@@ -72,9 +71,6 @@ h4{font-size:14px;margin:6px 0;color:var(--muted)}
 .pic-plot-cell{border:1px solid var(--line);border-radius:8px;padding:8px}
 .pic-plot{width:100%;height:420px}
 
-/* contrast details */
-details.pic-contrast,details.pic-enrich-method{border:1px solid var(--line);border-radius:8px;margin:10px 0;padding:4px 12px;background:#fcfdff}
-details.pic-contrast summary,details.pic-enrich-method summary{cursor:pointer;font-weight:600;padding:6px 0}
 details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 
 /* mapping QC bars */
@@ -138,7 +134,8 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-degsel-ctrl{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;max-height:calc(100vh - 80px)}
 .pic-degsel-ctrl h4{margin:0 0 8px;font-size:13px}
 .pic-selgrid{display:grid;grid-template-columns:var(--ctrl-w) minmax(0,1fr);gap:18px;align-items:start}
-.pic-selgrid-ctrl{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:10px}
+.pic-selgrid-ctrl{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px}
+.pic-selgrid-ctrl h4{margin:0 0 8px;font-size:13px}
 .pic-selgrid-ctrl .pic-select-bar{flex-direction:column;align-items:flex-start;gap:5px;background:transparent;border:none;padding:0;margin:0}
 @media(max-width:900px){.pic-matrix,.pic-degsel,.pic-selgrid{grid-template-columns:1fr}.pic-matrix-sel,.pic-degsel-ctrl,.pic-selgrid-ctrl{position:static}}
 
@@ -192,9 +189,6 @@ table.pic-hm{border-collapse:separate;border-spacing:0}
 .pic-hm thead th.s.gsep,.pic-hm tbody td.gsep{border-left:2px solid #6b7885}
 
 /* enrich */
-details.pic-enrich-group{border:1px solid var(--line);border-radius:8px;margin:12px 0;padding:6px 14px;background:#fff}
-details.pic-enrich-group>summary{cursor:pointer;font-weight:700;font-size:15px;padding:6px 0;color:var(--accent)}
-details.pic-enrich-group[open]>summary{border-bottom:1px solid var(--line);margin-bottom:10px}
 .pic-enrich-item{margin:14px 0}
 .pic-enrich-item img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:6px}
 

@@ -125,7 +125,7 @@
         if (vis) renderWithin(cell);
       });
     }
-    root.querySelectorAll("input[type=checkbox]").forEach(function (cb) {
+    root.querySelectorAll("input[data-axis]").forEach(function (cb) {
       cb.addEventListener("change", refresh);
     });
   }
@@ -383,21 +383,16 @@
         if (d.open) renderWithin(d);
       });
     });
-    // チェックボックス (バー or group 行列) でブロックを表示/非表示 (表示時に遅延描画)
-    document.querySelectorAll("input[type=checkbox][data-target]").forEach(function (cb) {
+    // ラジオ/チェックボックス (バー or group 行列) でブロックを表示/非表示
+    function showTarget(inp) {
+      var t = document.getElementById(inp.dataset.target); if (!t) return;
+      if (inp.checked) { t.hidden = false; renderWithin(t); resizeWithin(t); } else { t.hidden = true; }
+    }
+    document.querySelectorAll("input[data-target]").forEach(function (cb) {
       cb.addEventListener("change", function () {
-        var t = document.getElementById(cb.dataset.target);
-        if (!t) return;
-        if (cb.checked) {
-          t.hidden = false;
-          renderWithin(t);
-          // 既描画のプロットは再表示時にサイズを再計算
-          t.querySelectorAll(".pic-plot").forEach(function (p) {
-            if (p.dataset.rendered) { try { Plotly.Plots.resize(p); } catch (e) {} }
-          });
-        } else {
-          t.hidden = true;
-        }
+        if (cb.type === "radio" && cb.name) {
+          document.querySelectorAll('input[data-target][name="' + cb.name + '"]').forEach(showTarget);
+        } else { showTarget(cb); }
       });
     });
     // セクション内サブタブの切替
