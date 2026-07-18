@@ -434,6 +434,46 @@
     });
     // 遺伝子発現 UI を初期化
     document.querySelectorAll(".pic-expr").forEach(initExpr);
+    // 左右分割のドラッグ・リサイズ。--ctrl-w を :root に設定 → 全タブ・全ウィジェットに反映
+    (function initSplitters() {
+      var SEL = ".pic-2pane, .pic-matrix, .pic-degsel, .pic-selgrid, .pic-expr, .pic-hmsel";
+      var MIN = 170, MAX = 620;
+      try {
+        var saved = localStorage.getItem("picCtrlW");
+        if (saved && /^\d+px$/.test(saved)) document.documentElement.style.setProperty("--ctrl-w", saved);
+      } catch (e) {}
+      document.querySelectorAll(SEL).forEach(function (grid) {
+        if (grid.classList.contains("pic-1pane") || grid.dataset.split) return;
+        grid.dataset.split = "1";
+        var handle = document.createElement("div");
+        handle.className = "pic-splitter";
+        handle.title = "Drag to resize (applies to all tabs)";
+        grid.appendChild(handle);
+        handle.addEventListener("mousedown", function (e) {
+          e.preventDefault();
+          var rect = grid.getBoundingClientRect();
+          handle.classList.add("pic-drag");
+          document.body.classList.add("pic-resizing");
+          function move(ev) {
+            var w = Math.round(Math.max(MIN, Math.min(MAX, ev.clientX - rect.left)));
+            document.documentElement.style.setProperty("--ctrl-w", w + "px");
+          }
+          function up() {
+            document.removeEventListener("mousemove", move);
+            document.removeEventListener("mouseup", up);
+            handle.classList.remove("pic-drag");
+            document.body.classList.remove("pic-resizing");
+            var cur = getComputedStyle(document.documentElement).getPropertyValue("--ctrl-w").trim();
+            try { if (cur) localStorage.setItem("picCtrlW", cur); } catch (e2) {}
+            // リサイズ後、表示中のプロットを再描画してレイアウトを合わせる
+            var act = document.querySelector("section.pic-tab.active");
+            if (act) resizeWithin(act);
+          }
+          document.addEventListener("mousemove", move);
+          document.addEventListener("mouseup", up);
+        });
+      });
+    })();
     // group トグル: plotly の trace を on/off + HTML テーブルの行/列を隠す
     function applyGroupToggles(tab) {
       var hide = {};
@@ -465,27 +505,6 @@
       btn.addEventListener("click", function () {
         var el = document.getElementById(btn.dataset.cap);
         if (el) capturePng(el, (btn.dataset.name || "figure") + ".png", btn);
-      });
-    });
-    // source パスのコピーボタン
-    document.querySelectorAll(".pic-src-copy").forEach(function (b) {
-      b.addEventListener("click", function () {
-        var txt = b.dataset.copy || "";
-        function done() {
-          var orig = "copy path";
-          b.textContent = "copied"; b.classList.add("copied");
-          setTimeout(function () { b.textContent = orig; b.classList.remove("copied"); }, 1200);
-        }
-        function fallback() {
-          var ta = document.createElement("textarea");
-          ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0";
-          document.body.appendChild(ta); ta.select();
-          try { document.execCommand("copy"); } catch (e) {}
-          ta.remove(); done();
-        }
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(txt).then(done, fallback);
-        } else { fallback(); }
       });
     });
   });

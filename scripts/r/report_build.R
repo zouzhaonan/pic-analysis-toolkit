@@ -70,12 +70,13 @@ png_button <- function(cap_id, name) {
           html_escape(cap_id), html_escape(name))
 }
 
-# 元データの場所を示すキャプション。クリックで CSV を開くリンク (report からの相対パス)。
+# 元データの場所を示すキャプション。クリックで CSV をダウンロードするリンク (report からの相対パス)。
 src_note <- function(rel) {
   if (is.null(rel) || !nzchar(rel)) return("")
   e <- html_escape(rel)
   sprintf(paste0('<span class="pic-src"><span class="pic-src-label">source</span>',
-                 '<a class="pic-src-path" href="%s" target="_blank" title="open the source file">%s</a></span>'),
+                 '<a class="pic-src-path" href="%s" download title="Click to download this source file">',
+                 '<span class="pic-src-dl">&#8681;</span>%s<span class="pic-src-dltxt">download</span></a></span>'),
           e, e)
 }
 
@@ -305,8 +306,9 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
 
   # ---- 100% 積み上げ棒 ----
   if (have_fate) {
-    parts <- c(parts, '<h3>Read distribution</h3>', src_note(src),
-               png_button(rd_cap, "read_distribution"),
+    parts <- c(parts,
+               sprintf('<div class="pic-sub-hd"><h3>Read distribution</h3>%s</div>', png_button(rd_cap, "read_distribution")),
+               src_note(src),
                sprintf('<div class="pic-capbox" id="%s">', rd_cap))
     # 目盛り (0-100%)
     ruler <- '<div class="pic-bar-ruler"><span>0%</span><span>20%</span><span>40%</span><span>60%</span><span>80%</span><span>100%</span></div>'
@@ -350,8 +352,8 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
   }
 
   # ---- データバー表 ----
-  parts <- c(parts, '<h3>Sequencing depth</h3>',
-             png_button(sd_cap, "sequencing_depth"),
+  parts <- c(parts,
+             sprintf('<div class="pic-sub-hd"><h3>Sequencing depth</h3>%s</div>', png_button(sd_cap, "sequencing_depth")),
              sprintf('<div class="pic-capbox" id="%s">', sd_cap))
   bar_cols <- list(
     total = list(label = "total", grad = c("#9DC3E6", "#D9E7F5")),
@@ -695,31 +697,38 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
     s <- scols[[j]]
     g <- if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
     col <- if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else "#333333"
-    sprintf('<th class="s%s"><span style="color:%s">%s</span></th>', if (gstart[[j]]) " gsep" else "", col, html_escape(s))
+    sprintf('<th class="s%s" data-gcol="%s"><span style="color:%s">%s</span></th>',
+            if (gstart[[j]]) " gsep" else "", html_escape(g), col, html_escape(s))
   }, character(1))
   header <- sprintf('<tr><th class="corner"></th>%s</tr>', paste(ths, collapse = ""))
 
   rows <- vapply(seq_len(nrow(z)), function(i) {
     tds <- vapply(seq_len(ncol(z)), function(j) sprintf(
-      '<td class="%s" style="background:%s" title="Gene: %s&#10;Sample: %s&#10;Z: %.2f"></td>',
-      if (gstart[[j]]) "gsep" else "", colmat[i, j], html_escape(labels[[i]]), html_escape(scols[[j]]), z[i, j]
+      '<td class="%s" data-gcol="%s" style="background:%s" title="Gene: %s&#10;Sample: %s&#10;Z: %.2f"></td>',
+      if (gstart[[j]]) "gsep" else "", html_escape(gvec[[j]]), colmat[i, j], html_escape(labels[[i]]), html_escape(scols[[j]]), z[i, j]
     ), character(1))
     sprintf('<tr><th class="g">%s</th>%s</tr>', html_escape(labels[[i]]), paste(tds, collapse = ""))
   }, character(1))
 
   cap_id <- paste0(id_prefix, "heatmap_cap")
-  paste0(
-    sprintf('<h3>Expression heatmap (%d differentially expressed genes)</h3>', nrow(z)),
+  # 左 = group 表示切替 / 右 = ヒートマップ本体 (タイトル右に PNG ボタン)
+  ctrl <- group_toggle_panel(group_pal)
+  view <- paste0(
+    sprintf('<div class="pic-sub-hd"><h3>Expression heatmap (%d differentially expressed genes)</h3>%s</div>',
+            nrow(z), png_button(cap_id, "deg_heatmap")),
     src_note(report_rel_path(f, proj_dir)),
     '<p class="pic-note">Each row is a gene, each column a sample (grouped by color). ',
     'Cell color is the gene&rsquo;s z-score across samples &mdash; <b style="color:#b2182b">red</b> is higher than that gene&rsquo;s average, ',
     '<b style="color:#2166ac">blue</b> is lower. Genes are ordered by similarity. Hover a cell for the gene, sample, and z-score.</p>',
-    png_button(cap_id, "deg_heatmap"),
     sprintf('<div class="pic-capbox" id="%s">', cap_id),
     sprintf('<div class="pic-hm-scroll"><table class="pic-hm"><thead>%s</thead><tbody>%s</tbody></table></div>',
             header, paste(rows, collapse = "")),
     '</div>'
   )
+  if (nzchar(ctrl)) {
+    sprintf('<div class="pic-hmsel"><aside class="pic-hmsel-ctrl">%s</aside><div class="pic-hmsel-view">%s</div></div>',
+            ctrl, view)
+  } else view
 }
 
 # ---------------------------------------------------------------------------
@@ -950,15 +959,14 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL,
         legend = list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0))
       register_plot(reg, id, list(data = traces, layout = layout))
       blocks <- c(blocks, sprintf(
-        '<div class="pic-plot-cell"><h4>%s — gene-body profile (TSS→TES)</h4>%s<div id="%s" class="pic-plot"></div></div>',
-        html_escape(genome), src_note(report_rel_path(csv, proj_dir)), id))
+        '<div class="pic-plot-cell">%s<div id="%s" class="pic-plot"></div></div>',
+        src_note(report_rel_path(csv, proj_dir)), id))
     } else {
       png <- file.path(gd, "aggregate_profile.png")
       if (file.exists(png)) {
         uri <- png_data_uri(png)
         if (!is.na(uri)) blocks <- c(blocks, sprintf(
-          '<div class="pic-enrich-item"><h4>%s — gene-body profile (TSS→TES)</h4><img loading="lazy" src="%s"></div>',
-          html_escape(genome), uri))
+          '<div class="pic-enrich-item"><img loading="lazy" src="%s"></div>', uri))
       }
     }
   }
@@ -1397,7 +1405,7 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
 
   # 2. Aggregation (TSS-TES)
   agg_html <- build_aggregate_html(reg, out_dir, "", out_dir, sample_order, group_pal)
-  sec_agg <- if (nzchar(agg_html)) paste0('<section id="aggregate"><h2>2. Aggregation (TSS-TES)</h2>', agg_html, '</section>') else ""
+  sec_agg <- if (nzchar(agg_html)) paste0('<section id="aggregate"><h2>2. Aggregation</h2>', agg_html, '</section>') else ""
 
   # 3. Sample correlation
   cor_html <- build_correlation_html(reg, desc$deseq2_dir, project, group_map, group_pal, sample_order, "", out_dir)
@@ -1412,7 +1420,7 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   # 5. DEG (heatmap + MA/volcano)
   hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order)
   contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, "", report_rel_path(desc$stats_csv, out_dir), group_order, group_pal)
-  sec_deg <- paste0(sprintf('<section id="deg"><h2>5. Differential expression (DESeq2, FDR = %s)</h2>', format(fdr, trim = TRUE)),
+  sec_deg <- paste0(sprintf('<section id="deg"><h2>5. Differential expression (FDR = %s)</h2>', format(fdr, trim = TRUE)),
                     if (!is.null(hm_html)) hm_html else "",
                     contrast_html,
                     '</section>')
@@ -1428,7 +1436,7 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   tb <- build_tabs(list(
     list(html = sec_qc, label = "QC", shared_controls = grp_panel, subs = list(
       list(label = "Read distribution", id = "qc-readdist", marker = ""),
-      list(label = "Sequencing depth",  id = "qc-depth",    marker = "<h3>Sequencing depth"))),
+      list(label = "Sequencing depth",  id = "qc-depth",    marker = '<div class="pic-sub-hd"><h3>Sequencing depth'))),
     list(html = sec_agg,    label = "Aggregation", controls = grp_panel),
     list(html = sec_cor,    label = "Correlation", controls = grp_panel),
     list(html = sec_pca,    label = "PCA",         controls = grp_panel),
@@ -1448,6 +1456,13 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
 
 # <section id><h2>title</h2>inner</section> から (id, title, inner, desc) を取り出す。
 # 本文中の説明文 (<p class="pic-note">) は desc に集約し inner から除去。
+# 文字列から source (pic-src) を抽出し、除去後の HTML と結合 src を返す。
+pic_pull_src <- function(s) {
+  srcs <- unique(unlist(regmatches(s, gregexpr('<span class="pic-src">.*?</a></span>', s, perl = TRUE))))
+  list(src = paste(srcs, collapse = ""),
+       html = gsub('<span class="pic-src">.*?</a></span>', '', s, perl = TRUE))
+}
+
 pic_extract_section <- function(sec_html) {
   id <- regmatches(sec_html, regexpr('(?<=<section id=")[^"]+', sec_html, perl = TRUE))
   title <- regmatches(sec_html, regexpr('(?<=<h2>).*?(?=</h2>)', sec_html, perl = TRUE))
@@ -1456,11 +1471,8 @@ pic_extract_section <- function(sec_html) {
   notes <- unlist(regmatches(inner, gregexpr('<p class="pic-note">.*?</p>', inner, perl = TRUE)))
   desc <- if (length(notes) > 0) paste(sub('<p class="pic-note">', '<p>', notes), collapse = "") else ""
   inner <- gsub('<p class="pic-note">.*?</p>', '', inner, perl = TRUE)
-  # source を抽出してヘッダ右に移す (重複は除去)
-  srcs <- unique(unlist(regmatches(inner, gregexpr('<span class="pic-src">.*?</a></span>', inner, perl = TRUE))))
-  src <- paste(srcs, collapse = "")
-  inner <- gsub('<span class="pic-src">.*?</a></span>', '', inner, perl = TRUE)
-  list(id = id, title = title, inner = inner, desc = desc, src = src)
+  # source は pic_tab_panel 側で処理 (サブタブごとに扱いを変えるため inner に残す)
+  list(id = id, title = title, inner = inner, desc = desc)
 }
 
 info_badge <- function(desc) {
@@ -1490,26 +1502,34 @@ pic_split_inner <- function(inner, markers) {
 pic_tab_panel <- function(sec_html, active = FALSE, controls = "", subs = NULL, shared_controls = "") {
   x <- pic_extract_section(sec_html)
   info <- info_badge(x$desc)
-  head_r <- function(extra) sprintf('<div class="pic-head-right">%s%s</div>', x$src, extra)
+  src_hdr <- function(src) if (nzchar(src)) sprintf('<div class="pic-head-right">%s</div>', src) else ""
   if (is.null(subs)) {
+    p <- pic_pull_src(x$inner)
     pane_cls <- if (nzchar(controls)) "pic-2pane" else "pic-2pane pic-1pane"
     ctrl <- if (nzchar(controls)) sprintf('<aside class="pic-ctrl">%s</aside>', controls) else ""
     return(sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s%s</div><div class="%s">%s<div class="pic-view">%s</div></div></section>',
-                   if (active) " active" else "", x$id, x$title, info, head_r(""), pane_cls, ctrl, x$inner))
+                   if (active) " active" else "", x$id, x$title, info, src_hdr(p$src), pane_cls, ctrl, p$html))
   }
   chunks <- pic_split_inner(x$inner, vapply(subs, function(s) s$marker, character(1)))
+  # サブタブごとの source を判定: すべて同一ならヘッダに 1 度、異なれば各サブパネル内に残す
+  pulled <- lapply(chunks, pic_pull_src)
+  uniq <- unique(Filter(nzchar, vapply(pulled, function(z) z$src, character(1))))
+  same_src <- length(uniq) <= 1
+  chunk_html <- if (same_src) vapply(pulled, function(z) z$html, character(1)) else chunks
+  hdr_src <- if (same_src && length(uniq) == 1) uniq[[1]] else ""
   btns <- vapply(seq_along(subs), function(i) sprintf(
     '<button class="pic-subtabbtn%s" type="button" data-sub="%s">%s</button>',
     if (i == 1L) " active" else "", subs[[i]]$id, html_escape(subs[[i]]$label)), character(1))
   panels <- vapply(seq_along(subs), function(i) sprintf(
-    '<div class="pic-subpanel%s" id="%s">%s</div>', if (i == 1L) " active" else "", subs[[i]]$id, chunks[[i]]), character(1))
+    '<div class="pic-subpanel%s" id="%s">%s</div>', if (i == 1L) " active" else "", subs[[i]]$id, chunk_html[[i]]), character(1))
   subtab_bar <- sprintf('<nav class="pic-subtabs">%s</nav>', paste(btns, collapse = ""))
   body <- if (nzchar(shared_controls)) {
     sprintf('<div class="pic-2pane"><aside class="pic-ctrl">%s</aside><div class="pic-view">%s</div></div>',
             shared_controls, paste(panels, collapse = ""))
   } else paste(panels, collapse = "")
-  sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s%s</div>%s</section>',
-          if (active) " active" else "", x$id, x$title, info, head_r(subtab_bar), body)
+  # ヘッダ順: タイトル -> (info) -> サブタブ -> source
+  sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s%s%s</div>%s</section>',
+          if (active) " active" else "", x$id, x$title, info, subtab_bar, src_hdr(hdr_src), body)
 }
 
 # タブバー + パネルを組み立てる。tabs: list(list(html=, label=, controls=, subs=, shared_controls=))。
