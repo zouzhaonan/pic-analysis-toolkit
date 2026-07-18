@@ -44,12 +44,27 @@
       if (p.dataset.rendered) { try { Plotly.Plots.resize(p); } catch (e) {} }
     });
   }
+  // xenograft: グローバルゲノム切替。currentGeno が設定されている解析タブは
+  // 論理キー key -> セクション <geno>__<key> に解決する (通常レポートは currentGeno=null)。
+  var currentGeno = null;
+  var currentTab = null;
+  function genoSection(key) {
+    var direct = document.getElementById(key);
+    if (direct && direct.classList.contains("pic-tab")) return key;
+    if (currentGeno) {
+      var g = document.getElementById(currentGeno + "__" + key);
+      if (g && g.classList.contains("pic-tab")) return currentGeno + "__" + key;
+    }
+    return key;
+  }
   // タブ切替: 対象タブを表示し、そのタブのプロットを遅延描画 + リサイズ
   function activateTab(key) {
     if (!key) return;
+    currentTab = key;
+    var target = genoSection(key);
     var found = false;
     document.querySelectorAll("section.pic-tab").forEach(function (s) {
-      var on = (s.id === key);
+      var on = (s.id === target);
       s.classList.toggle("active", on);
       if (on) found = true;
     });
@@ -57,7 +72,7 @@
     document.querySelectorAll(".pic-tabbtn").forEach(function (b) {
       b.classList.toggle("active", b.dataset.target === key);
     });
-    var tab = document.getElementById(key);
+    var tab = document.getElementById(target);
     if (tab) { renderWithin(tab); resizeWithin(tab); }
     try { if (history.replaceState) history.replaceState(null, "", "#" + key); } catch (e) {}
     window.scrollTo(0, 0);
@@ -377,16 +392,28 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     // タブ: ボタンで切替。初期は URL ハッシュ or 先頭タブ。
+    // xenograft: グローバルゲノム切替 (graft/host)。initial タブ解決の前に設定する。
+    var genobtns = document.querySelectorAll(".pic-genobtn");
+    if (genobtns.length) {
+      currentGeno = (document.querySelector(".pic-genobtn.active") || genobtns[0]).dataset.geno;
+      genobtns.forEach(function (b) {
+        b.addEventListener("click", function () {
+          currentGeno = b.dataset.geno;
+          genobtns.forEach(function (x) { x.classList.toggle("active", x === b); });
+          if (currentTab) activateTab(currentTab);
+        });
+      });
+    }
     var tabbtns = document.querySelectorAll(".pic-tabbtn");
     if (tabbtns.length) {
       tabbtns.forEach(function (b) {
         b.addEventListener("click", function () { activateTab(b.dataset.target); });
       });
+      var targets = Array.prototype.map.call(tabbtns, function (b) { return b.dataset.target; });
       var initial = (location.hash || "").replace(/^#/, "");
-      if (!initial || !document.getElementById(initial) ||
-          !document.getElementById(initial).classList.contains("pic-tab")) {
-        var first = document.querySelector("section.pic-tab.active") || document.querySelector("section.pic-tab");
-        initial = first ? first.id : "";
+      if (!initial || targets.indexOf(initial) === -1) {
+        var activeBtn = document.querySelector(".pic-tabbtn.active") || tabbtns[0];
+        initial = activeBtn ? activeBtn.dataset.target : "";
       }
       activateTab(initial);
     }

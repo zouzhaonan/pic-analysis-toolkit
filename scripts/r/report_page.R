@@ -39,6 +39,68 @@ group_map_pal <- function(msum, group_order) {
   list(map = gmap, pal = group_palette(go))
 }
 
+# 解析タブ (QC/Aggregation/Correlation/PCA/DEG/Expression/Enrichment) を組み立てて
+# data_tabs (build_tabs 入力) を返す。id_prefix を付けると section / sub / plot の
+# ID が prefix 付きになり、同一ページに複数 (xenograft の graft/host) を共存できる。
+# base_dir: mapping_sum / aggregate が置かれるディレクトリ (通常は out_dir、画分では frac_dir)。
+build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fdr,
+                                     msum, group_map, group_pal, sample_order, group_order,
+                                     stats, deg_counts, tmp_dir) {
+  sid <- function(k) paste0(id_prefix, k)
+  project <- desc$project
+
+  # 1. Mapping QC
+  msum_file <- { mf <- list.files(base_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = TRUE); if (length(mf) > 0) mf[[1]] else "" }
+  sec_qc <- if (!is.null(msum)) section_mapping_qc(msum, sid("qc"), "1. Mapping QC", report_rel_path(msum_file, out_dir), group_map, group_pal) else ""
+
+  # 2. Aggregation (TSS-TES)
+  agg_html <- build_aggregate_html(reg, base_dir, id_prefix, out_dir, sample_order, group_pal)
+  sec_agg <- if (nzchar(agg_html)) paste0(sprintf('<section id="%s"><h2>2. Aggregation</h2>', sid("aggregate")), agg_html, '</section>') else ""
+
+  # 3. Sample correlation
+  cor_html <- build_correlation_html(reg, desc$deseq2_dir, project, group_map, group_pal, sample_order, id_prefix, out_dir)
+  sec_cor <- if (nzchar(cor_html)) paste0(sprintf('<section id="%s"><h2>3. Sample Correlation</h2>', sid("cor")), cor_html, '</section>') else ""
+
+  # 4. PCA
+  pca_html <- build_pca_plots(reg, desc$deseq2_dir, project, group_pal, id_prefix, out_dir)
+  sec_pca <- paste0(sprintf('<section id="%s"><h2>4. PCA</h2>', sid("pca")),
+                    if (!is.null(pca_html)) pca_html else "<p>No PCA data.</p>",
+                    '</section>')
+
+  # 5. DEG (heatmap + MA/volcano)
+  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order, id_prefix)
+  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir), group_order, group_pal)
+  sec_deg <- paste0(sprintf('<section id="%s"><h2>5. Differential Expression (FDR = %s)</h2>', sid("deg"), format(fdr, trim = TRUE)),
+                    if (!is.null(hm_html)) hm_html else "",
+                    contrast_html,
+                    '</section>')
+
+  # 6. Gene expression (normalized counts, interactive)
+  sec_expr <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats, sid("expr"), sid("expr"), "6. Gene Expression", out_dir, sample_order, group_order)
+
+  # 7. Enrichment (section_enrichment は id="enrich" を埋め込むので prefix 付けは後処理)
+  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "7. Enrichment", out_dir, id_prefix, reg, group_order)
+  if (is.null(sec_enrich)) sec_enrich <- ""
+  sec_enrich <- sub('<section id="enrich">', sprintf('<section id="%s">', sid("enrich")), sec_enrich, fixed = TRUE)
+
+  grp_panel <- group_toggle_panel(group_pal)
+  list(
+    list(html = sec_qc, label = "QC", shared_controls = grp_panel, subs = list(
+      list(label = "Read distribution", id = sid("qc-readdist"), marker = ""),
+      list(label = "Sequencing depth",  id = sid("qc-depth"),    marker = '<div class="pic-sub-hd"><h3>Sequencing depth'))),
+    list(html = sec_agg,    label = "Aggregation", controls = grp_panel),
+    list(html = sec_cor,    label = "Correlation", controls = grp_panel),
+    list(html = sec_pca,    label = "PCA",         controls = grp_panel),
+    list(html = sec_deg, label = "DEG", subs = list(
+      list(label = "Heatmap",     id = sid("deg-heatmap"),   marker = ""),
+      list(label = "M-A / Volcano", id = sid("deg-mavolcano"), marker = '<div class="pic-degsel'))),
+    list(html = sec_expr,   label = "Expression"),
+    list(html = sec_enrich, label = "Enrichment", subs = list(
+      list(label = "GSEA", id = sid("enrich-gsea"), marker = ""),
+      list(label = "ORA",  id = sid("enrich-ora"),  marker = '<div class="pic-enrich-ora">')))
+  )
+}
+
 build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   options(pic.report.asset_dir = asset_dir)
   fdr <- pic_plot_spec()$defaults$fdr
@@ -71,55 +133,9 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   group_map <- mp$map
   group_pal <- mp$pal
 
-  # セクション組み立て (QC -> Correlation -> Aggregation -> PCA -> DEG -> Expr -> Enrichment)
-  msum_file <- { mf <- list.files(out_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = TRUE); if (length(mf) > 0) mf[[1]] else "" }
-  sec_qc <- if (!is.null(msum)) section_mapping_qc(msum, "qc", "1. Mapping QC", report_rel_path(msum_file, out_dir), group_map, group_pal) else ""
-
-  # 2. Aggregation (TSS-TES)
-  agg_html <- build_aggregate_html(reg, out_dir, "", out_dir, sample_order, group_pal)
-  sec_agg <- if (nzchar(agg_html)) paste0('<section id="aggregate"><h2>2. Aggregation</h2>', agg_html, '</section>') else ""
-
-  # 3. Sample correlation
-  cor_html <- build_correlation_html(reg, desc$deseq2_dir, project, group_map, group_pal, sample_order, "", out_dir)
-  sec_cor <- if (nzchar(cor_html)) paste0('<section id="cor"><h2>3. Sample Correlation</h2>', cor_html, '</section>') else ""
-
-  # 4. PCA
-  pca_html <- build_pca_plots(reg, desc$deseq2_dir, project, group_pal, "", out_dir)
-  sec_pca <- paste0('<section id="pca"><h2>4. PCA</h2>',
-                    if (!is.null(pca_html)) pca_html else "<p>No PCA data.</p>",
-                    '</section>')
-
-  # 5. DEG (heatmap + MA/volcano)
-  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order)
-  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, "", report_rel_path(desc$stats_csv, out_dir), group_order, group_pal)
-  sec_deg <- paste0(sprintf('<section id="deg"><h2>5. Differential Expression (FDR = %s)</h2>', format(fdr, trim = TRUE)),
-                    if (!is.null(hm_html)) hm_html else "",
-                    contrast_html,
-                    '</section>')
-
-  # 6. Gene expression (normalized counts, interactive)
-  sec_expr <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats, "expr", "expr", "6. Gene Expression", out_dir, sample_order, group_order)
-
-  # 7. Enrichment
-  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "7. Enrichment", out_dir, "", reg, group_order)
-  if (is.null(sec_enrich)) sec_enrich <- ""
-
-  grp_panel  <- group_toggle_panel(group_pal)
-  data_tabs <- list(
-    list(html = sec_qc, label = "QC", shared_controls = grp_panel, subs = list(
-      list(label = "Read distribution", id = "qc-readdist", marker = ""),
-      list(label = "Sequencing depth",  id = "qc-depth",    marker = '<div class="pic-sub-hd"><h3>Sequencing depth'))),
-    list(html = sec_agg,    label = "Aggregation", controls = grp_panel),
-    list(html = sec_cor,    label = "Correlation", controls = grp_panel),
-    list(html = sec_pca,    label = "PCA",         controls = grp_panel),
-    list(html = sec_deg, label = "DEG", subs = list(
-      list(label = "Heatmap",     id = "deg-heatmap",   marker = ""),
-      list(label = "M-A / Volcano", id = "deg-mavolcano", marker = '<div class="pic-degsel'))),
-    list(html = sec_expr,   label = "Expression"),
-    list(html = sec_enrich, label = "Enrichment", subs = list(
-      list(label = "GSEA", id = "enrich-gsea", marker = ""),
-      list(label = "ORA",  id = "enrich-ora",  marker = '<div class="pic-enrich-ora">')))
-  )
+  data_tabs <- build_analysis_data_tabs(reg, desc, out_dir, out_dir, "", fdr,
+                                        msum, group_map, group_pal, sample_order, group_order,
+                                        stats, deg_counts, tmp_dir)
   overview_sec  <- build_overview_section(run, genome)
   downloads_sec <- build_downloads_section(data_tabs, run, genome, group_pal)
   tb <- build_tabs(c(list(list(html = overview_sec, label = "Overview")),
@@ -419,7 +435,7 @@ build_tabs <- function(tabs, extra_nav = "") {
 }
 
 # HTML ページを組み立てて書き出す (plotly を内包)。
-render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_html) {
+render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_html, extra_nav = "") {
   plots_json <- jsonlite::toJSON(reg$plots, auto_unbox = TRUE, null = "null", na = "null", digits = 6)
   expr_json <- jsonlite::toJSON(if (length(reg$expr) > 0) reg$expr else stats::setNames(list(), character(0)),
                                 auto_unbox = TRUE, null = "null", na = "null", digits = 6)
@@ -436,7 +452,7 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
     '</head><body>',
     # ナビバー左端にレポート名 (ただの文字)、区切り線、右側にタブを両端揃え
     '<nav class="pic-tabs"><span class="pic-brand">', html_escape(title), ' Report</span>',
-    '<div class="pic-tabbtns">', nav_html, '</div></nav>',
+    '<div class="pic-tabbtns">', nav_html, '</div>', extra_nav, '</nav>',
     '<main class="pic-main">', body_html, '</main>',
     '<script>', plotly_js, '</script>',
     '<script>var PIC_PLOTS=', plots_json, ';var PIC_EXPR=', expr_json, ';var PIC_FILES=', files_json, ';</script>',
@@ -457,11 +473,18 @@ PIC_XENO_COLORS <- c(
   ambiguous = "#7030A0", neither = "#A6A6A6"
 )
 
-# 分類サマリ TSV から 100% 積み上げ棒の QC セクションを作る。
-section_xenograft_qc <- function(summary_df, src = "") {
+# 分類サマリ TSV から「Genome split」タブ (2 ゲノムへの振り分け割合) を作る。
+# geno_map: c(graft="hg38", host="mm10") のような画分->ゲノム名 (凡例ラベル用)。
+section_genome_split <- function(summary_df, src = "", geno_map = NULL) {
   cats <- names(PIC_XENO_COLORS)
   have <- all(cats %in% colnames(summary_df))
-  parts <- c('<section id="classification"><h2>1. Xenograft classification (xengsort)</h2>', src_note(src))
+  cat_label <- function(cc) if (!is.null(geno_map) && cc %in% names(geno_map) && nzchar(geno_map[[cc]]))
+    sprintf("%s (%s)", cc, geno_map[[cc]]) else cc
+  note <- paste0('<p class="pic-note">Each library was split between the two reference genomes with ',
+                 '<b>xengsort</b>. Each bar is one sample (100&thinsp;% stacked): <b>graft</b> / <b>host</b> are reads ',
+                 'assigned uniquely to each genome; <b>both</b> map to either, <b>ambiguous</b> are undecided, ',
+                 '<b>neither</b> map to no genome. A clean split is dominated by graft + host. Hover a segment for counts.</p>')
+  parts <- c('<section id="genomesplit"><h2>Genome split</h2>', note, src_note(src))
   if (!have) {
     parts <- c(parts, '<p>classification summary not found.</p></section>')
     return(paste(parts, collapse = "\n"))
@@ -477,7 +500,7 @@ section_xenograft_qc <- function(summary_df, src = "") {
     for (cc in cats) {
       pct <- 100 * vals[[cc]] / tot
       if (pct <= 0) next
-      tip <- sprintf("%s: %s (%.1f%%)", cc, fmt_int(vals[[cc]]), pct)
+      tip <- sprintf("%s: %s (%.1f%%)", cat_label(cc), fmt_int(vals[[cc]]), pct)
       segs <- c(segs, sprintf('<div class="pic-seg" style="width:%.4f%%;background:%s" title="%s — %s"></div>',
                               pct, PIC_XENO_COLORS[[cc]], html_escape(sample), html_escape(tip)))
     }
@@ -485,9 +508,8 @@ section_xenograft_qc <- function(summary_df, src = "") {
                             html_escape(sample), paste(segs, collapse = "")))
   }
   legend <- vapply(cats, function(cc) sprintf('<span class="pic-legend-item"><span class="pic-swatch" style="background:%s"></span>%s</span>',
-                                              PIC_XENO_COLORS[[cc]], cc), character(1))
+                                              PIC_XENO_COLORS[[cc]], html_escape(cat_label(cc))), character(1))
   parts <- c(parts,
-    '<h3>Read classification (per sample, 100% stacked)</h3>',
     '<div class="pic-bars">', ruler, paste(rows, collapse = "\n"), '</div>',
     sprintf('<div class="pic-legend">%s</div>', paste(legend, collapse = "")),
     '</section>')
@@ -509,111 +531,35 @@ fraction_genome <- function(out_dir, frac_key, desc) {
   ""
 }
 
-# 1 画分 (graft/host) を、通常レポートと同じ章立て (Mapping / PCA / DEG /
-# Enrichment) の複数 <section> として組み立てる。
-# 戻り値: list(html, nav, n) — n は最後に使った章番号。
-build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, start_num) {
-  base_label <- if (frac_key == "graft") "Graft" else "Host"
+# 1 画分 (graft/host) の解析タブ (data_tabs) を id_prefix "<frac>__" 付きで構築する。
+# 戻り値: list(key, genome, data_tabs) または NULL (DESeq2 出力なし)。
+build_fraction_analysis <- function(reg, frac_key, out_dir, frac_dir, tmp_dir) {
   projs <- pic_report_discover_projects(frac_dir)
-  if (length(projs) == 0) {
-    sid <- paste0(frac_key, "_na")
-    return(list(
-      html = sprintf('<section id="%s"><h2>%s</h2><p>No DESeq2 output.</p></section>', sid, base_label),
-      nav = sprintf('<span class="pic-nav-group">%s</span>', base_label),
-      n = start_num
-    ))
-  }
+  if (length(projs) == 0) return(NULL)
   desc <- projs[[1]]
-  project <- desc$project
   fdr <- pic_plot_spec()$defaults$fdr
   id_prefix <- paste0(frac_key, "__")
-
   genome <- fraction_genome(out_dir, frac_key, desc)
-  label <- if (nzchar(genome)) sprintf("%s (%s)", base_label, genome) else base_label
 
   stats <- suppressMessages(readr::read_csv(desc$stats_csv, show_col_types = FALSE, progress = FALSE))
   stats <- as.data.frame(stats, check.names = FALSE)
   deg_counts <- resolve_deg_counts(desc, stats, fdr)
 
-  # sample_sheet_<frac>.tsv の順を正順とする
   sheet <- pic_read_sample_sheet(out_dir, frac_key)
   sample_order <- if (!is.null(sheet)) sheet$samples else NULL
   group_order  <- if (!is.null(sheet) && length(sheet$groups) > 0) sheet$groups else NULL
 
-  # 画分の group 配色は、その画分の mapping_sum から取得
   msum <- NULL; group_map <- NULL; group_pal <- NULL
   msum_files <- list.files(frac_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = TRUE)
   if (length(msum_files) > 0) {
     msum <- pic_reorder_rows(read_mapping_sum(msum_files[[1]]), "sample", sample_order)
-    mp <- group_map_pal(msum, group_order)
-    group_map <- mp$map
-    group_pal <- mp$pal
+    mp <- group_map_pal(msum, group_order); group_map <- mp$map; group_pal <- mp$pal
   }
 
-  secs <- character(0)
-  navs <- c(sprintf('<span class="pic-nav-group">%s</span>', html_escape(label)))
-  n <- start_num
-
-  # Mapping QC
-  if (!is.null(msum)) {
-    n <- n + 1L
-    sid <- paste0(frac_key, "_qc")
-    secs <- c(secs, section_mapping_qc(msum, sid, sprintf("%d. %s · Mapping QC", n, label),
-                                       report_rel_path(msum_files[[1]], out_dir), group_map, group_pal))
-    navs <- c(navs, sprintf('<a href="#%s">Mapping</a>', sid))
-  }
-  # Aggregation (TSS-TES)
-  agg_html <- build_aggregate_html(reg, frac_dir, id_prefix, out_dir, sample_order, group_pal)
-  if (nzchar(agg_html)) {
-    n <- n + 1L
-    sid <- paste0(frac_key, "_agg")
-    secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · Aggregation (TSS-TES)</h2>%s</section>', sid, n, label, agg_html))
-    navs <- c(navs, sprintf('<a href="#%s">Aggregation</a>', sid))
-  }
-  # Sample correlation
-  cor_html <- build_correlation_html(reg, desc$deseq2_dir, project, group_map, group_pal, sample_order, id_prefix, out_dir)
-  if (nzchar(cor_html)) {
-    n <- n + 1L
-    sid <- paste0(frac_key, "_cor")
-    secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · Sample correlation</h2>%s</section>', sid, n, label, cor_html))
-    navs <- c(navs, sprintf('<a href="#%s">Correlation</a>', sid))
-  }
-  # PCA
-  n <- n + 1L
-  sid <- paste0(frac_key, "_pca")
-  pca_html <- build_pca_plots(reg, desc$deseq2_dir, project, group_pal, id_prefix, out_dir)
-  secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · PCA</h2>%s</section>',
-                          sid, n, label, if (!is.null(pca_html)) pca_html else "<p>No PCA data.</p>"))
-  navs <- c(navs, sprintf('<a href="#%s">PCA</a>', sid))
-  # DEG (heatmap + MA/volcano)
-  n <- n + 1L
-  sid <- paste0(frac_key, "_deg")
-  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order, id_prefix)
-  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir), group_order, group_pal)
-  secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · Differential expression (DESeq2, FDR = %s)</h2>%s%s</section>',
-                          sid, n, label, format(fdr, trim = TRUE),
-                          if (!is.null(hm_html)) hm_html else "", contrast_html))
-  navs <- c(navs, sprintf('<a href="#%s">DESeq2</a>', sid))
-  # Gene expression (normalized counts)
-  sid <- paste0(frac_key, "_expr")
-  expr_html <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats,
-                                        paste0(frac_key, "__expr"), sid, sprintf("%d. %s · Expression", n + 1L, label), out_dir,
-                                        sample_order, group_order)
-  if (nzchar(expr_html)) {
-    n <- n + 1L
-    secs <- c(secs, expr_html)
-    navs <- c(navs, sprintf('<a href="#%s">Expression</a>', sid))
-  }
-  # Enrichment
-  enrich_inner <- enrichment_blocks(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, out_dir, id_prefix, reg, group_order)
-  if (nzchar(enrich_inner)) {
-    n <- n + 1L
-    sid <- paste0(frac_key, "_enrich")
-    secs <- c(secs, sprintf('<section id="%s"><h2>%d. %s · Enrichment</h2>%s</section>', sid, n, label, enrich_inner))
-    navs <- c(navs, sprintf('<a href="#%s">Enrichment</a>', sid))
-  }
-
-  list(html = paste(secs, collapse = ""), nav = paste(navs, collapse = ""), n = n)
+  data_tabs <- build_analysis_data_tabs(reg, desc, frac_dir, out_dir, id_prefix, fdr,
+                                        msum, group_map, group_pal, sample_order, group_order,
+                                        stats, deg_counts, tmp_dir)
+  list(key = frac_key, genome = genome, data_tabs = data_tabs)
 }
 
 # out_dir 配下に xenograft 分類結果 (classify summary + graft/host) があるか
@@ -622,34 +568,95 @@ pic_is_xenograft_out <- function(out_dir) {
   length(s) > 0 && (dir.exists(file.path(out_dir, "graft")) || dir.exists(file.path(out_dir, "host")))
 }
 
+# xenograft レポート用の Overview (2 ゲノム + xengsort split の説明)。
+build_overview_section_xeno <- function(run, fr_list) {
+  gl <- vapply(names(fr_list), function(fr) {
+    fa <- fr_list[[fr]]
+    sprintf('<b>%s</b>%s', html_escape(fr), if (nzchar(fa$genome)) sprintf(" (%s)", html_escape(fa$genome)) else "")
+  }, character(1))
+  genomes_txt <- paste(gl, collapse = " and ")
+  overview <- sprintf(paste0('<p class="pic-ov-intro">This self-contained report presents the <b>PIC</b> ',
+    '(photo-isolation chemistry) 3&prime;-biased RNA-seq run <b>%s</b>, a <b>xenograft</b> library whose reads were ',
+    'split between two reference genomes (%s) with <b>xengsort</b>.</p>'),
+    html_escape(run), genomes_txt)
+  guide <- paste0('<p class="pic-flow-sub">The <b>Genome split</b> tab shows how reads divided between the two genomes. ',
+    'Every other tab shows the standard analysis for one genome at a time — use the ',
+    '<b>graft / host</b> switch at the top-right to change genome. All source tables are embedded and downloadable from <b>Downloads</b>.</p>')
+  sprintf('<section id="overview"><h2>Overview</h2>%s%s</section>', overview, guide)
+}
+
 build_xenograft_report <- function(out_dir, asset_dir) {
   options(pic.report.asset_dir = asset_dir)
   reg <- pic_report_registry()
+  # Downloads の埋め込み・相対パス基準
+  options(pic.report.reg = reg, pic.report.projdir = out_dir)
 
   summary_files <- list.files(out_dir, pattern = "^xenograft_classify_summary__.*\\.tsv$", full.names = TRUE)
-  run <- sub("^xenograft_classify_summary__", "", basename(summary_files[[1]]))
-  run <- sub("\\.tsv$", "", run)
+  run <- sub("\\.tsv$", "", sub("^xenograft_classify_summary__", "", basename(summary_files[[1]])))
   summary_df <- suppressMessages(readr::read_tsv(summary_files[[1]], show_col_types = FALSE, progress = FALSE))
   summary_df <- as.data.frame(summary_df, check.names = FALSE)
 
   tmp_dir <- file.path(tempdir(), paste0("picxenoreport_", run))
 
-  sec_qc <- section_xenograft_qc(summary_df, report_rel_path(summary_files[[1]], out_dir))
-  nav_items <- c('<a href="#classification">Classification</a>')
-  body <- sec_qc
-  n <- 1L
+  # 各画分の解析タブを構築 (graft を先に)
+  fr_list <- list()
   for (frac in c("graft", "host")) {
     if (!dir.exists(file.path(out_dir, frac))) next
     tf <- file.path(tmp_dir, frac); dir.create(tf, recursive = TRUE, showWarnings = FALSE)
-    res <- build_fraction_sections(reg, frac, out_dir, file.path(out_dir, frac), tf, n)
-    body <- paste0(body, res$html)
-    nav_items <- c(nav_items, res$nav)
-    n <- res$n
+    fa <- build_fraction_analysis(reg, frac, out_dir, file.path(out_dir, frac), tf)
+    if (!is.null(fa)) fr_list[[frac]] <- fa
   }
-  nav <- sprintf('<nav class="pic-nav">%s</nav>', paste(nav_items, collapse = ""))
+  first_geno <- if (length(fr_list) > 0) names(fr_list)[[1]] else "graft"
+  geno_map <- vapply(fr_list, function(fa) fa$genome, character(1))  # c(graft="hg38", host="mm10")
+
+  keys <- c("qc", "aggregate", "cor", "pca", "deg", "expr", "enrich")
+
+  # --- パネル + ナビボタン ---
+  panels <- character(0); nav_btns <- character(0)
+
+  # Overview (先頭 = 初期アクティブ)
+  panels <- c(panels, pic_tab_panel(build_overview_section_xeno(run, fr_list), active = TRUE))
+  nav_btns <- c(nav_btns, '<button class="pic-tabbtn active" type="button" data-target="overview">Overview</button>')
+
+  # Genome split
+  gs <- section_genome_split(summary_df, report_rel_path(summary_files[[1]], out_dir), geno_map)
+  panels <- c(panels, pic_tab_panel(gs, active = FALSE))
+  nav_btns <- c(nav_btns, '<button class="pic-tabbtn" type="button" data-target="genomesplit">Genome split</button>')
+
+  # 解析タブ: 論理キーごとに両画分の <section id="<frac>__<key>"> を出す
+  for (ki in seq_along(keys)) {
+    k <- keys[[ki]]; present <- FALSE; label <- NULL
+    for (frac in names(fr_list)) {
+      t <- fr_list[[frac]]$data_tabs[[ki]]
+      if (is.null(t) || !nzchar(t$html)) next
+      present <- TRUE; if (is.null(label)) label <- t$label
+      panels <- c(panels, pic_tab_panel(t$html, active = FALSE,
+                                        controls = if (!is.null(t$controls)) t$controls else "",
+                                        subs = t$subs,
+                                        shared_controls = if (!is.null(t$shared_controls)) t$shared_controls else ""))
+    }
+    if (present) nav_btns <- c(nav_btns, sprintf('<button class="pic-tabbtn" type="button" data-target="%s">%s</button>',
+                                                 k, html_escape(label)))
+  }
+
+  # Downloads (out_dir を再帰スキャンして graft/host 両方を収録)
+  merged_tabs <- if (length(fr_list) > 0) fr_list[[1]]$data_tabs else list()
+  dl <- build_downloads_section(merged_tabs, run, if (length(fr_list) > 0) fr_list[[1]]$genome else "", NULL)
+  panels <- c(panels, pic_tab_panel(dl, active = FALSE))
+  nav_btns <- c(nav_btns, '<button class="pic-tabbtn" type="button" data-target="downloads">Downloads</button>')
+
+  # ゲノム切替コントロール (navbar 右端)
+  geno_btns <- vapply(names(fr_list), function(frac) {
+    fa <- fr_list[[frac]]
+    lab <- sprintf("%s%s", frac, if (nzchar(fa$genome)) sprintf(" (%s)", fa$genome) else "")
+    sprintf('<button class="pic-genobtn%s" type="button" data-geno="%s">%s</button>',
+            if (frac == first_geno) " active" else "", html_escape(frac), html_escape(lab))
+  }, character(1))
+  geno_switch <- if (length(geno_btns) > 0) sprintf('<div class="pic-genoswitch">%s</div>', paste(geno_btns, collapse = "")) else ""
 
   out_html <- file.path(out_dir, sprintf("report_%s.html", run))
-  render_report_page(paste0(run, " (xenograft)"), nav, body, reg, asset_dir, out_html)
+  render_report_page(run, paste(nav_btns, collapse = ""), paste(panels, collapse = "\n"),
+                     reg, asset_dir, out_html, extra_nav = geno_switch)
   unlink(tmp_dir, recursive = TRUE)
   out_html
 }
