@@ -219,13 +219,17 @@ table.pic-hm{border-collapse:separate;border-spacing:0}
 .pic-notes h3{margin-top:8px}
 code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 
-/* Overview タブ (説明は全幅、各ステップの source ファイルをリスト表示・クリックで DL) */
+/* Overview & downloads (全 csv/tsv を HTML 埋め込み・クリックで DL、説明つき) */
 .pic-ov-intro{font-size:15px;color:var(--fg);margin:6px 0 22px}
-.pic-ov-groups{display:flex;flex-direction:column;gap:16px}
+.pic-ov-groups{display:flex;flex-direction:column;gap:14px}
 .pic-ov-group{border:1px solid var(--line);border-radius:10px;padding:12px 18px;background:#fcfdff}
-.pic-ov-jump{display:inline-block;font-size:16px;font-weight:700;color:var(--accent);cursor:pointer;text-decoration:none}
+.pic-ov-jump,.pic-ov-cat{display:inline-block;font-size:15px;font-weight:700;color:var(--accent);margin-bottom:2px}
+.pic-ov-jump{cursor:pointer;text-decoration:none}
 .pic-ov-jump:hover{text-decoration:underline}
-.pic-ov-list{list-style:none;margin:8px 0 2px;padding:0;display:flex;flex-direction:column;gap:5px}
-.pic-ov-file{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;color:#2166ac;background:#eef3fb;border:1px solid #d5e3f2;border-radius:5px;padding:3px 9px;text-decoration:none}
-.pic-ov-file:hover{background:#dce9f8;text-decoration:underline}
-.pic-ov-folder::after{content:" \2197";opacity:.7}
+.pic-ov-cat{color:var(--fg)}
+.pic-ov-list{list-style:none;margin:8px 0 2px;padding:0;display:flex;flex-direction:column;gap:6px}
+.pic-ov-list li{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.pic-ov-file{flex:none;cursor:pointer;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;color:#fff;background:var(--accent);border:1px solid var(--accent);border-radius:5px;padding:3px 10px;text-decoration:none;white-space:nowrap}
+.pic-ov-file::before{content:"\2913 ";font-weight:700}
+.pic-ov-file:hover{background:#17518f}
+.pic-ov-desc{color:var(--muted);font-size:13px;min-width:0}

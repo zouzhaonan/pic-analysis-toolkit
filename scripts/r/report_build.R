@@ -77,21 +77,103 @@ png_button <- function(cap_id, name) {
           html_escape(cap_id), html_escape(name))
 }
 
-# 元データをダウンロードするボタン (パスは表示せず、拡張子でラベルを決める)。
-# 拡張子なし (フォルダ) の場合は「Browse CSVs」としてフォルダを開く。
-src_note <- function(rel) {
-  if (is.null(rel) || !nzchar(rel)) return("")
-  e <- html_escape(rel)
-  ext <- toupper(tools::file_ext(rel))
-  if (nzchar(ext)) {
-    sprintf(paste0('<span class="pic-src"><a class="pic-dlcsv" href="%s" download ',
-                   'title="Download the source file: %s">Download %s</a></span>'),
-            e, e, html_escape(ext))
-  } else {
-    sprintf(paste0('<span class="pic-src"><a class="pic-dlcsv" href="%s" ',
-                   'title="Open the source folder: %s">Browse CSVs</a></span>'),
-            e, e)
+# ファイル名 (相対パス) から、その中身の短い説明を返す。
+file_desc <- function(rel) {
+  b <- basename(rel)
+  d <- function(...) paste0(...)
+  if (grepl("^mapping_sum", b)) return("Per-sample mapping/QC summary (read fate, total reads, UMIs, genes).")
+  if (grepl("^sample_sheet", b)) return("Input sample sheet (fastq prefix, barcode, sample, group).")
+  if (grepl("^deftable", b)) return("DESeq2 definition table (count prefix, sample, group).")
+  if (grepl("^Num_UMIs_genes", b)) return("Per-sample UMI and detected-gene counts.")
+  if (grepl("^UMI_count", b)) return("Raw UMI count matrix (genes × samples).")
+  if (grepl("^normalizedCountTable", b)) return("DESeq2 size-factor normalized counts (genes × samples).")
+  if (grepl("^DEG_normalizedCountTable", b)) return("Normalized counts restricted to DEGs (heatmap input).")
+  if (grepl("^stats", b)) return("DESeq2 differential-expression statistics for all contrasts.")
+  if (grepl("^correlation", b)) return("Sample-to-sample correlation matrix.")
+  if (grepl("PCA_RegLog", b)) return("PCA sample coordinates (regularized-log transform).")
+  if (grepl("PCA.*[Vv]ar", b) || grepl("variance", b)) return("PCA variance explained per component.")
+  if (grepl("DEGCluster_profile", b)) return("Per-cluster gene expression profile (values by group).")
+  if (grepl("DEGCluster_gene_for_ora", b)) return("Gene-to-cluster assignment used as ORA input.")
+  if (grepl("DEGCluster_merge_map", b)) return("Mapping of merged DEG clusters.")
+  if (grepl("DEGCluster_summary", b)) return("DEG cluster summary (size and membership per cluster).")
+  if (grepl("DEGCluster", b)) return("DEG clustering result.")
+  if (grepl("^DEGList|DEG_", b)) return("Differentially expressed gene list.")
+  if (grepl("aggregate_profile", b)) return("Gene-body aggregation profile (TSS→TES metagene).")
+  m <- regmatches(b, regexpr("^GSEA_([A-Za-z0-9]+)_(.+?)_", b, perl = TRUE))
+  if (grepl("^GSEA_", b)) {
+    mm <- regmatches(b, regexec("^GSEA_([A-Za-z0-9]+)_(.+)_[^_]+_[^_]+\\.csv$", b))[[1]]
+    if (length(mm) >= 3) return(d("GSEA result — ", mm[[2]], ", contrast ", gsub("_vs_", " / ", mm[[3]]), "."))
+    return("GSEA enrichment result.")
   }
+  if (grepl("^ORA_", b)) {
+    mm <- regmatches(b, regexec("^ORA_([A-Za-z0-9]+)_", b))[[1]]
+    if (length(mm) >= 2) return(d("ORA result — ", mm[[2]], " (all clusters combined)."))
+    return("ORA enrichment result (all clusters).")
+  }
+  mm <- regmatches(b, regexec("^([A-Za-z0-9]+)_cluster_([0-9]+)_", b))[[1]]
+  if (length(mm) >= 3) return(d("ORA result — ", mm[[2]], ", cluster ", mm[[3]], "."))
+  if (grepl("\\.txt\\.gz$|counts", rel)) return("Per-sample gene count table.")
+  "Source data table."
+}
+
+# 相対パスからカタログ用のカテゴリ (見出し + 対応タブ id) を返す。
+file_category <- function(rel) {
+  if (grepl("^enrich/GSEA", rel)) return(list(key = "enrich-gsea", title = "Enrichment — GSEA", tab = "enrich"))
+  if (grepl("^enrich/ORA", rel))  return(list(key = "enrich-ora",  title = "Enrichment — ORA",  tab = "enrich"))
+  if (grepl("^aggregate/", rel))  return(list(key = "aggregate", title = "Aggregation", tab = "aggregate"))
+  if (grepl("DEGCluster", rel))   return(list(key = "deg-cluster", title = "DESeq2 — DEG clusters", tab = "deg"))
+  if (grepl("PCA", rel))          return(list(key = "pca", title = "PCA", tab = "pca"))
+  if (grepl("correlation", rel))  return(list(key = "cor", title = "Sample correlation", tab = "cor"))
+  if (grepl("^deseq2/.*DEG", rel)) return(list(key = "deg", title = "DESeq2 — differential expression", tab = "deg"))
+  if (grepl("^deseq2/", rel))     return(list(key = "deseq2", title = "DESeq2 — count tables & stats", tab = "expr"))
+  if (grepl("^counts/", rel))     return(list(key = "counts", title = "Counts (per-sample)", tab = "qc"))
+  list(key = "mapping", title = "Mapping", tab = "qc")
+}
+
+# ファイル (相対パス) を gzip+base64 で埋め込みレジストリに登録し、id を返す。
+register_file <- function(rel) {
+  reg <- getOption("pic.report.reg"); proj <- getOption("pic.report.projdir")
+  if (is.null(reg) || is.null(proj) || is.null(rel) || !nzchar(rel)) return(NULL)
+  if (is.null(reg$files)) reg$files <- list()
+  id <- gsub("[^A-Za-z0-9]+", "_", rel)
+  if (!is.null(reg$files[[id]])) return(id)
+  abs <- file.path(proj, rel)
+  if (!file.exists(abs) || dir.exists(abs)) return(NULL)
+  gz <- tryCatch({
+    raw <- readBin(abs, "raw", n = file.info(abs)$size)
+    jsonlite::base64_enc(memCompress(raw, "gzip"))
+  }, error = function(e) NULL)
+  if (is.null(gz)) return(NULL)
+  cat_i <- file_category(rel)
+  reg$files[[id]] <- list(name = basename(rel), path = rel, desc = file_desc(rel),
+                          cat = cat_i$title, tab = cat_i$tab, gz = gz)
+  id
+}
+
+# メモリ上の文字列を仮想ファイルとして埋め込み登録し、id を返す (ORA 結合 CSV 用)。
+register_virtual_file <- function(rel, content, desc = NULL) {
+  reg <- getOption("pic.report.reg")
+  if (is.null(reg) || is.null(content)) return(NULL)
+  if (is.null(reg$files)) reg$files <- list()
+  id <- gsub("[^A-Za-z0-9]+", "_", rel)
+  if (!is.null(reg$files[[id]])) return(id)
+  gz <- tryCatch(jsonlite::base64_enc(memCompress(charToRaw(content), "gzip")), error = function(e) NULL)
+  if (is.null(gz)) return(NULL)
+  cat_i <- file_category(rel)
+  reg$files[[id]] <- list(name = basename(rel), path = rel,
+                          desc = if (!is.null(desc)) desc else file_desc(rel),
+                          cat = cat_i$title, tab = cat_i$tab, gz = gz)
+  id
+}
+
+# 元データのダウンロードボタン。ファイルを HTML に埋め込み、クリックで DL (自己完結)。
+src_note <- function(rel) {
+  id <- register_file(rel)
+  if (is.null(id)) return("")
+  ext <- toupper(tools::file_ext(rel))
+  label <- if (nzchar(ext)) sprintf("Download %s", ext) else "Download"
+  sprintf('<span class="pic-src"><a class="pic-dlcsv" role="button" tabindex="0" data-file="%s">%s</a></span>',
+          id, html_escape(label))
 }
 
 # group 名をその group 色に対応させる (大文字小文字は無視)。無ければ NULL。
@@ -1345,7 +1427,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
     for (mdir in methods) {
       method <- basename(mdir)
       csvs <- list.files(mdir, pattern = paste0(project, "\\.csv$"), full.names = TRUE)
-      csvs <- csvs[!grepl("^ORA_", basename(csvs))]   # 結合 CSV (下で書き出す) は除外
+      csvs <- csvs[!grepl("^ORA_", basename(csvs))]   # 結合 CSV は cluster から集計するため除外
       if (length(csvs) == 0) next
       ora_all <- tryCatch(
         purrr::map_dfr(csvs, function(fp) suppressMessages(readr::read_csv(fp, show_col_types = FALSE, progress = FALSE))),
@@ -1354,11 +1436,14 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
       if (is.null(ora_all) || nrow(ora_all) == 0) next
       spec <- tryCatch(build_ora_plotly(ora_all), error = function(e) NULL)
       if (is.null(spec)) next
-      # method ごとに cluster をまとめた 1 本の CSV を書き出し (ワンクリック DL 用)
-      combined_csv <- file.path(mdir, sprintf("ORA_%s_%s.csv", method, project))
-      dl <- tryCatch({ readr::write_csv(ora_all, combined_csv)
-                       src_note(report_rel_path(combined_csv, proj_dir)) },
-                     error = function(e) src_note(report_rel_path(mdir, proj_dir)))
+      # method ごとに cluster をまとめた 1 本の CSV を仮想ファイルとして埋め込み (ワンクリック DL)
+      vrel <- sprintf("enrich/ORA/%s/ORA_%s_%s.csv", method, method, project)
+      vid <- tryCatch(register_virtual_file(vrel, readr::format_csv(ora_all),
+                                            desc = sprintf("ORA result — %s (all clusters combined).", method)),
+                      error = function(e) NULL)
+      dl <- if (!is.null(vid))
+        sprintf('<span class="pic-src"><a class="pic-dlcsv" role="button" tabindex="0" data-file="%s">Download CSV</a></span>', vid)
+        else ""
       pid <- sprintf("%soraplot_%s", id_prefix, method)
       register_plot(reg, pid, list(data = spec$data, layout = spec$layout, config = spec$config))
       ora_items[[length(ora_items) + 1L]] <- list(
@@ -1432,6 +1517,8 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   prefix <- paste0(genome, "_")
   run <- if (startsWith(project, prefix)) substring(project, nchar(prefix) + 1L) else project
   reg <- pic_report_registry()
+  # src_note / register_file が参照する埋め込みレジストリと基準ディレクトリ
+  options(pic.report.reg = reg, pic.report.projdir = out_dir)
 
   stats <- suppressMessages(readr::read_csv(desc$stats_csv, show_col_types = FALSE, progress = FALSE))
   stats <- as.data.frame(stats, check.names = FALSE)
@@ -1645,31 +1732,43 @@ pic_tab_src_paths <- function(tab_html) {
   paths
 }
 
-# Overview (概要) セクション。全幅の説明 + 各解析ステップの source ファイル一覧 (クリックで DL)。
+# Overview & downloads セクション。全幅の説明 + プロジェクトの全 csv/tsv を
+# カテゴリ別に列挙 (各ファイルは HTML 埋め込み、クリックで DL、簡単な説明つき)。
 build_overview_section <- function(tabs, run, genome) {
+  proj <- getOption("pic.report.projdir")
+  if (!is.null(proj)) {
+    all <- list.files(proj, pattern = "\\.(csv|tsv)$", recursive = TRUE)
+    all <- all[!grepl("(^|/)enrich_old_backup/", all)]
+    for (rel in all) register_file(rel)
+  }
+  reg <- getOption("pic.report.reg")
+  files <- if (!is.null(reg) && !is.null(reg$files)) reg$files else list()
+  order_cats <- c("Mapping", "Counts (per-sample)", "DESeq2 — count tables & stats",
+                  "Sample correlation", "PCA", "DESeq2 — differential expression",
+                  "DESeq2 — DEG clusters", "Aggregation", "Enrichment — GSEA", "Enrichment — ORA")
+  cats <- unique(vapply(files, function(f) f$cat, character(1)))
+  cats <- c(intersect(order_cats, cats), setdiff(cats, order_cats))
   groups <- character(0)
-  for (t in tabs) {
-    if (is.null(t$html) || !nzchar(t$html)) next
-    x <- pic_extract_section(t$html)
-    paths <- pic_tab_src_paths(t$html)
-    if (length(paths) == 0) next
-    lis <- paste(vapply(paths, function(p) {
-      ext <- toupper(tools::file_ext(p))
-      link <- if (nzchar(ext))
-        sprintf('<a class="pic-ov-file" href="%s" download title="Download %s">%s</a>', html_escape(p), html_escape(ext), html_escape(p))
-      else
-        sprintf('<a class="pic-ov-file pic-ov-folder" href="%s" title="Open folder">%s</a>', html_escape(p), html_escape(p))
-      sprintf('<li>%s</li>', link)
+  for (ct in cats) {
+    ids <- names(files)[vapply(files, function(f) identical(f$cat, ct), logical(1))]
+    ids <- ids[order(vapply(ids, function(i) files[[i]]$name, character(1)))]
+    tab <- files[[ids[[1]]]]$tab
+    lis <- paste(vapply(ids, function(i) {
+      f <- files[[i]]
+      sprintf('<li><a class="pic-ov-file" role="button" tabindex="0" data-file="%s">%s</a><span class="pic-ov-desc">%s</span></li>',
+              i, html_escape(f$name), html_escape(f$desc))
     }, character(1)), collapse = "")
-    groups <- c(groups, sprintf(
-      '<div class="pic-ov-group"><a class="pic-ov-jump" data-target="%s" tabindex="0">%s</a><ul class="pic-ov-list">%s</ul></div>',
-      x$id, html_escape(x$title), lis))
+    hd <- if (!is.null(tab) && nzchar(tab))
+      sprintf('<a class="pic-ov-jump" data-target="%s" tabindex="0">%s</a>', tab, html_escape(ct))
+      else sprintf('<span class="pic-ov-cat">%s</span>', html_escape(ct))
+    groups <- c(groups, sprintf('<div class="pic-ov-group">%s<ul class="pic-ov-list">%s</ul></div>', hd, lis))
   }
   intro <- sprintf(paste0('<p class="pic-ov-intro">Interactive analysis report for run <b>%s</b>, ',
-    'mapped to <b>%s</b>. Open a section by clicking its title, or click any file below to download ',
-    'the source data a figure is drawn from.</p>'),
+    'mapped to <b>%s</b>. <b>Every source table is embedded in this file</b> &mdash; click any file ',
+    'below (or a <b>Download</b> button on a tab) to save it, no separate data files needed. ',
+    'Click a section title to jump to its figures.</p>'),
     html_escape(run), html_escape(genome))
-  sprintf('<section id="overview"><h2>Overview</h2>%s<div class="pic-ov-groups">%s</div></section>',
+  sprintf('<section id="overview"><h2>Overview &amp; downloads</h2>%s<div class="pic-ov-groups">%s</div></section>',
           intro, paste(groups, collapse = ""))
 }
 
@@ -1699,6 +1798,10 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
   plots_json <- jsonlite::toJSON(reg$plots, auto_unbox = TRUE, null = "null", na = "null", digits = 6)
   expr_json <- jsonlite::toJSON(if (length(reg$expr) > 0) reg$expr else stats::setNames(list(), character(0)),
                                 auto_unbox = TRUE, null = "null", na = "null", digits = 6)
+  # 埋め込みファイル (gzip+base64) — DL 用に {id:{n:name, gz:base64}} だけを出力
+  files_min <- if (!is.null(reg$files)) lapply(reg$files, function(f) list(n = f$name, gz = f$gz)) else list()
+  files_json <- jsonlite::toJSON(if (length(files_min) > 0) files_min else stats::setNames(list(), character(0)),
+                                 auto_unbox = TRUE, null = "null", na = "null")
   plotly_js <- paste(readLines(file.path(asset_dir, "plotly.min.js"), warn = FALSE), collapse = "\n")
   page <- paste0(
     '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">',
@@ -1710,7 +1813,7 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
     nav_html,
     '<main class="pic-main">', body_html, '</main>',
     '<script>', plotly_js, '</script>',
-    '<script>var PIC_PLOTS=', plots_json, ';var PIC_EXPR=', expr_json, ';</script>',
+    '<script>var PIC_PLOTS=', plots_json, ';var PIC_EXPR=', expr_json, ';var PIC_FILES=', files_json, ';</script>',
     '<script>', report_runtime_js(), '</script>',
     '</body></html>'
   )
