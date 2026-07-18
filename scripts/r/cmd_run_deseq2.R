@@ -27,7 +27,9 @@ main <- function() {
   message("[INFO] Loading required packages")
   load_required_packages()
   dir.create(args$out_dir, recursive = TRUE, showWarnings = FALSE)
-  deg_dir <- file.path(args$out_dir, "DEG")
+  # 平坦化 (deseq2/<genome>/ 廃止) に伴い、サブフォルダ名にも <run>_<genome>
+  # suffix を付けて複数 genome 混在時の衝突を防ぐ。
+  deg_dir <- file.path(args$out_dir, sprintf("DEG_%s", args$project_name))
   dir.create(deg_dir, recursive = TRUE, showWarnings = FALSE)
 
   message("[INFO] Reading deftable and preparing contrasts")
@@ -65,7 +67,7 @@ main <- function() {
   }
 
   if (nrow(degpattern$cluster_gene) > 0) {
-    degpattern_dir <- file.path(deg_dir, "DEGCluster")
+    degpattern_dir <- file.path(deg_dir, sprintf("DEGCluster_%s", args$project_name))
     dir.create(degpattern_dir, recursive = TRUE, showWarnings = FALSE)
     readr::write_csv(
       degpattern$cluster_gene,

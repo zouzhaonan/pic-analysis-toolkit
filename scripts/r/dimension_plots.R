@@ -31,7 +31,7 @@ run_dimension_reduction <- function(dds, label, out_dir, project_name, ntop) {
 
   pca_res <- prcomp(t(rld_top), scale. = TRUE, center = TRUE)
   pca_var <- as.data.frame(summary(pca_res)$importance)
-  pca_plot_dir <- file.path(out_dir, "PCA")
+  pca_plot_dir <- file.path(out_dir, sprintf("PCA_%s", project_name))
   dir.create(pca_plot_dir, recursive = TRUE, showWarnings = FALSE)
   pca_df <- tibble::as_tibble(pca_res$x, rownames = "sample") |>
     dplyr::left_join(label_tbl, by = "sample")

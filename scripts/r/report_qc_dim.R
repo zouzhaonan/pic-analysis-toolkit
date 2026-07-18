@@ -49,7 +49,7 @@ pic_report_find_enrich_dir <- function(out_dir, project) {
   if (length(gsea_csvs) == 0) {
     return(NA_character_)
   }
-  # enrich/<genome>/GSEA/<METHOD>/file -> enrich/<genome> は 3 階層上
+  # enrich/GSEA/<METHOD>/file -> enrich は 3 階層上 (xenograft の <frac>/enrich/... も同様)
   enrich_root <- dirname(dirname(dirname(gsea_csvs[[1]])))
   enrich_root
 }
@@ -220,7 +220,7 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
 # ---------------------------------------------------------------------------
 
 pca_variance_pct <- function(deseq2_dir, project) {
-  f <- file.path(deseq2_dir, "PCA", sprintf("PCA_Variance_%s.csv", project))
+  f <- file.path(pca_dir_of(deseq2_dir, project), sprintf("PCA_Variance_%s.csv", project))
   if (!file.exists(f)) return(NULL)
   v <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
   v <- as.data.frame(v, check.names = FALSE)
@@ -252,7 +252,25 @@ pic_read_sample_sheet <- function(out_dir, frac_key = NULL) {
   if (is.null(df) || !("sample" %in% colnames(df))) return(NULL)
   df <- as.data.frame(df, check.names = FALSE)
   list(samples = as.character(df$sample),
-       groups = if ("group" %in% colnames(df)) unique(as.character(df$group)) else character(0))
+       groups = if ("group" %in% colnames(df)) unique(as.character(df$group)) else character(0),
+       genome = if ("genome" %in% colnames(df) && nrow(df) > 0) as.character(df$genome[[1]]) else NA_character_)
+}
+
+# base_dir の mapping_sum__<run>.tsv から run 名を取り出す (無ければ "")。
+pic_report_run_name <- function(base_dir) {
+  mf <- list.files(base_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = FALSE)
+  if (length(mf) == 0) return("")
+  sub("\\.tsv$", "", sub("^mapping_sum__", "", mf[[1]]))
+}
+
+# project (= <run>_<genome>) と base_dir から genome を解決する。
+# 優先: sample_sheet の genome 列 → 次善: project から run 接頭辞を除去。
+pic_report_genome_of <- function(base_dir, project, frac_key = NULL) {
+  sheet <- pic_read_sample_sheet(base_dir, frac_key)
+  if (!is.null(sheet) && !is.na(sheet$genome) && nzchar(sheet$genome)) return(sheet$genome)
+  run <- pic_report_run_name(base_dir)
+  if (nzchar(run) && startsWith(project, paste0(run, "_"))) return(substring(project, nchar(run) + 2L))
+  project
 }
 
 # data.frame を col の値が order に一致する順に並べ替える。order にない値は末尾に元順で残す。
@@ -363,7 +381,7 @@ build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, g
 }
 
 build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefix = "", proj_dir = NULL) {
-  f <- file.path(deseq2_dir, "PCA", sprintf("PCA_RegLog_%s.csv", project))
+  f <- file.path(pca_dir_of(deseq2_dir, project), sprintf("PCA_RegLog_%s.csv", project))
   if (!file.exists(f)) return(NULL)
   d <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
   d <- as.data.frame(d, check.names = FALSE)
@@ -446,7 +464,7 @@ zcolor_vec <- function(v, zmax) {
 
 # DEG ヒートマップを、サンプル行ヘッダ固定・縦スクロール可能な HTML 表として生成する。
 build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal = NULL, proj_dir = NULL, sample_order = NULL, id_prefix = "") {
-  f <- file.path(deseq2_dir, "DEG", sprintf("DEG_normalizedCountTable_%s.csv", project))
+  f <- file.path(deg_dir_of(deseq2_dir, project), sprintf("DEG_normalizedCountTable_%s.csv", project))
   if (!file.exists(f)) return(NULL)
   d <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
   d <- as.data.frame(d, check.names = FALSE)

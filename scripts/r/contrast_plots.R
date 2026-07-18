@@ -5,7 +5,7 @@
 # 入力:
 #   stats table, contrasts, normalized counts。
 # 出力:
-#   DEG_normalizedCountTable_<project>.csv, DEGList/<contrast>__<group>.txt
+#   DEG_normalizedCountTable_<project>.csv, DEGList_<project>/<contrast>__<group>.txt
 
 # DEG (padj < fdr) の正規化カウント表を書き出す (ヒートマップの元データ)。
 save_deg_normalized_count <- function(stats, normalized_count_table, out_dir, project_name, fdr) {
@@ -30,8 +30,8 @@ save_deg_normalized_count <- function(stats, normalized_count_table, out_dir, pr
   )
 }
 
-save_deg_lists <- function(stats, contrasts, out_dir, fdr) {
-  deg_list_dir <- file.path(out_dir, "DEGList")
+save_deg_lists <- function(stats, contrasts, out_dir, project_name, fdr) {
+  deg_list_dir <- file.path(out_dir, sprintf("DEGList_%s", project_name))
   dir.create(deg_list_dir, recursive = TRUE, showWarnings = FALSE)
   has_ext_gene <- "ext_gene" %in% colnames(stats)
 
@@ -94,6 +94,7 @@ save_contrast_plots <- function(dds, label, stats, contrasts, normalized_count_t
     stats = stats,
     contrasts = contrasts,
     out_dir = out_dir,
+    project_name = project_name,
     fdr = fdr
   )
 }

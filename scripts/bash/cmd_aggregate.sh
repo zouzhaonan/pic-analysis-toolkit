@@ -7,10 +7,9 @@
 #   各遺伝子を N 分割したビンの平均を高速取得、R で全遺伝子平均のメタジーン
 #   プロファイルを計算する (deepTools 非依存)。
 # 入力:
-#   pic mapping/all の出力ディレクトリ (bw/ と deftable_<genome>_<run>.tsv)。
+#   pic mapping/all の出力ディレクトリ (bw/ と deftable_<run>_<genome>.tsv)。
 # 出力:
-#   <out>/aggregate/<genome>/aggregate_profile.csv  (sample,group,binpos,pos,value)
-#   <out>/aggregate/<genome>/aggregate_profile.png  (集計折れ線, 静的)
+#   <out>/aggregate_profile_<run>_<genome>.csv  (sample,group,binpos,pos,value; プロジェクト直下)
 # 注記:
 #   実体は R (scripts/r/cmd_aggregate.R)。bigWigAverageOverBed は pic の conda
 #   パッケージに同梱される前提。GTF は ${PIC_LIB} 配下を参照する。

@@ -6,13 +6,13 @@
 #   分割したビンに対して UCSC bigWigAverageOverBed で平均取得し、全遺伝子で
 #   平均してサンプルごとのプロファイルにする (deepTools 非依存で高速・省メモリ)。
 # 入力:
-#   --out-dir <dir>   pic mapping/all の出力 (bw/ と deftable_<genome>_<run>.tsv)
+#   --out-dir <dir>   pic mapping/all の出力 (bw/ と deftable_<run>_<genome>.tsv)
 #   --run-name <name> 省略時は mapping_sum__<run>.tsv から推定
 #   --genome <g>      特定 genome のみ (省略時は全 genome)
 #   --threads <int>   (現状 R 側では未使用。将来用)
 #   --bins <int>      遺伝子本体の分割数 (default: 100)
 # 出力:
-#   <out>/aggregate/<genome>/aggregate_profile.csv / .png
+#   <out>/aggregate/aggregate_profile_<run>_<genome>.csv / .png
 
 suppressPackageStartupMessages({
   library(data.table)
@@ -153,7 +153,7 @@ sample_profile <- function(bwaob, bw, bed, nbins, tmp_dir) {
   prof[.(seq_len(nbins))]$value
 }
 
-aggregate_one_genome <- function(out_dir, genome, deftable, bwaob, nbins, flank, fbins, tmp_dir, group_pat = NULL) {
+aggregate_one_genome <- function(out_dir, genome, project, deftable, bwaob, nbins, flank, fbins, tmp_dir, group_pat = NULL) {
   def <- fread(deftable, sep = "\t", header = TRUE, showProgress = FALSE)
   # 期待列: count_prefix, barcode, sample, group
   setnames(def, tolower(names(def)))
@@ -200,19 +200,11 @@ aggregate_one_genome <- function(out_dir, genome, deftable, bwaob, nbins, flank,
   d[, flank_bp := flank]
   setnames(d, "globalpos", "binpos")
   setorder(d, sample, binpos)
-  agg_dir <- file.path(out_dir, "aggregate", genome)
-  dir.create(agg_dir, recursive = TRUE, showWarnings = FALSE)
-  fwrite(d[, .(sample, group, binpos, region, pos, value, flank_bp)], file.path(agg_dir, "aggregate_profile.csv"))
-
-  p <- ggplot2::ggplot(d, ggplot2::aes(x = pos, y = value, color = group, group = sample)) +
-    ggplot2::geom_vline(xintercept = c(0, 100), linetype = "dashed", color = "#888888") +
-    ggplot2::geom_line(linewidth = 0.6, alpha = 0.9) +
-    ggplot2::scale_x_continuous(breaks = c(0, 100), labels = c("TSS", "TES")) +
-    ggplot2::labs(x = NULL, y = "mean CPM",
-                  title = sprintf("%s: gene-body aggregation", genome), color = "group") +
-    ggplot2::theme_bw()
-  ggplot2::ggsave(file.path(agg_dir, "aggregate_profile.png"), p, width = 8, height = 5, dpi = 120)
-  message(sprintf("[INFO] aggregate: 出力 -> %s", agg_dir))
+  # 平坦化: aggregate/ フォルダも PNG も廃し、プロジェクト直下に CSV 1 枚のみ出力する
+  # (図はレポートが CSV から plotly で動的生成するため PNG は不要)。
+  out_csv <- file.path(out_dir, sprintf("aggregate_profile_%s.csv", project))
+  fwrite(d[, .(sample, group, binpos, region, pos, value, flank_bp)], out_csv)
+  message(sprintf("[INFO] aggregate: 出力 -> %s", out_csv))
 }
 
 main <- function() {
@@ -229,17 +221,18 @@ main <- function() {
   }
   if (is.null(run_name) || !nzchar(run_name)) stop("run-name を特定できません。--run-name を指定してください。", call. = FALSE)
 
-  deftables <- list.files(out_dir, pattern = sprintf("^deftable_.*_%s\\.tsv$", run_name), full.names = TRUE)
-  if (length(deftables) == 0) stop(sprintf("deftable が見つかりません: %s/deftable_*_%s.tsv", out_dir, run_name), call. = FALSE)
+  deftables <- list.files(out_dir, pattern = sprintf("^deftable_%s_.*\\.tsv$", run_name), full.names = TRUE)
+  if (length(deftables) == 0) stop(sprintf("deftable が見つかりません: %s/deftable_%s_*.tsv", out_dir, run_name), call. = FALSE)
 
   tmp_dir <- file.path(out_dir, "tmp", "aggregate")
   dir.create(tmp_dir, recursive = TRUE, showWarnings = FALSE)
 
   for (df in deftables) {
-    genome <- sub(sprintf("_%s$", run_name), "", sub("^deftable_", "", sub("\\.tsv$", "", basename(df))))
+    genome <- sub(sprintf("^deftable_%s_", run_name), "", sub("\\.tsv$", "", basename(df)))
     if (!is.null(args$genome) && genome != args$genome) next
     message(sprintf("[INFO] aggregate: genome=%s", genome))
-    aggregate_one_genome(out_dir, genome, df, bwaob, args$bins, args$flank, args$flank_bins, tmp_dir, args$group)
+    project <- sprintf("%s_%s", run_name, genome)
+    aggregate_one_genome(out_dir, genome, project, df, bwaob, args$bins, args$flank, args$flank_bins, tmp_dir, args$group)
   }
   unlink(tmp_dir, recursive = TRUE)
   message(sprintf("[INFO] aggregate: 完了 (out-dir=%s)", out_dir))

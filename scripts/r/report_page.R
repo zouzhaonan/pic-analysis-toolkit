@@ -105,10 +105,11 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   options(pic.report.asset_dir = asset_dir)
   fdr <- pic_plot_spec()$defaults$fdr
   project <- desc$project
-  # project = <genome>_<run>。deseq2 ディレクトリ名が genome、残りが run。
-  genome <- basename(desc$deseq2_dir)
-  prefix <- paste0(genome, "_")
-  run <- if (startsWith(project, prefix)) substring(project, nchar(prefix) + 1L) else project
+  # project = <run>_<genome>。deseq2/ は平坦化済みなので run は mapping_sum から、
+  # genome は sample_sheet の genome 列 (無ければ project から run 接頭辞を除去) で解決する。
+  run <- pic_report_run_name(out_dir)
+  if (!nzchar(run)) run <- project
+  genome <- pic_report_genome_of(out_dir, project)
   reg <- pic_report_registry()
   # src_note / register_file が参照する埋め込みレジストリと基準ディレクトリ
   options(pic.report.reg = reg, pic.report.projdir = out_dir)
@@ -713,7 +714,7 @@ build_xenograft_report <- function(out_dir, asset_dir) {
 }
 
 pic_load_deg_counts <- function(deseq2_dir, project) {
-  f <- file.path(deseq2_dir, "DEG", sprintf("DEG_count_%s.csv", project))
+  f <- file.path(deg_dir_of(deseq2_dir, project), sprintf("DEG_count_%s.csv", project))
   if (!file.exists(f)) return(NULL)
   d <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
   if (!all(c("contrast", "deg_count") %in% colnames(d))) return(NULL)

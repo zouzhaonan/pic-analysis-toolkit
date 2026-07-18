@@ -129,7 +129,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
     if (!is.null(deseq2_dir)) {
       prof_spec <- tryCatch(build_cluster_profile_plotly(deseq2_dir, project, group_pal), error = function(e) NULL)
       if (!is.null(prof_spec)) {
-        prof_csv <- file.path(deseq2_dir, "DEG", "DEGCluster", sprintf("DEGCluster_profile_%s.csv", project))
+        prof_csv <- file.path(degcluster_dir_of(deseq2_dir, project), sprintf("DEGCluster_profile_%s.csv", project))
         prof_id <- sprintf("%sclusterprofile", id_prefix)
         register_plot(reg, prof_id, list(data = prof_spec$data, layout = prof_spec$layout, config = prof_spec$config))
         prefix_html <- sprintf(

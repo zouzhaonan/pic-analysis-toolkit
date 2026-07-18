@@ -2,6 +2,12 @@
 # 注記: report_build.R を責務別に分割したファイル。cmd_build_report.R が
 #       report_build.R (ローダ) 経由で source する。単体では動作しない。
 
+# 平坦化した deseq2/ 配下の suffix (<run>_<genome>) 付きサブフォルダのパス。
+# deseq2/<genome>/ の genome ネストを廃した代わりに、フォルダ名で genome を識別する。
+deg_dir_of        <- function(deseq2_dir, project) file.path(deseq2_dir, sprintf("DEG_%s", project))
+degcluster_dir_of <- function(deseq2_dir, project) file.path(deg_dir_of(deseq2_dir, project), sprintf("DEGCluster_%s", project))
+pca_dir_of        <- function(deseq2_dir, project) file.path(deseq2_dir, sprintf("PCA_%s", project))
+
 # 役割:
 #   解析出力ディレクトリ (mapping / deseq2 / enrich) を読み取り、
 #   自己完結型の HTML レポートを 1 ファイル生成する補助関数群。
@@ -128,13 +134,13 @@ file_excluded <- function(rel) {
     grepl("^DEGCluster_summary", b) || grepl("^DEGCluster_gene_for_ora", b) ||
     grepl("^DEGCluster_merge_map", b) ||
     # ORA は method ごとの結合 CSV のみ提供し、cluster ごとの表は含めない
-    # (enrich/<genome>/ORA/ や <frac>/enrich/... など genome ネスト構造にも対応)
+    # (enrich/ORA/ や <frac>/enrich/... の画分プレフィックスにも対応)
     (grepl("(^|/)ORA/", rel) && grepl("_cluster_[0-9]", b))
 }
 
 # 相対パスからカタログ用のカテゴリ (見出し + 対応タブ id) を返す。タブ順に並べる。
-# rel の分類。enrich/aggregate は genome ネスト (enrich/<genome>/GSEA) や
-# xenograft の <frac>/enrich/... にも対応するためパス中の GSEA/ORA/aggregate で判定。
+# rel の分類。enrich は enrich/GSEA (パス)、aggregate は aggregate_profile_* (basename)、
+# xenograft は <frac>/... の画分プレフィックスで判定。
 # xenograft (先頭が graft//host/) では title に画分を付けて Downloads で区別する。
 file_category <- function(rel) {
   b <- basename(rel)
@@ -143,7 +149,7 @@ file_category <- function(rel) {
   base <-
     if (grepl("enrich", rel, fixed = TRUE) && grepl("(^|/)GSEA/", rel)) list(key = "gsea", title = "Enrichment — GSEA", tab = "enrich")
     else if (grepl("enrich", rel, fixed = TRUE) && grepl("(^|/)ORA/", rel)) list(key = "ora", title = "Enrichment — ORA", tab = "enrich")
-    else if (grepl("(^|/)aggregate/", rel)) list(key = "agg", title = "Aggregation", tab = "aggregate")
+    else if (grepl("^aggregate_profile", b)) list(key = "agg", title = "Aggregation", tab = "aggregate")
     else if (grepl("correlation", b)) list(key = "cor", title = "Sample Correlation", tab = "cor")
     else if (grepl("PCA", b)) list(key = "pca", title = "PCA", tab = "pca")
     else if (grepl("^stats|DEG", b)) list(key = "deg", title = "Differential Expression", tab = "deg")

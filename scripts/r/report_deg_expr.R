@@ -192,17 +192,15 @@ png_data_uri <- function(path) {
   paste0("data:image/png;base64,", base64enc::base64encode(raw))
 }
 
-# <base_dir>/aggregate/<genome>/aggregate_profile.csv からインタラクティブな
-# メタジーン折れ線 (plotly) を作る。CSV が無ければ profile.png を埋め込む。
+# <base_dir>/aggregate_profile_<run>_<genome>.csv からインタラクティブな
+# メタジーン折れ線 (plotly) を作る。
+# (平坦化: aggregate/ フォルダも PNG も廃し、プロジェクト直下の CSV を suffix で識別)
 build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL, sample_order = NULL, group_pal = NULL) {
-  agg_root <- file.path(base_dir, "aggregate")
-  if (!dir.exists(agg_root)) return("")
-  gdirs <- list.dirs(agg_root, recursive = FALSE, full.names = TRUE)
+  csvs <- list.files(base_dir, pattern = "^aggregate_profile_.*\\.csv$", full.names = TRUE)
   blocks <- character(0)
-  for (gd in gdirs) {
-    genome <- basename(gd)
-    csv <- file.path(gd, "aggregate_profile.csv")
-    if (file.exists(csv)) {
+  for (csv in sort(csvs)) {
+    proj <- sub("\\.csv$", "", sub("^aggregate_profile_", "", basename(csv)))
+    {
       d <- suppressMessages(readr::read_csv(csv, show_col_types = FALSE, progress = FALSE))
       d <- as.data.frame(d, check.names = FALSE)
       if (nrow(d) == 0 || !all(c("sample", "group", "pos", "value") %in% colnames(d))) next
@@ -223,7 +221,7 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL,
           line = list(color = unname(pal[[g]]), width = 1.4),
           hovertemplate = sprintf("%s<br>CPM: %%{y:.2f}<extra></extra>", html_escape(s)))
       }
-      id <- sprintf("%saggregate_%s", id_prefix, genome)
+      id <- sprintf("%saggregate_%s", id_prefix, proj)
       # フランク端ラベル (±Nkb / ±Nbp)
       fb <- if ("flank_bp" %in% colnames(d)) suppressWarnings(as.numeric(d$flank_bp[[1]])) else NA
       flab <- if (is.finite(fb)) { if (fb >= 1000) sprintf("%gkb", fb / 1000) else sprintf("%dbp", as.integer(fb)) } else "flank"
@@ -242,13 +240,6 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL,
       blocks <- c(blocks, sprintf(
         '<div class="pic-plot-cell">%s<div id="%s" class="pic-plot"></div></div>',
         src_note(report_rel_path(csv, proj_dir)), id))
-    } else {
-      png <- file.path(gd, "aggregate_profile.png")
-      if (file.exists(png)) {
-        uri <- png_data_uri(png)
-        if (!is.na(uri)) blocks <- c(blocks, sprintf(
-          '<div class="pic-enrich-item"><img loading="lazy" src="%s"></div>', uri))
-      }
     }
   }
   if (length(blocks) == 0) return("")
@@ -357,13 +348,13 @@ build_expression_section <- function(reg, deseq2_dir, project, group_map, group_
 # DEG クラスタの挙動 (group ごとの rlog 分布) を facet で示す図。
 # 各 cluster_N が何を意味するか (どの group で高い/低い) を ORA の前に提示する。
 build_cluster_profile_png <- function(deseq2_dir, project, tmp_dir, group_pal = NULL) {
-  f <- file.path(deseq2_dir, "DEG", "DEGCluster", sprintf("DEGCluster_profile_%s.csv", project))
+  f <- file.path(degcluster_dir_of(deseq2_dir, project), sprintf("DEGCluster_profile_%s.csv", project))
   if (!file.exists(f)) return(NULL)
   prof <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
   if (nrow(prof) == 0 || !all(c("rlog_expr", "cluster_id", "group") %in% colnames(prof))) return(NULL)
 
   # cluster ラベルに遺伝子数を付与
-  summ_f <- file.path(deseq2_dir, "DEG", "DEGCluster", sprintf("DEGCluster_summary_%s.csv", project))
+  summ_f <- file.path(degcluster_dir_of(deseq2_dir, project), sprintf("DEGCluster_summary_%s.csv", project))
   if (file.exists(summ_f)) {
     summ <- suppressMessages(readr::read_csv(summ_f, show_col_types = FALSE, progress = FALSE))
     nmap <- stats::setNames(summ$gene_count, summ$cluster_id)
@@ -417,7 +408,7 @@ hex_to_rgba <- function(hex, alpha) {
 # cluster ごとにパネル (free_y) を横に並べ、各パネルで group ごとの box + beeswarm。
 # 戻り値: list(data, layout, height) もしくは NULL。
 build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) {
-  f <- file.path(deseq2_dir, "DEG", "DEGCluster", sprintf("DEGCluster_profile_%s.csv", project))
+  f <- file.path(degcluster_dir_of(deseq2_dir, project), sprintf("DEGCluster_profile_%s.csv", project))
   if (!file.exists(f)) return(NULL)
   prof <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
   if (nrow(prof) == 0 || !all(c("rlog_expr", "cluster_id", "group") %in% colnames(prof))) return(NULL)
@@ -425,7 +416,7 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
   prof <- prof[is.finite(prof$value), , drop = FALSE]
   if (nrow(prof) == 0) return(NULL)
 
-  summ_f <- file.path(deseq2_dir, "DEG", "DEGCluster", sprintf("DEGCluster_summary_%s.csv", project))
+  summ_f <- file.path(degcluster_dir_of(deseq2_dir, project), sprintf("DEGCluster_summary_%s.csv", project))
   nmap <- NULL
   if (file.exists(summ_f)) {
     summ <- suppressMessages(readr::read_csv(summ_f, show_col_types = FALSE, progress = FALSE))
