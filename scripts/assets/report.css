@@ -106,8 +106,9 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-table th,.pic-table td{border:1px solid var(--line);padding:5px 9px;text-align:right}
 .pic-table th{background:#eef3f9;text-align:center;font-size:14px}
 .pic-table td.pic-td-sample{text-align:left;font-weight:600}
-.pic-databar-table td.pic-td-bar{position:relative;min-width:140px;padding:3px 8px;text-align:right}
-.pic-databar{position:absolute;left:3px;right:3px;top:3px;bottom:3px;border-radius:2px;z-index:1}
+.pic-databar-table td,.pic-databar-table th{padding-top:1px;padding-bottom:1px;line-height:1.25}
+.pic-databar-table td.pic-td-bar{position:relative;min-width:140px;padding-left:8px;padding-right:8px;text-align:right}
+.pic-databar{position:absolute;left:3px;right:3px;top:1px;bottom:1px;border-radius:2px;z-index:1}
 .pic-databar-val{position:relative;z-index:2;font-variant-numeric:tabular-nums}
 .pic-td-num{font-variant-numeric:tabular-nums}
 

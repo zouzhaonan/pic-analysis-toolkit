@@ -1869,7 +1869,7 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL) {
       meth <- vapply(ids, function(i) { p <- strsplit(files[[i]]$path, "/", fixed = TRUE)[[1]]; if (length(p) >= 3) p[[3]] else "ORA" }, character(1))
       lis <- unlist(lapply(order_meths(unique(meth)), function(mth) {
         vapply(ids[meth == mth], function(i)
-          sprintf('<li>%s<span class="pic-ov-fname">%s</span></li>',
+          sprintf('<li>%s<span class="pic-ov-desc">%s</span></li>',
                   dl_btn(i, "Download CSV"), html_escape(mth)), character(1))
       }))
       body <- sprintf('<ul class="pic-ov-list">%s</ul>', paste(lis, collapse = ""))
