@@ -933,6 +933,7 @@ scatter_traces_by_dir <- function(df, x, y, numerator, denominator, hovertemplat
       name = cats[[k]]$name,
       mode = "markers",
       type = "scatter",
+      showlegend = (k != "ns"),  # not significant は凡例に出さない (点は描画)
       marker = list(size = if (k == "ns") 4 else 6, color = cats[[k]]$color,
                     opacity = if (k == "ns") 0.45 else 0.85),
       hovertemplate = hovertemplate
