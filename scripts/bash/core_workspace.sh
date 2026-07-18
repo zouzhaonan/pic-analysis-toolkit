@@ -9,7 +9,8 @@
 
 prepare_workspace_dirs() {
   # log/ は診断ログを実行中から直接書き込む先。tmp/ は scratch 専用。
-  mkdir -p "$OUTPUT_DIR" "$TMP_DIR" "$LOG_DIR" "$DEFTABLE_DIR"
+  # summary/ は集計/中間テーブル (mapping_sum, deftable, aggregate) の集約先 (=DEFTABLE_DIR)。
+  mkdir -p "$OUTPUT_DIR" "$TMP_DIR" "$LOG_DIR" "$SUMMARY_DIR" "$DEFTABLE_DIR"
 }
 
 is_protected_workspace_path() {

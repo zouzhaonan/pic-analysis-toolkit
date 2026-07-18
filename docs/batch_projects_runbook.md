@@ -96,7 +96,8 @@ pic all \
 
 出力:
 
-- `<out-dir-base>/<P>/` … mapping 成果物 (deftable, counts, bam, bw …)
+- `<out-dir-base>/<P>/` … mapping 成果物 (counts, bam, bw …) と `report_*.html` / `sample_sheet.tsv`
+- `<out-dir-base>/<P>/summary/` … 集計/中間テーブル (`mapping_sum__<run>.tsv`, `deftable_<run>_<genome>.tsv`, `aggregate_profile_<run>_<genome>.csv`)
 - `<out-dir-base>/<P>/deseq2/` … DESeq2 結果 (ファイル名 suffix `<run>_<genome>` で genome 識別)
 - `<out-dir-base>/<P>/enrich/` … ORA/GSEA 結果 (同上)
 

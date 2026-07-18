@@ -50,7 +50,7 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
   project <- desc$project
 
   # 1. Mapping QC
-  msum_file <- { mf <- list.files(base_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = TRUE); if (length(mf) > 0) mf[[1]] else "" }
+  msum_file <- { mf <- pic_list_summary(base_dir, "^mapping_sum__.*\\.tsv$"); if (length(mf) > 0) mf[[1]] else "" }
   sec_qc <- if (!is.null(msum)) section_mapping_qc(msum, sid("qc"), "1. Mapping QC", report_rel_path(msum_file, out_dir), group_map, group_pal) else ""
 
   # 2. Aggregation (TSS-TES)
@@ -589,7 +589,7 @@ build_fraction_analysis <- function(reg, frac_key, out_dir, frac_dir, tmp_dir) {
   group_order  <- if (!is.null(sheet) && length(sheet$groups) > 0) sheet$groups else NULL
 
   msum <- NULL; group_map <- NULL; group_pal <- NULL
-  msum_files <- list.files(frac_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = TRUE)
+  msum_files <- pic_list_summary(frac_dir, "^mapping_sum__.*\\.tsv$")
   if (length(msum_files) > 0) {
     msum <- pic_reorder_rows(read_mapping_sum(msum_files[[1]]), "sample", sample_order)
     mp <- group_map_pal(msum, group_order); group_map <- mp$map; group_pal <- mp$pal

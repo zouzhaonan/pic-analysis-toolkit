@@ -8,6 +8,15 @@ deg_dir_of        <- function(deseq2_dir, project) file.path(deseq2_dir, sprintf
 degcluster_dir_of <- function(deseq2_dir, project) file.path(deg_dir_of(deseq2_dir, project), sprintf("DEGCluster_%s", project))
 pca_dir_of        <- function(deseq2_dir, project) file.path(deseq2_dir, sprintf("PCA_%s", project))
 
+# 集計/中間テーブル (mapping_sum, deftable, aggregate_profile) は base_dir/summary/ に
+# 集約される。新レイアウト (summary/) を優先し、無ければ base_dir 直下 (旧レイアウト) も
+# 探すことで既存出力とも互換を保つ。full.names の結果を返す。
+pic_list_summary <- function(base_dir, pattern) {
+  hits <- list.files(file.path(base_dir, "summary"), pattern = pattern, full.names = TRUE)
+  if (length(hits) == 0) hits <- list.files(base_dir, pattern = pattern, full.names = TRUE)
+  hits
+}
+
 # 役割:
 #   解析出力ディレクトリ (mapping / deseq2 / enrich) を読み取り、
 #   自己完結型の HTML レポートを 1 ファイル生成する補助関数群。

@@ -258,9 +258,9 @@ pic_read_sample_sheet <- function(out_dir, frac_key = NULL) {
 
 # base_dir の mapping_sum__<run>.tsv から run 名を取り出す (無ければ "")。
 pic_report_run_name <- function(base_dir) {
-  mf <- list.files(base_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = FALSE)
+  mf <- pic_list_summary(base_dir, "^mapping_sum__.*\\.tsv$")
   if (length(mf) == 0) return("")
-  sub("\\.tsv$", "", sub("^mapping_sum__", "", mf[[1]]))
+  sub("\\.tsv$", "", sub("^mapping_sum__", "", basename(mf[[1]])))
 }
 
 # project (= <run>_<genome>) と base_dir から genome を解決する。

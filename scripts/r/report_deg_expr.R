@@ -196,7 +196,7 @@ png_data_uri <- function(path) {
 # メタジーン折れ線 (plotly) を作る。
 # (平坦化: aggregate/ フォルダも PNG も廃し、プロジェクト直下の CSV を suffix で識別)
 build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL, sample_order = NULL, group_pal = NULL) {
-  csvs <- list.files(base_dir, pattern = "^aggregate_profile_.*\\.csv$", full.names = TRUE)
+  csvs <- pic_list_summary(base_dir, "^aggregate_profile_.*\\.csv$")
   blocks <- character(0)
   for (csv in sort(csvs)) {
     proj <- sub("\\.csv$", "", sub("^aggregate_profile_", "", basename(csv)))

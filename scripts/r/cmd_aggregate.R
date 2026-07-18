@@ -6,13 +6,13 @@
 #   分割したビンに対して UCSC bigWigAverageOverBed で平均取得し、全遺伝子で
 #   平均してサンプルごとのプロファイルにする (deepTools 非依存で高速・省メモリ)。
 # 入力:
-#   --out-dir <dir>   pic mapping/all の出力 (bw/ と deftable_<run>_<genome>.tsv)
-#   --run-name <name> 省略時は mapping_sum__<run>.tsv から推定
+#   --out-dir <dir>   pic mapping/all の出力 (bw/ と summary/deftable_<run>_<genome>.tsv)
+#   --run-name <name> 省略時は summary/mapping_sum__<run>.tsv から推定
 #   --genome <g>      特定 genome のみ (省略時は全 genome)
 #   --threads <int>   (現状 R 側では未使用。将来用)
 #   --bins <int>      遺伝子本体の分割数 (default: 100)
 # 出力:
-#   <out>/aggregate/aggregate_profile_<run>_<genome>.csv / .png
+#   <out>/summary/aggregate_profile_<run>_<genome>.csv (PNG は生成しない)
 
 suppressPackageStartupMessages({
   library(data.table)
@@ -200,11 +200,20 @@ aggregate_one_genome <- function(out_dir, genome, project, deftable, bwaob, nbin
   d[, flank_bp := flank]
   setnames(d, "globalpos", "binpos")
   setorder(d, sample, binpos)
-  # 平坦化: aggregate/ フォルダも PNG も廃し、プロジェクト直下に CSV 1 枚のみ出力する
-  # (図はレポートが CSV から plotly で動的生成するため PNG は不要)。
-  out_csv <- file.path(out_dir, sprintf("aggregate_profile_%s.csv", project))
+  # PNG は不要 (図はレポートが CSV から plotly で動的生成)。CSV は集計テーブルとして
+  # summary/ に出力 (mapping_sum/deftable と同じ集約先)。
+  summary_dir <- file.path(out_dir, "summary")
+  dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
+  out_csv <- file.path(summary_dir, sprintf("aggregate_profile_%s.csv", project))
   fwrite(d[, .(sample, group, binpos, region, pos, value, flank_bp)], out_csv)
   message(sprintf("[INFO] aggregate: 出力 -> %s", out_csv))
+}
+
+# summary/ を優先し、無ければ out_dir 直下も探す (旧レイアウト互換)。
+list_from_summary <- function(out_dir, pattern) {
+  hits <- list.files(file.path(out_dir, "summary"), pattern = pattern, full.names = TRUE)
+  if (length(hits) == 0) hits <- list.files(out_dir, pattern = pattern, full.names = TRUE)
+  hits
 }
 
 main <- function() {
@@ -216,13 +225,13 @@ main <- function() {
 
   run_name <- args$run_name
   if (is.null(run_name)) {
-    ms <- list.files(out_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = FALSE)
-    if (length(ms) > 0) run_name <- sub("\\.tsv$", "", sub("^mapping_sum__", "", ms[[1]]))
+    ms <- list_from_summary(out_dir, "^mapping_sum__.*\\.tsv$")
+    if (length(ms) > 0) run_name <- sub("\\.tsv$", "", sub("^mapping_sum__", "", basename(ms[[1]])))
   }
   if (is.null(run_name) || !nzchar(run_name)) stop("run-name を特定できません。--run-name を指定してください。", call. = FALSE)
 
-  deftables <- list.files(out_dir, pattern = sprintf("^deftable_%s_.*\\.tsv$", run_name), full.names = TRUE)
-  if (length(deftables) == 0) stop(sprintf("deftable が見つかりません: %s/deftable_%s_*.tsv", out_dir, run_name), call. = FALSE)
+  deftables <- list_from_summary(out_dir, sprintf("^deftable_%s_.*\\.tsv$", run_name))
+  if (length(deftables) == 0) stop(sprintf("deftable が見つかりません: %s/summary/deftable_%s_*.tsv", out_dir, run_name), call. = FALSE)
 
   tmp_dir <- file.path(out_dir, "tmp", "aggregate")
   dir.create(tmp_dir, recursive = TRUE, showWarnings = FALSE)

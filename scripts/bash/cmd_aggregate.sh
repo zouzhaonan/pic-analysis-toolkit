@@ -9,7 +9,7 @@
 # 入力:
 #   pic mapping/all の出力ディレクトリ (bw/ と deftable_<run>_<genome>.tsv)。
 # 出力:
-#   <out>/aggregate_profile_<run>_<genome>.csv  (sample,group,binpos,pos,value; プロジェクト直下)
+#   <out>/summary/aggregate_profile_<run>_<genome>.csv  (sample,group,binpos,pos,value)
 # 注記:
 #   実体は R (scripts/r/cmd_aggregate.R)。bigWigAverageOverBed は pic の conda
 #   パッケージに同梱される前提。GTF は ${PIC_LIB} 配下を参照する。

@@ -5,7 +5,8 @@
 # 入力:
 #   --sample-sheet / --raw-fastq-dir / --run-name / --out-dir の 4 オプションのみ。
 # 出力:
-#   <out-dir>/            : mapping 成果物 (deftable, counts, bam, bw ...)
+#   <out-dir>/            : mapping 成果物 (counts, bam, bw ...) と report_*.html / sample_sheet.tsv
+#   <out-dir>/summary/    : 集計/中間テーブル (mapping_sum, deftable, aggregate_profile)
 #   <out-dir>/deseq2/      : DESeq2 結果 (ファイル名 suffix <run>_<genome> で genome 識別)
 #   <out-dir>/enrich/      : ORA/GSEA 結果 (同上)
 # 注記:
