@@ -453,7 +453,8 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
                sub_head("Read distribution", src_note(src), png_button(rd_cap, "read_distribution")),
                paste0('<p class="pic-note">Each trimmed read is traced to its fate: uniquely <b>Assigned</b> to a gene, ',
                       'or lost as <b>No feature</b> (overlaps no gene), <b>Ambiguous</b> (overlaps several genes), ',
-                      '<b>Multi-mapping</b>, or <b>Unmapped</b>. A healthy library is dominated by the Assigned fraction. ',
+                      '<b>Multi-mapping</b>, or <b>Unmapped</b>. A too-low Assigned fraction &mdash; a large ',
+                      '<b>No feature</b> / <b>Ambiguous</b> / <b>Unmapped</b> share &mdash; flags a poor-quality sample. ',
                       'Bars are scaled to 100% so samples are comparable regardless of depth.</p>'),
                sprintf('<div class="pic-capbox" id="%s">', rd_cap))
     # 目盛り (0-100%)
@@ -508,8 +509,7 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
                     'and the main measure of sensitivity. <b>Genes</b> &mdash; genes detected with at least one UMI (transcriptome ',
                     'breadth). <b>UMIs/gene</b> &mdash; average molecules per detected gene (sampling depth per gene). ',
                     '<b>Assigned/UMI</b> &mdash; reads per UMI, i.e. sequencing saturation: values near 1 mean little redundancy ',
-                    '(sequence deeper to gain UMIs), high values mean molecules are already read many times. Compare samples: ',
-                    'similar UMIs and Genes indicate comparable, well-balanced libraries.</p>'),
+                    '(sequence deeper to gain UMIs), high values mean molecules are already read many times.</p>'),
              sprintf('<div class="pic-capbox" id="%s">', sd_cap))
   bar_cols <- list(
     total = list(label = "Total reads", grad = c("#9DC3E6", "#D9E7F5")),
