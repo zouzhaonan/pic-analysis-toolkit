@@ -266,8 +266,11 @@
               if (v != null && !isNaN(v) && v >= 1) return "";  // padj=1 (有意でない) の行は非表示
               return "<tr><td>" + escHtml(c) + "</td><td>" + fmtQ(qq[ci]) + "</td></tr>";
             }).join("");
-            tip.innerHTML = "<div class='pic-expr-tip-h'>" + escHtml(data.ext[gi] || data.ens[gi]) +
-              "</div><table><tr><th>contrast</th><th>padj</th></tr>" + rows + "</table>";
+            var head = "<div class='pic-expr-tip-h'>" + escHtml(data.ext[gi] || data.ens[gi]) + "</div>";
+            var body = rows
+              ? "<table><tr><th>contrast</th><th>padj</th></tr>" + rows + "</table>"
+              : "<div class='pic-expr-tip-none'>not significant (padj = 1) in any comparison</div>";
+            tip.innerHTML = head + body;
             tip.style.display = "block";
             // 描画後の実寸で viewport 内にクランプ (下端の見切れ防止・必要なら上/左へ反転)
             tip.style.left = "0px"; tip.style.top = "0px";

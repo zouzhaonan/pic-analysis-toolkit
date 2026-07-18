@@ -132,6 +132,7 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-expr-tip table{border-collapse:collapse}
 .pic-expr-tip th,.pic-expr-tip td{text-align:left;padding:1px 8px 1px 0;font-variant-numeric:tabular-nums}
 .pic-expr-tip th{color:#9aa4af;font-weight:600}
+.pic-expr-tip-none{color:#cdd7e2}
 .pic-expr-msg{color:#b45309;font-size:13px;min-height:1em;margin:2px 0}
 .pic-expr-plots{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
 
