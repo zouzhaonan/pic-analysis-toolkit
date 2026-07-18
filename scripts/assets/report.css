@@ -34,8 +34,8 @@ section.pic-tab.active{display:block}
 @media(max-width:900px){.pic-subtabs{flex-direction:row;flex-wrap:wrap}}
 /* info (丸 i) + hover 吹き出し */
 .pic-info{position:relative;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--accent);color:var(--accent);font-size:12px;font-weight:700;font-style:italic;font-family:Georgia,serif;cursor:help;flex:none}
-.pic-info-pop{display:none;position:absolute;left:26px;top:50%;transform:translateY(-50%);z-index:80;width:min(520px,70vw);background:#1f2933;color:#fff;font-weight:400;font-style:normal;font-size:13px;line-height:1.5;padding:10px 13px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
-.pic-info-pop::before{content:"";position:absolute;left:-6px;top:50%;transform:translateY(-50%);border:6px solid transparent;border-right-color:#1f2933}
+.pic-info-pop{display:none;position:absolute;left:26px;top:-4px;z-index:80;width:min(520px,70vw);max-height:min(80vh,560px);overflow-y:auto;background:#1f2933;color:#fff;font-weight:400;font-style:normal;font-size:13px;line-height:1.5;padding:10px 13px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.pic-info-pop::before{content:"";position:absolute;left:-6px;top:12px;border:6px solid transparent;border-right-color:#1f2933}
 .pic-info:hover .pic-info-pop,.pic-info:focus .pic-info-pop{display:block}
 .pic-info-pop b{color:#ffd54a}
 .pic-info-pop .pic-pop-sub{color:#7fb0e0;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin:12px 0 2px}
