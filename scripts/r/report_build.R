@@ -1577,6 +1577,27 @@ pic_report_asset_dir <- function() {
   getOption("pic.report.asset_dir", default = ".")
 }
 
+# DEG 数 (contrast -> 合計) を DEG_count.csv から取得。無ければ stats から算出する。
+# (通常レポート / xenograft 画分の両経路で共通)
+resolve_deg_counts <- function(desc, stats, fdr) {
+  dc <- pic_load_deg_counts(desc$deseq2_dir, desc$project)
+  if (is.null(dc)) {
+    dc <- list()
+    for (a in unique(stats$aspect)) dc[[a]] <- sum(stats$aspect == a & !is.na(stats$padj) & stats$padj < fdr)
+  }
+  dc
+}
+
+# msum から sample->group 対応と group 配色を得る。列が無ければ両方 NULL。
+# (通常レポート / xenograft 画分の両経路で共通)
+group_map_pal <- function(msum, group_order) {
+  if (is.null(msum) || !all(c("sample", "group") %in% colnames(msum))) return(list(map = NULL, pal = NULL))
+  gmap <- stats::setNames(as.character(msum$group), as.character(msum$sample))
+  go <- if (!is.null(group_order)) pic_reorder_vec(unique(as.character(msum$group)), group_order)
+        else unique(as.character(msum$group))
+  list(map = gmap, pal = group_palette(go))
+}
+
 build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   options(pic.report.asset_dir = asset_dir)
   fdr <- pic_plot_spec()$defaults$fdr
@@ -1593,13 +1614,7 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   stats <- as.data.frame(stats, check.names = FALSE)
 
   # DEG 数 (contrast -> 合計) を DEG_count.csv から取得 (なければ stats から)
-  deg_counts <- pic_load_deg_counts(desc$deseq2_dir, project)
-  if (is.null(deg_counts)) {
-    deg_counts <- list()
-    for (a in unique(stats$aspect)) {
-      deg_counts[[a]] <- sum(stats$aspect == a & !is.na(stats$padj) & stats$padj < fdr)
-    }
-  }
+  deg_counts <- resolve_deg_counts(desc, stats, fdr)
 
   tmp_dir <- file.path(tempdir(), paste0("picreport_", project))
   dir.create(tmp_dir, recursive = TRUE, showWarnings = FALSE)
@@ -1611,14 +1626,9 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   if (!is.null(msum)) msum <- pic_reorder_rows(msum, "sample", sample_order)
 
   # サンプル -> グループの対応とグループ配色 (PCA / heatmap で共有)
-  group_map <- NULL
-  group_pal <- NULL
-  if (!is.null(msum) && all(c("sample", "group") %in% colnames(msum))) {
-    group_map <- stats::setNames(as.character(msum$group), as.character(msum$sample))
-    go <- if (!is.null(group_order)) pic_reorder_vec(unique(as.character(msum$group)), group_order)
-          else unique(as.character(msum$group))
-    group_pal <- group_palette(go)
-  }
+  mp <- group_map_pal(msum, group_order)
+  group_map <- mp$map
+  group_pal <- mp$pal
 
   # セクション組み立て (QC -> Correlation -> Aggregation -> PCA -> DEG -> Expr -> Enrichment)
   msum_file <- { mf <- list.files(out_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = TRUE); if (length(mf) > 0) mf[[1]] else "" }
@@ -2082,11 +2092,7 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
 
   stats <- suppressMessages(readr::read_csv(desc$stats_csv, show_col_types = FALSE, progress = FALSE))
   stats <- as.data.frame(stats, check.names = FALSE)
-  deg_counts <- pic_load_deg_counts(desc$deseq2_dir, project)
-  if (is.null(deg_counts)) {
-    deg_counts <- list()
-    for (a in unique(stats$aspect)) deg_counts[[a]] <- sum(stats$aspect == a & !is.na(stats$padj) & stats$padj < fdr)
-  }
+  deg_counts <- resolve_deg_counts(desc, stats, fdr)
 
   # sample_sheet_<frac>.tsv の順を正順とする
   sheet <- pic_read_sample_sheet(out_dir, frac_key)
@@ -2098,12 +2104,9 @@ build_fraction_sections <- function(reg, frac_key, out_dir, frac_dir, tmp_dir, s
   msum_files <- list.files(frac_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = TRUE)
   if (length(msum_files) > 0) {
     msum <- pic_reorder_rows(read_mapping_sum(msum_files[[1]]), "sample", sample_order)
-    if (all(c("sample", "group") %in% colnames(msum))) {
-      group_map <- stats::setNames(as.character(msum$group), as.character(msum$sample))
-      go <- if (!is.null(group_order)) pic_reorder_vec(unique(as.character(msum$group)), group_order)
-            else unique(as.character(msum$group))
-      group_pal <- group_palette(go)
-    }
+    mp <- group_map_pal(msum, group_order)
+    group_map <- mp$map
+    group_pal <- mp$pal
   }
 
   secs <- character(0)
