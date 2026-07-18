@@ -19,6 +19,8 @@ section{background:#fff;border:1px solid var(--line);border-radius:10px;padding:
 .pic-tabbtn{appearance:none;border:none;background:transparent;color:#d7dde3;font-size:15px;font-weight:600;padding:12px 18px;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
 .pic-tabbtn:hover{color:#fff;background:rgba(255,255,255,.06)}
 .pic-tabbtn.active{color:#fff;border-bottom-color:#7fb0e0;background:rgba(255,255,255,.10)}
+.pic-tablink{text-decoration:none;display:inline-flex;align-items:center}
+.pic-tablink::after{content:"\2197";font-size:11px;margin-left:3px;opacity:.75}
 main.pic-main{max-width:1400px}
 section.pic-tab{display:none}
 section.pic-tab.active{display:block}
@@ -69,14 +71,12 @@ h4{font-size:14px;margin:6px 0;color:var(--muted)}
 .pic-note,.pic-contrast-meta{font-size:15px;margin:4px 0;font-weight:600}
 /* source: 「Download CSV」ダウンロードボタン (パスは表示しない) */
 .pic-src{font-size:12px;display:inline-flex;align-items:center}
-.pic-dlcsv{display:inline-flex;align-items:center;gap:2px;background:var(--accent);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;cursor:pointer;white-space:nowrap;border:1px solid var(--accent)}
-.pic-dlcsv:hover{background:#17518f}
+/* Download ボタン群 (CSV/TSV/PNG) はすべて同一の見た目 */
+.pic-dlcsv,.pic-png-btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;background:var(--accent);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;font-family:inherit;line-height:1.4;text-decoration:none;cursor:pointer;white-space:nowrap;border:1px solid var(--accent)}
+.pic-dlcsv:hover,.pic-png-btn:hover{background:#17518f}
 .pic-src-dl{font-weight:700}
 .pic-sub-hd-actions{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap}
 .pic-head-right{margin-left:auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-/* HTML テーブルの PNG ダウンロードボタン (Download CSV と同じ見た目) */
-.pic-png-btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
-.pic-png-btn:hover{background:#17518f}
 /* 「ここで選択」案内バッジ */
 .pic-pick{display:flex;align-items:center;gap:8px;background:#eaf3fc;border:1px solid #a9cbe9;border-left:4px solid var(--accent);color:#164a7a;font-weight:700;font-size:14px;padding:8px 14px;border-radius:8px;margin:10px 0 6px}
 .pic-pick-ic{font-size:16px;line-height:1}
@@ -153,7 +153,7 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-selgrid{display:grid;grid-template-columns:var(--ctrl-w) minmax(0,1fr);gap:18px;align-items:start}
 .pic-selgrid-ctrl{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px}
 .pic-selgrid-ctrl h4{margin:0 0 8px;font-size:13px}
-.pic-selgrid-ctrl .pic-select-bar{flex-direction:column;align-items:flex-start;gap:5px;background:transparent;border:none;padding:0;margin:0}
+.pic-selgrid-ctrl .pic-select-bar,.pic-matrix-sel .pic-select-bar{flex-direction:column;align-items:flex-start;gap:5px;background:transparent;border:none;padding:0;margin:0 0 4px}
 /* DEG heatmap: 左=group 切替 / 右=ヒートマップ本体 */
 .pic-hmsel{display:grid;grid-template-columns:var(--ctrl-w) minmax(0,1fr);gap:18px;align-items:start}
 .pic-hmsel-ctrl{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:13px}
@@ -228,9 +228,3 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-ov-card h3{margin:0 0 10px;font-size:16px;color:var(--accent)}
 .pic-ov-srcs{display:flex;flex-direction:column;gap:5px;align-items:flex-start;min-width:0}
 .pic-ov-path{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#eef1f5;font-size:12px}
-/* Sources タブ (ファイル一覧) */
-.pic-src-group{margin:16px 0}
-.pic-src-group h3{margin:6px 0 8px;font-size:15px;color:var(--accent)}
-.pic-src-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-.pic-src-list li{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.pic-src-list .pic-ov-path{flex:1 1 340px;min-width:0}

@@ -180,7 +180,7 @@ build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = T
 
 # 2 軸 (行 = contrast, 列 = method) をチェックボックスで選び、両方選択のセルのみ表示。
 # row_groups を渡すと、行 (contrast) の選択を group×group 行列で提示する。
-build_matrix_group <- function(rows, cols, cell_html, row_title = "Contrast", col_title = "Method",
+build_matrix_group <- function(rows, cols, cell_html, row_title = "Comparison", col_title = "Method",
                                row_groups = NULL, row_counts = NULL, group_pal = NULL, view_header = "") {
   if (length(rows) == 0 || length(cols) == 0) return("")
   first_row <- rows[[1]]$key
@@ -223,11 +223,12 @@ build_matrix_group <- function(rows, cols, cell_html, row_title = "Contrast", co
     }
   }
   if (length(cells) == 0) return("")
-  # 左 (.pic-matrix-sel) = サブタブ + contrast 行列 + method バー、右 (.pic-matrix-cells) = タイトル行 + プロット
-  sprintf(paste0('<div class="pic-matrix"><div class="pic-matrix-sel"><!--SUBNAV-->%s',
-                 '<div class="pic-select-bar"><span class="pic-select-lbl">%s:</span>%s</div></div>',
+  # 左 (.pic-matrix-sel) = サブタブ + Comparison(行列) + Method(見出し+縦並び)、右 = プロット
+  comp_hdr <- if (nzchar(gm)) sprintf('<h4>%s</h4>', html_escape(row_title)) else ""
+  sprintf(paste0('<div class="pic-matrix"><div class="pic-matrix-sel"><!--SUBNAV-->%s%s',
+                 '<h4>%s</h4><div class="pic-select-bar">%s</div></div>',
                  '<div class="pic-matrix-cells">%s%s</div></div>'),
-          row_sel, html_escape(col_title), paste(col_bar, collapse = ""),
+          comp_hdr, row_sel, html_escape(col_title), paste(col_bar, collapse = ""),
           view_header, paste(cells, collapse = ""))
 }
 
@@ -842,50 +843,56 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     dir <- ifelse(is_sig & lfc > 0, "up", ifelse(is_sig & lfc < 0, "down", "ns"))
 
     legend_top <- list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0)
-    meta_html <- sprintf('<p class="pic-contrast-meta">%s</p>', color_contrast(a, group_pal))
+    # 縦軸 (fold change) ラベル: log2(numerator / denominator) を group 色で
+    grp_col <- function(g) {
+      idx <- if (!is.null(group_pal)) match(tolower(g), tolower(names(group_pal))) else NA_integer_
+      if (!is.na(idx)) unname(group_pal[[idx]]) else "#1f2933"
+    }
+    lfc_lab <- sprintf('log<sub>2</sub>(<span style="color:%s">%s</span> / <span style="color:%s">%s</span>)',
+                       grp_col(numerator), html_escape(numerator), grp_col(denominator), html_escape(denominator))
     cells <- character(0)
 
-    # ---- MA (hover に padj) ----
+    # ---- M-A (hover に padj) ----
     keepMA <- is.finite(base) & base > 0 & is.finite(lfc)
     idxMA <- downsample_idx(is_sig & keepMA)
     idxMA <- idxMA[keepMA[idxMA]]
     if (length(idxMA) > 0) {
       dfMA <- data.frame(x = base[idxMA], y = lfc[idxMA], gene = gene[idxMA], dir = dir[idxMA],
                          cd1 = padj[idxMA], cd2 = pval[idxMA], stringsAsFactors = FALSE)
-      ht <- "<b>%{text}</b><br>baseMean: %{x:.3g}<br>log2FC: %{y:.2f}<br>padj: %{customdata[0]:.3g}<extra></extra>"
+      ht <- "<b>%{text}</b><br>baseMean: %{x:.3g}<br>log<sub>2</sub>FC: %{y:.2f}<br>p.adjust: %{customdata[0]:.3g}<extra></extra>"
       tr <- scatter_traces_by_dir(dfMA, "x", "y", numerator, denominator, ht)
       id <- sprintf("%sma_%s", id_prefix, flab)
       layout <- list(
-        xaxis = list(title = "baseMean", type = "log"),
-        yaxis = list(title = "log2 fold change", zeroline = TRUE),
-        hovermode = "closest", margin = list(l = 60, r = 20, t = 28, b = 46),
+        xaxis = list(title = "mean expression (baseMean)", type = "log"),
+        yaxis = list(title = lfc_lab, zeroline = TRUE),
+        hovermode = "closest", margin = list(l = 64, r = 20, t = 28, b = 46),
         legend = legend_top
       )
       register_plot(reg, id, list(data = tr, layout = layout))
-      cells <- c(cells, sprintf('<div class="pic-plot-cell"><h4>MA</h4><div id="%s" class="pic-plot"></div></div>', id))
+      cells <- c(cells, sprintf('<div class="pic-plot-cell"><h4>M-A</h4><div id="%s" class="pic-plot"></div></div>', id))
     }
 
-    # ---- volcano: y=-log10(pvalue) 一本化、hover に padj も表示 ----
+    # ---- Volcano: y=-log10(p-value) 一本化、hover に padj も表示 ----
     keepV <- is.finite(pval) & pval > 0 & is.finite(lfc)
     idxV <- downsample_idx(is_sig & keepV)
     idxV <- idxV[keepV[idxV]]
     if (length(idxV) > 0) {
       dfV <- data.frame(x = lfc[idxV], y = -log10(pval[idxV]), gene = gene[idxV], dir = dir[idxV],
                         cd1 = padj[idxV], cd2 = pval[idxV], stringsAsFactors = FALSE)
-      ht <- "<b>%{text}</b><br>log2FC: %{x:.2f}<br>pvalue: %{customdata[1]:.3g}<br>padj: %{customdata[0]:.3g}<extra></extra>"
+      ht <- "<b>%{text}</b><br>log<sub>2</sub>FC: %{x:.2f}<br>p-value: %{customdata[1]:.3g}<br>p.adjust: %{customdata[0]:.3g}<extra></extra>"
       tr <- scatter_traces_by_dir(dfV, "x", "y", numerator, denominator, ht)
       id <- sprintf("%svolcano_%s", id_prefix, flab)
       layout <- list(
-        xaxis = list(title = "log2 fold change", zeroline = TRUE),
-        yaxis = list(title = "-log10(pvalue)"),
+        xaxis = list(title = lfc_lab, zeroline = TRUE),
+        yaxis = list(title = "−log<sub>10</sub>(p-value)"),
         hovermode = "closest", margin = list(l = 60, r = 20, t = 28, b = 46),
         legend = legend_top
       )
       register_plot(reg, id, list(data = tr, layout = layout))
-      cells <- c(cells, sprintf('<div class="pic-plot-cell"><h4>volcano</h4><div id="%s" class="pic-plot"></div></div>', id))
+      cells <- c(cells, sprintf('<div class="pic-plot-cell"><h4>Volcano</h4><div id="%s" class="pic-plot"></div></div>', id))
     }
 
-    item_html <- paste0(meta_html, '<div class="pic-ma-vol">', paste(cells, collapse = ""), '</div>')
+    item_html <- paste0('<div class="pic-ma-vol">', paste(cells, collapse = ""), '</div>')
     items[[length(items) + 1L]] <- list(
       id = sprintf("%ssel_%s", id_prefix, flab),
       label = a, aspect = a, count = nd,
@@ -896,10 +903,10 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
 
   # 説明文 (info バッジに集約される)。マーカー用の目印は <div class="pic-degsel"> 側に置く。
   note <- paste0(
-    '<p class="pic-note">Each gene is one point. The <b>MA plot</b> shows the fold change vs. average expression; ',
-    'the <b>volcano plot</b> shows the fold change vs. statistical significance (&minus;log<sub>10</sub> p-value). ',
-    '<b style="color:#d7301f">Red</b> / <b style="color:#2166ac">blue</b> points are significantly up / down (padj below the FDR); grey is not significant. ',
-    'Hover a point for its gene name, fold change and padj.</p>')
+    '<p class="pic-note">Each gene is one point. The <b>M-A plot</b> shows the log<sub>2</sub> fold change vs. mean expression; ',
+    'the <b>Volcano plot</b> shows it vs. statistical significance (&minus;log<sub>10</sub> p-value). ',
+    '<b style="color:#d7301f">Red</b> / <b style="color:#2166ac">blue</b> points are significantly up / down (p.adjust below the FDR); grey is not significant. ',
+    'Hover a point for its gene name, log<sub>2</sub> fold change and p.adjust.</p>')
   # 右パネル先頭のタイトル行 (右パネルに限局・Download csv を隣に)
   view_head <- sub_head('M-A &amp; Volcano Plot', src_note(stats_src))
 
@@ -1271,7 +1278,8 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         pid <- sprintf("%sgseaplot_%s_%s", id_prefix, method, format_contrast_file_label(contrast))
         register_plot(reg, pid, list(data = spec$data, layout = spec$layout, config = spec$config))
         if (is.null(cellmap[[contrast]])) cellmap[[contrast]] <- list()
-        cellmap[[contrast]][[method]] <- list(id = pid, h = enrich_plot_height(spec$n_terms))
+        cellmap[[contrast]][[method]] <- list(id = pid, h = enrich_plot_height(spec$n_terms),
+                                              csv = report_rel_path(csv, proj_dir))
         methods_seen <- union(methods_seen, method)
       }
     }
@@ -1293,14 +1301,15 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         contrast <- key2contrast[[rkey]]
         info <- cellmap[[contrast]][[method]]
         if (is.null(info)) return("")
-        sprintf('<div class="pic-enrich-item"><h4>%s &mdash; %s</h4><div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
-                color_contrast(contrast, group_pal), html_escape(method), info$id, info$h)
+        title <- sprintf('%s &mdash; %s', color_contrast(contrast, group_pal), html_escape(method))
+        dl <- if (!is.null(info$csv) && nzchar(info$csv)) src_note(info$csv) else ""
+        sprintf('<div class="pic-enrich-item">%s<div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
+                sub_head(title, dl), info$id, info$h)
       }
       row_groups <- if (!is.null(group_order) && length(group_order) > 0) group_order else
         unique(unlist(lapply(contrasts, function(a) trimws(strsplit(a, " / ", fixed = TRUE)[[1]]))))
-      gsea_head <- sub_head('GSEA', src_note(report_rel_path(gsea_root, proj_dir)))
       gsea_html <- build_matrix_group(rows, methods, cell_html, row_groups = row_groups,
-                                      row_counts = NULL, group_pal = group_pal, view_header = gsea_head)
+                                      row_counts = NULL, group_pal = group_pal, view_header = "")
     }
   }
   if (nzchar(gsea_html)) {
@@ -1333,8 +1342,9 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
       ora_items[[length(ora_items) + 1L]] <- list(
         id = sprintf("%sora_%s", id_prefix, method),
         label = method,
-        html = sprintf('<div class="pic-enrich-item"><h4>%s</h4><div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
-                       html_escape(method), pid, enrich_plot_height(spec$n_terms)),
+        html = sprintf('<div class="pic-enrich-item">%s<div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
+                       sub_head(html_escape(method), src_note(report_rel_path(mdir, proj_dir))),
+                       pid, enrich_plot_height(spec$n_terms)),
         checked = (length(ora_items) == 0L)
       )
     }
@@ -1349,20 +1359,20 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         prof_id <- sprintf("%sclusterprofile", id_prefix)
         register_plot(reg, prof_id, list(data = prof_spec$data, layout = prof_spec$layout, config = prof_spec$config))
         prefix_html <- sprintf(
-          paste0('<div class="pic-enrich-item"><h4>Cluster expression profiles</h4>',
+          paste0('<div class="pic-enrich-item">%s',
                  '<p class="pic-note">The differentially expressed genes are grouped into clusters that share a similar pattern across groups. ',
                  'Each panel is one cluster; the boxes show its genes&rsquo; expression per group, so you can read off what each cluster represents.</p>',
-                 '%s<div id="%s" class="pic-plot" style="height:%dpx"></div></div>'),
-          src_note(report_rel_path(prof_csv, proj_dir)), prof_id, prof_spec$height
+                 '<div id="%s" class="pic-plot" style="height:%dpx"></div></div>'),
+          sub_head('Cluster expression profiles', src_note(report_rel_path(prof_csv, proj_dir))),
+          prof_id, prof_spec$height
         )
       }
     }
-    ora_head <- sub_head('ORA', src_note(report_rel_path(ora_root, proj_dir)))
     parts <- c(parts, sprintf(
       paste0('<div class="pic-enrich-ora">',
              '<p class="pic-note">ORA takes the differentially expressed genes in each cluster and asks which biological terms are over-represented among them. ',
              'Dot color is significance (padj), size the gene ratio. Pick a term set on the left to view it.</p>%s</div>'),
-      build_select_group(ora_items, prefix = prefix_html, ctrl_title = "Term set", view_header = ora_head)
+      build_select_group(ora_items, prefix = prefix_html, ctrl_title = "Term set", view_header = "")
     ))
   }
 
@@ -1483,10 +1493,10 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
       list(label = "ORA",  id = "enrich-ora",  marker = '<div class="pic-enrich-ora">')))
   )
   overview_sec <- build_overview_section(data_tabs, run, genome)
-  sources_sec  <- build_sources_section(data_tabs)
-  tb <- build_tabs(c(list(list(html = overview_sec, label = "Overview")),
-                     data_tabs,
-                     list(list(html = sources_sec, label = "Sources"))))
+  # Sources はページを作らず、レポートのある出力フォルダへ直接リンク (ファイルシステム表示)
+  sources_link <- '<a class="pic-tabbtn pic-tablink" href="." target="_blank" rel="noopener" title="Open the output folder">Sources</a>'
+  tb <- build_tabs(c(list(list(html = overview_sec, label = "Overview")), data_tabs),
+                   extra_nav = sources_link)
   out_html <- file.path(out_dir, sprintf("report_%s.html", project))
   render_report_page(run, tb$bar, tb$panels, reg, asset_dir, out_html)
   unlink(tmp_dir, recursive = TRUE)
@@ -1588,7 +1598,21 @@ pic_tab_panel <- function(sec_html, active = FALSE, controls = "", subs = NULL, 
 
 # タブ html から source ファイルのパス一覧を取得する。
 pic_tab_src_paths <- function(tab_html) {
-  unique(regmatches(tab_html, gregexpr('(?<=<a class="pic-dlcsv" href=")[^"]+', tab_html, perl = TRUE))[[1]])
+  paths <- unique(regmatches(tab_html, gregexpr('(?<=<a class="pic-dlcsv" href=")[^"]+', tab_html, perl = TRUE))[[1]])
+  if (length(paths) <= 1) return(paths)
+  # 同一ディレクトリに多数 (>=3) のファイルがある場合はフォルダにまとめる (GSEA/ORA の大量 CSV 対策)
+  collapse_once <- function(ps) {
+    d <- dirname(ps)
+    cnt <- table(d)
+    unique(vapply(seq_along(ps), function(i)
+      if (d[[i]] != "." && cnt[[d[[i]]]] >= 3L) d[[i]] else ps[[i]], character(1)))
+  }
+  repeat {
+    nxt <- collapse_once(paths)
+    if (identical(sort(nxt), sort(paths))) break
+    paths <- nxt
+  }
+  paths
 }
 
 # Overview (概要) セクション。全幅の説明 + 各タブのカード (パスをテキスト表示)。
@@ -1607,36 +1631,16 @@ build_overview_section <- function(tabs, run, genome) {
   }
   intro <- sprintf(paste0('<p class="pic-ov-intro">Interactive analysis report for run <b>%s</b>, ',
     'mapped to <b>%s</b>. Each card below is one analysis step &mdash; click it to open that tab. ',
-    'The paths under each card are the source data files the figures are drawn from; ',
-    'open the <b>Sources</b> tab to download them.</p>'),
+    'The paths under each card are the source data files the figures are drawn from; each tab has a ',
+    '<b>Download</b> button for its data, and the <b>Sources</b> link opens the output folder.</p>'),
     html_escape(run), html_escape(genome))
   sprintf('<section id="overview"><h2>Overview</h2>%s<div class="pic-ov-cards">%s</div></section>',
           intro, paste(cards, collapse = ""))
 }
 
-# Sources (ファイル一覧) セクション。各タブの source ファイルをダウンロードリンクで列挙。
-build_sources_section <- function(tabs) {
-  rows <- character(0)
-  for (t in tabs) {
-    if (is.null(t$html) || !nzchar(t$html)) next
-    x <- pic_extract_section(t$html)
-    paths <- pic_tab_src_paths(t$html)
-    if (length(paths) == 0) next
-    lis <- paste(vapply(paths, function(p) {
-      ext <- toupper(tools::file_ext(p))
-      dl <- if (nzchar(ext)) sprintf('<a class="pic-dlcsv" href="%s" download>Download %s</a>', html_escape(p), html_escape(ext))
-            else sprintf('<a class="pic-dlcsv" href="%s">Browse CSVs</a>', html_escape(p))
-      sprintf('<li><code class="pic-ov-path">%s</code>%s</li>', html_escape(p), dl)
-    }, character(1)), collapse = "")
-    rows <- c(rows, sprintf('<div class="pic-src-group"><h3>%s</h3><ul class="pic-src-list">%s</ul></div>',
-                            html_escape(x$title), lis))
-  }
-  intro <- '<p class="pic-ov-intro">All source data files behind this report. Click a link to download the file (folders open a listing of their CSVs).</p>'
-  sprintf('<section id="sources"><h2>Sources</h2>%s%s</section>', intro, paste(rows, collapse = ""))
-}
-
 # タブバー + パネルを組み立てる。tabs: list(list(html=, label=, controls=, subs=, shared_controls=))。
-build_tabs <- function(tabs) {
+# extra_nav: タブボタンの後に付ける追加ナビ HTML (例: Sources フォルダへのリンク)。
+build_tabs <- function(tabs, extra_nav = "") {
   tabs <- Filter(function(t) nzchar(t$html), tabs)
   if (length(tabs) == 0) return(list(bar = "", panels = ""))
   btns <- character(0); panels <- character(0)
@@ -1651,7 +1655,7 @@ build_tabs <- function(tabs) {
                                       subs = t$subs,
                                       shared_controls = if (!is.null(t$shared_controls)) t$shared_controls else ""))
   }
-  list(bar = sprintf('<nav class="pic-tabs">%s</nav>', paste(btns, collapse = "")),
+  list(bar = sprintf('<nav class="pic-tabs">%s%s</nav>', paste(btns, collapse = ""), extra_nav),
        panels = paste(panels, collapse = "\n"))
 }
 
