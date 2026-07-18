@@ -122,7 +122,9 @@ file_excluded <- function(rel) {
   grepl("^sample_sheet", b) || grepl("^Num_UMIs_genes", b) ||
     grepl("^DEG_count", b) || grepl("^DEG_normalizedCountTable", b) ||
     grepl("^DEGCluster_summary", b) || grepl("^DEGCluster_gene_for_ora", b) ||
-    grepl("^DEGCluster_merge_map", b)
+    grepl("^DEGCluster_merge_map", b) ||
+    # ORA は method ごとの結合 CSV のみ提供し、cluster ごとの表は含めない
+    (grepl("(^|/)enrich/ORA/", rel) && grepl("_cluster_[0-9]", b))
 }
 
 # 相対パスからカタログ用のカテゴリ (見出し + 対応タブ id) を返す。タブ順に並べる。
@@ -1860,6 +1862,17 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL) {
                                 html_escape(mth), length(mids), paste(clis, collapse = "")))
       }
       body <- paste(subs, collapse = "")
+    } else if (identical(ct, "Enrichment — ORA")) {
+      # ORA は method ごとに 1 本の結合 CSV。method 順に並べ、名前 + Download を列挙
+      meth_order <- strsplit(pic_plot_spec()$defaults$enrich_methods_csv, ",", fixed = TRUE)[[1]]
+      order_meths <- function(ms) c(meth_order[meth_order %in% ms], sort(setdiff(ms, meth_order)))
+      meth <- vapply(ids, function(i) { p <- strsplit(files[[i]]$path, "/", fixed = TRUE)[[1]]; if (length(p) >= 3) p[[3]] else "ORA" }, character(1))
+      lis <- unlist(lapply(order_meths(unique(meth)), function(mth) {
+        vapply(ids[meth == mth], function(i)
+          sprintf('<li>%s<span class="pic-ov-fname">%s</span></li>',
+                  dl_btn(i, "Download CSV"), html_escape(mth)), character(1))
+      }))
+      body <- sprintf('<ul class="pic-ov-list">%s</ul>', paste(lis, collapse = ""))
     } else {
       ids <- ids[order(vapply(ids, function(i) files[[i]]$name, character(1)))]
       ids <- ids[!duplicated(vapply(ids, function(i) files[[i]]$name, character(1)))]  # 同名は 1 つに
