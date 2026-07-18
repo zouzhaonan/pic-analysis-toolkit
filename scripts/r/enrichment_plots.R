@@ -225,6 +225,12 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator, group_pal = NULL)
     idx <- match(tolower(g), tolower(names(group_pal)))
     if (!is.na(idx)) unname(group_pal[[idx]]) else "#1f2933"
   }
+  # 表示名は deftable どおりの casing に揃える (enrichment データは小文字化されている)
+  grp_label <- function(g) {
+    if (is.null(group_pal)) return(g)
+    idx <- match(tolower(g), tolower(names(group_pal)))
+    if (!is.na(idx)) names(group_pal)[[idx]] else g
+  }
 
   direction_levels <- c(denominator, numerator,
     setdiff(unique(as.character(gsea_df$direction)), c(denominator, numerator)))
@@ -303,7 +309,7 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator, group_pal = NULL)
     )
     # facet strip: パネル上部に direction (enriched group) 名 (group 色・枠なし)
     annotations[[length(annotations) + 1L]] <- list(
-      text = html_escape(d), xref = "paper", yref = "paper",
+      text = html_escape(grp_label(d)), xref = "paper", yref = "paper",
       x = (x0 + x1) / 2, y = 1.0, xanchor = "center", yanchor = "bottom",
       showarrow = FALSE, font = list(size = 13, color = grp_color(d))
     )
