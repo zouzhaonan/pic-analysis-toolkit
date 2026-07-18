@@ -724,23 +724,19 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
     pcs <- names(varpct)
     npc <- min(length(pcs), 15L)
     pcs <- pcs[seq_len(npc)]
-    cum <- cumsum(varpct[pcs])
     scree <- list(
       list(x = as.list(pcs), y = as.list(unname(varpct[pcs])), type = "bar",
            name = "variance", marker = list(color = "#5B9BD5"),
-           hovertemplate = "%{x}: %{y:.1f}%<extra></extra>"),
-      list(x = as.list(pcs), y = as.list(unname(cum)), type = "scatter", mode = "lines+markers",
-           name = "cumulative", line = list(color = "#d7301f"),
-           hovertemplate = "%{x} cumulative: %{y:.1f}%<extra></extra>")
+           hovertemplate = "%{x}: %{y:.1f}%<extra></extra>")
     )
     register_plot(reg, paste0(id_prefix, "pca_scree"), list(data = scree, layout = list(
       xaxis = list(title = ""),
-      yaxis = list(title = "% variance", rangemode = "tozero"),
-      hovermode = "x", margin = list(l = 56, r = 16, t = 28, b = 40),
-      legend = list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0)
+      yaxis = list(title = "% variance", rangemode = "tozero"),  # 上限は自動 (100% までは不要)
+      hovermode = "x", margin = list(l = 56, r = 82, t = 20, b = 40), showlegend = TRUE,
+      legend = list(orientation = "v", xanchor = "left", x = 1.02, yanchor = "top", y = 1)  # 凡例は右側
     )))
   }
-  scree_block <- sprintf('<div class="pic-plot-cell"><h4>Variance explained (scree)</h4><div id="%spca_scree" class="pic-plot"></div></div>', id_prefix)
+  scree_block <- sprintf('<div class="pic-plot-cell"><h4>Variance explained</h4><div id="%spca_scree" class="pic-plot"></div></div>', id_prefix)
 
   pair_blocks <- character(0)
   pairs <- list(c("PC1", "PC2"), c("PC2", "PC3"))
