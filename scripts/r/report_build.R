@@ -260,9 +260,20 @@ build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = T
     a <- tolower(trimws(sp[[1]])); b <- if (length(sp) >= 2) tolower(trimws(sp[[2]])) else ""
     ia <- match(a, gl); ib <- match(b, gl)
     if (is.na(ia) || is.na(ib)) next
+    # tooltip 用の表示名は deftable どおりの casing (contrast データは小文字化されている)
+    e$aspect_disp <- if (length(sp) >= 2) paste0(groups[[ia]], " / ", groups[[ib]]) else groups[[ia]]
     cellmap[[paste0(min(ia, ib), "_", max(ia, ib))]] <- e
   }
   if (length(cellmap) == 0) return("")
+  # DEG 数を白→赤のヒートマップ色に (数値は出さず色で多寡を示す)。sqrt スケールで低値も視認可能に。
+  cnt_of <- function(e) suppressWarnings(as.numeric(e$count))
+  vmax <- suppressWarnings(max(vapply(cellmap, function(e) { v <- cnt_of(e); if (is.finite(v)) v else NA_real_ }, numeric(1)), na.rm = TRUE))
+  heat_col <- function(v) {
+    if (!is.finite(v) || !is.finite(vmax) || vmax <= 0) return(NA_character_)
+    t <- sqrt(max(0, min(1, v / vmax)))
+    mix <- function(a, b) round(a + t * (b - a))
+    sprintf("rgb(%d,%d,%d)", mix(255, 178), mix(255, 24), mix(255, 43))  # #ffffff -> #b2182b
+  }
   hcol <- function(g) if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else "#1f2933"
   n <- length(groups)
   ths <- paste(vapply(seq_len(n), function(j)
@@ -281,8 +292,13 @@ build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = T
       cnt <- if (show_count && !is.null(e$count) && is.finite(suppressWarnings(as.numeric(e$count))))
                sprintf('<span class="pic-cmx-n">%s</span>', fmt_int(e$count)) else ""
       inp <- if (!is.null(radio_name)) sprintf('type="radio" name="%s"', html_escape(radio_name)) else 'type="checkbox"'
-      cs <- c(cs, sprintf('<td class="pic-cmx-cell" title="%s"><label>%s<input %s %s%s></label></td>',
-                          html_escape(e$aspect), cnt, inp, e$attr, ck))
+      cv <- cnt_of(e); col <- heat_col(cv)
+      bg <- if (!is.na(col)) sprintf(' style="background:%s"', col) else ""
+      hcls <- if (!is.na(col)) " pic-cmx-heat" else ""
+      disp <- if (!is.null(e$aspect_disp)) e$aspect_disp else e$aspect
+      ttl <- if (is.finite(cv)) sprintf("%s — %s DEGs", disp, fmt_int(cv)) else disp
+      cs <- c(cs, sprintf('<td class="pic-cmx-cell%s" title="%s"%s><label>%s<input %s %s%s></label></td>',
+                          hcls, html_escape(ttl), bg, cnt, inp, e$attr, ck))
     }
     rows_html <- c(rows_html, sprintf('<tr>%s%s</tr>', rh, paste(cs, collapse = "")))
   }
@@ -304,7 +320,7 @@ build_matrix_group <- function(rows, cols, cell_html, row_title = "Comparison", 
   if (!is.null(row_groups) && length(row_groups) >= 2) {
     entries <- lapply(seq_along(rows), function(i) list(
       aspect = rows[[i]]$label,
-      count = NULL,
+      count = if (!is.null(row_counts)) row_counts[[rows[[i]]$key]] else NULL,
       checked = (i == 1L),
       attr = sprintf('data-axis="r" data-key="%s"', html_escape(rows[[i]]$key))))
     gm <- build_group_matrix(entries, row_groups, group_pal, show_count = FALSE, radio_name = rname)
@@ -1037,7 +1053,7 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
   groups <- if (!is.null(group_order) && length(group_order) > 0) group_order else
     unique(unlist(lapply(aspects, function(a) trimws(strsplit(a, " / ", fixed = TRUE)[[1]]))))
   entries <- lapply(items, function(it) list(
-    aspect = it$aspect, count = NULL, checked = it$checked,
+    aspect = it$aspect, count = it$count, checked = it$checked,
     attr = sprintf('data-target="%s"', it$id)))
   matrix_html <- build_group_matrix(entries, groups, group_pal, show_count = FALSE,
                                     radio_name = paste0(id_prefix, "degcon"))
@@ -1433,8 +1449,12 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
       }
       row_groups <- if (!is.null(group_order) && length(group_order) > 0) group_order else
         unique(unlist(lapply(contrasts, function(a) trimws(strsplit(a, " / ", fixed = TRUE)[[1]]))))
+      # DEG 数 (contrast -> key) を渡し、セルをヒートマップ着色 (GSEA も MA/Volcano と共通)
+      row_counts <- stats::setNames(
+        lapply(contrasts, function(cc) if (!is.null(deg_counts) && cc %in% names(deg_counts)) deg_counts[[cc]] else NA_real_),
+        vapply(contrasts, format_contrast_file_label, character(1)))
       gsea_html <- build_matrix_group(rows, methods, cell_html, row_groups = row_groups,
-                                      row_counts = NULL, group_pal = group_pal, view_header = "")
+                                      row_counts = row_counts, group_pal = group_pal, view_header = "")
     }
   }
   if (nzchar(gsea_html)) {

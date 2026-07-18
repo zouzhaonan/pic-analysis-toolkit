@@ -180,6 +180,9 @@ table.pic-cmatrix{border-collapse:collapse;font-size:13px}
 .pic-cmatrix .pic-cmx-rowhl,.pic-cmatrix .pic-cmx-colhl{background:#e8f1fb}
 .pic-cmatrix th.pic-cmx-hl{background:#cfe2f6}
 .pic-cmatrix td.pic-cmx-cell.pic-cmx-hit{background:#bcd8f5}
+/* heatmap 着色セルでも選択位置が分かるよう内側リングで示す */
+.pic-cmx-cell.pic-cmx-heat.pic-cmx-hit{box-shadow:inset 0 0 0 2px #17518f}
+.pic-cmx-cell.pic-cmx-heat:hover{box-shadow:inset 0 0 0 2px rgba(23,81,143,.5)}
 
 /* サンプル相関ヒートマップ (HTML テーブル) */
 .pic-cor-wrap{overflow:auto;max-width:100%;margin:6px 0 4px}
