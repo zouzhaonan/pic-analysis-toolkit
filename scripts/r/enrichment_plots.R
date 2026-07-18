@@ -215,10 +215,16 @@ enrich_colorscale <- function() {
 # 元の facet_grid(. ~ direction, scales="free_x") と同様に、direction ごとに
 # 独立した x 軸 (free_x) のパネルを左右に並べ、y (term ラベル) は共有して左端に揃える。
 # color=p.adjust, size=setSize。
-build_gsea_plotly <- function(gsea_df, numerator, denominator) {
+build_gsea_plotly <- function(gsea_df, numerator, denominator, group_pal = NULL) {
   ecfg <- pic_plot_spec()$plot$enrichment
   required_cols <- c("Description", "NES", "setSize", "p.adjust", "direction")
   if (nrow(gsea_df) == 0 || !all(required_cols %in% colnames(gsea_df))) return(NULL)
+  # group 名 → その group 色 (大文字小文字は無視)。無ければ既定色。
+  grp_color <- function(g) {
+    if (is.null(group_pal)) return("#1f2933")
+    idx <- match(tolower(g), tolower(names(group_pal)))
+    if (!is.na(idx)) unname(group_pal[[idx]]) else "#1f2933"
+  }
 
   direction_levels <- c(denominator, numerator,
     setdiff(unique(as.character(gsea_df$direction)), c(denominator, numerator)))
@@ -295,11 +301,11 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator) {
       x0 = x0, x1 = x1, y0 = 0, y1 = 1,
       line = list(color = "#cdd7e2", width = 1), fillcolor = "rgba(0,0,0,0)"
     )
-    # facet strip: パネル上部に direction (enriched group) 名 (枠なし)
+    # facet strip: パネル上部に direction (enriched group) 名 (group 色・枠なし)
     annotations[[length(annotations) + 1L]] <- list(
       text = html_escape(d), xref = "paper", yref = "paper",
       x = (x0 + x1) / 2, y = 1.0, xanchor = "center", yanchor = "bottom",
-      showarrow = FALSE, font = list(size = 13, color = "#1f2933")
+      showarrow = FALSE, font = list(size = 13, color = grp_color(d))
     )
   }
   layout$annotations <- annotations

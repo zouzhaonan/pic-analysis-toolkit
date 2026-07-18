@@ -25,12 +25,18 @@ section.pic-tab.active{display:block}
 .pic-tab-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:2px solid var(--accent);padding-bottom:6px;margin-bottom:14px}
 .pic-tab-head h2{border:none;padding:0;margin:0}
 /* セクション内サブタブ */
-.pic-subtabs{display:flex;gap:3px;margin-left:auto}
-.pic-subtabbtn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--muted);font-size:13px;font-weight:600;padding:5px 14px;cursor:pointer;border-radius:6px}
+/* サブタブは左パネルに縦並びで配置 */
+.pic-subtab-layout{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:18px;align-items:start}
+.pic-subnav{position:sticky;top:60px;align-self:start}
+.pic-subtabs{display:flex;flex-direction:column;gap:5px}
+.pic-subtabs h4{margin:0 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.pic-subtabbtn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--muted);font-size:13px;font-weight:600;padding:7px 16px;cursor:pointer;border-radius:6px;text-align:left;white-space:nowrap}
 .pic-subtabbtn:hover{background:#eef3fb;color:var(--accent)}
 .pic-subtabbtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.pic-subnav>h4{margin-top:16px}
 .pic-subpanel{display:none}
 .pic-subpanel.active{display:block}
+@media(max-width:900px){.pic-subtab-layout{grid-template-columns:1fr}.pic-subnav{position:static}.pic-subtabs{flex-direction:row;flex-wrap:wrap}}
 /* info (丸 i) + hover 吹き出し */
 .pic-info{position:relative;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--accent);color:var(--accent);font-size:12px;font-weight:700;font-style:italic;font-family:Georgia,serif;cursor:help;flex:none}
 .pic-info-pop{display:none;position:absolute;left:26px;top:50%;transform:translateY(-50%);z-index:80;width:min(520px,70vw);background:#1f2933;color:#fff;font-weight:400;font-style:normal;font-size:13px;line-height:1.5;padding:10px 13px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
@@ -61,14 +67,13 @@ body.pic-resizing{cursor:col-resize;user-select:none}
 h2{margin-top:0;font-size:21px;border-bottom:2px solid var(--accent);padding-bottom:6px}
 h3{font-size:18px;margin:22px 0 10px}
 h4{font-size:14px;margin:6px 0;color:var(--muted)}
-.pic-note,.pic-contrast-meta{color:var(--muted);font-size:14px;margin:4px 0}
-/* source: グレー背景+黄色文字のリンク (クリックで CSV を開く) */
-.pic-src{font-size:12px;display:inline-flex;align-items:center;gap:6px}
-.pic-src-label{color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px}
-.pic-src-path{background:#3d434b;color:#ffd54a;padding:3px 9px;border-radius:5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;text-decoration:none;cursor:pointer;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pic-src-path:hover{background:#4a5560;text-decoration:underline}
-.pic-src-dl{margin-right:5px;font-weight:700}
-.pic-src-dltxt{margin-left:7px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;opacity:.85}
+.pic-note,.pic-contrast-meta{font-size:15px;margin:4px 0;font-weight:600}
+/* source: 「Download CSV」ダウンロードボタン (パスは表示しない) */
+.pic-src{font-size:12px;display:inline-flex;align-items:center}
+.pic-dlcsv{display:inline-flex;align-items:center;gap:2px;background:var(--accent);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;cursor:pointer;white-space:nowrap;border:1px solid var(--accent)}
+.pic-dlcsv:hover{background:#17518f}
+.pic-src-dl{font-weight:700}
+.pic-sub-hd-actions{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap}
 .pic-head-right{margin-left:auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 /* HTML テーブルの PNG ダウンロードボタン */
 .pic-png-btn{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:6px;padding:3px 12px;font-size:12px;font-weight:600;cursor:pointer;margin:2px 0 8px}
@@ -214,3 +219,16 @@ table.pic-hm{border-collapse:separate;border-spacing:0}
 .pic-notes{background:#f3f7fc;border-left:4px solid var(--accent);padding:10px 16px;border-radius:0 8px 8px 0;margin-bottom:14px}
 .pic-notes h3{margin-top:8px}
 code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
+
+/* Home (Overview) タブ */
+.pic-home-intro{font-size:15px;color:var(--fg);max-width:70ch;margin:6px 0 20px}
+.pic-home-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.pic-home-card{border:1px solid var(--line);border-radius:10px;padding:16px 18px;background:#fcfdff;cursor:pointer;transition:border-color .12s,box-shadow .12s,transform .06s}
+.pic-home-card:hover{border-color:var(--accent);box-shadow:0 3px 12px rgba(33,102,172,.12)}
+.pic-home-card:active{transform:translateY(1px)}
+.pic-home-card h3{margin:0 0 8px;font-size:16px;color:var(--accent)}
+.pic-home-desc{font-size:13.5px;color:var(--muted);margin-bottom:12px}
+.pic-home-desc p{margin:4px 0}
+.pic-home-srcs{display:flex;flex-direction:column;gap:6px;align-items:flex-start;min-width:0}
+.pic-home-srcs .pic-dlcsv{display:block;width:fit-content;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:500}
+.pic-home-srcs .pic-src-dl{margin-right:5px}

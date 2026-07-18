@@ -64,28 +64,57 @@ pick_hint <- function(text) {
   sprintf('<div class="pic-pick"><span class="pic-pick-ic">&#128071;</span><span>%s</span></div>', text)
 }
 
+# サブタブ内タイトル行 (左=タイトル / 右=アクションボタン群)。title は HTML 済み。
+sub_head <- function(title_html, ...) {
+  actions <- paste(c(...), collapse = "")
+  sprintf('<div class="pic-sub-hd"><h3>%s</h3><span class="pic-sub-hd-actions">%s</span></div>',
+          title_html, actions)
+}
+
 # HTML 要素 (id=cap_id) を PNG 画像でダウンロードするボタン。
 png_button <- function(cap_id, name) {
   sprintf('<button class="pic-png-btn" type="button" data-cap="%s" data-name="%s">Download plot as a png.</button>',
           html_escape(cap_id), html_escape(name))
 }
 
-# 元データの場所を示すキャプション。クリックで CSV をダウンロードするリンク (report からの相対パス)。
+# 元データをダウンロードするボタン (パスは表示せず、拡張子でラベルを決める)。
+# 拡張子なし (フォルダ) の場合は「Browse CSVs」としてフォルダを開く。
 src_note <- function(rel) {
   if (is.null(rel) || !nzchar(rel)) return("")
   e <- html_escape(rel)
-  sprintf(paste0('<span class="pic-src"><span class="pic-src-label">source</span>',
-                 '<a class="pic-src-path" href="%s" download title="Click to download this source file">',
-                 '<span class="pic-src-dl">&#8681;</span>%s<span class="pic-src-dltxt">download</span></a></span>'),
-          e, e)
+  ext <- toupper(tools::file_ext(rel))
+  if (nzchar(ext)) {
+    sprintf(paste0('<span class="pic-src"><a class="pic-dlcsv" href="%s" download title="Download the source file: %s">',
+                   '<span class="pic-src-dl">&#8681;</span>Download %s</a></span>'),
+            e, e, html_escape(ext))
+  } else {
+    sprintf(paste0('<span class="pic-src"><a class="pic-dlcsv" href="%s" title="Open the source folder: %s">',
+                   '<span class="pic-src-dl">&#128193;</span>Browse CSVs</a></span>'),
+            e, e)
+  }
+}
+
+# contrast 名 ("groupA / groupB") の各 group をその group 色で装飾する。
+color_contrast <- function(contrast, group_pal) {
+  if (is.null(contrast) || !nzchar(contrast)) return(html_escape(contrast))
+  parts <- trimws(strsplit(contrast, "/", fixed = TRUE)[[1]])
+  gl <- if (!is.null(group_pal)) tolower(names(group_pal)) else character(0)
+  colored <- vapply(parts, function(p) {
+    idx <- match(tolower(p), gl)
+    col <- if (!is.na(idx)) unname(group_pal[[idx]]) else NULL
+    if (!is.null(col)) sprintf('<span style="color:%s;font-weight:700">%s</span>', col, html_escape(p))
+    else html_escape(p)
+  }, character(1))
+  paste(colored, collapse = ' <span style="color:var(--muted)">/</span> ')
 }
 
 # 複数ブロックをチェックボックスで表示選択する UI。既定は先頭のみ表示。
 # items: list(list(id=, label=, html=, checked=logical), ...)
 # ブロックが 1 つだけなら選択 UI は付けずにそのまま表示する。
-build_select_group <- function(items, prefix = "", ctrl_title = NULL) {
+build_select_group <- function(items, prefix = "", ctrl_title = NULL, view_header = "") {
   items <- Filter(function(it) !is.null(it$html) && nzchar(it$html), items)
-  if (length(items) == 0) return(if (nzchar(prefix)) sprintf('<div class="pic-select-item">%s</div>', prefix) else "")
+  if (length(items) == 0) return(if (nzchar(prefix) || nzchar(view_header))
+    sprintf('<div class="pic-select-item">%s%s</div>', view_header, prefix) else "")
   rname <- paste0("sel_", gsub("[^A-Za-z0-9_]", "", items[[1]]$id))
   bar <- vapply(items, function(it) {
     ck <- if (isTRUE(it$checked)) " checked" else ""
@@ -97,10 +126,10 @@ build_select_group <- function(items, prefix = "", ctrl_title = NULL) {
     sprintf('<div class="pic-select-item" id="%s"%s>%s</div>', html_escape(it$id), hid, it$html)
   }, character(1))
   head_html <- if (!is.null(ctrl_title)) sprintf('<h4>%s</h4>', html_escape(ctrl_title)) else ""
-  # 左 = ラジオ選択 / 右 = (prefix +) 選択ブロック
+  # 左 = ラジオ選択 / 右 = タイトル行 + (prefix +) 選択ブロック
   paste0('<div class="pic-selgrid"><div class="pic-selgrid-ctrl">', head_html,
          '<div class="pic-select-bar">', paste(bar, collapse = ""),
-         '</div></div><div class="pic-selgrid-view">', prefix,
+         '</div></div><div class="pic-selgrid-view">', view_header, prefix,
          paste(blk, collapse = ""), '</div></div>')
 }
 
@@ -152,7 +181,7 @@ build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = T
 # 2 軸 (行 = contrast, 列 = method) をチェックボックスで選び、両方選択のセルのみ表示。
 # row_groups を渡すと、行 (contrast) の選択を group×group 行列で提示する。
 build_matrix_group <- function(rows, cols, cell_html, row_title = "Contrast", col_title = "Method",
-                               row_groups = NULL, row_counts = NULL, group_pal = NULL) {
+                               row_groups = NULL, row_counts = NULL, group_pal = NULL, view_header = "") {
   if (length(rows) == 0 || length(cols) == 0) return("")
   first_row <- rows[[1]]$key
   first_col <- cols[[1]]
@@ -194,12 +223,12 @@ build_matrix_group <- function(rows, cols, cell_html, row_title = "Contrast", co
     }
   }
   if (length(cells) == 0) return("")
-  # 左 (.pic-matrix-sel) = contrast 行列 + method バー、右 (.pic-matrix-cells) = プロット
+  # 左 (.pic-matrix-sel) = contrast 行列 + method バー、右 (.pic-matrix-cells) = タイトル行 + プロット
   sprintf(paste0('<div class="pic-matrix"><div class="pic-matrix-sel">%s',
                  '<div class="pic-select-bar"><span class="pic-select-lbl">%s:</span>%s</div></div>',
-                 '<div class="pic-matrix-cells">%s</div></div>'),
+                 '<div class="pic-matrix-cells">%s%s</div></div>'),
           row_sel, html_escape(col_title), paste(col_bar, collapse = ""),
-          paste(cells, collapse = ""))
+          view_header, paste(cells, collapse = ""))
 }
 
 # plot 仕様を共有レジストリ env に登録する
@@ -307,8 +336,7 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
   # ---- 100% 積み上げ棒 ----
   if (have_fate) {
     parts <- c(parts,
-               sprintf('<div class="pic-sub-hd"><h3>Read distribution</h3>%s</div>', png_button(rd_cap, "read_distribution")),
-               src_note(src),
+               sub_head("Read distribution", src_note(src), png_button(rd_cap, "read_distribution")),
                sprintf('<div class="pic-capbox" id="%s">', rd_cap))
     # 目盛り (0-100%)
     ruler <- '<div class="pic-bar-ruler"><span>0%</span><span>20%</span><span>40%</span><span>60%</span><span>80%</span><span>100%</span></div>'
@@ -353,7 +381,7 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
 
   # ---- データバー表 ----
   parts <- c(parts,
-             sprintf('<div class="pic-sub-hd"><h3>Sequencing depth</h3>%s</div>', png_button(sd_cap, "sequencing_depth")),
+             sub_head("Sequencing depth", src_note(src), png_button(sd_cap, "sequencing_depth")),
              sprintf('<div class="pic-capbox" id="%s">', sd_cap))
   bar_cols <- list(
     total = list(label = "total", grad = c("#9DC3E6", "#D9E7F5")),
@@ -711,12 +739,11 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
   }, character(1))
 
   cap_id <- paste0(id_prefix, "heatmap_cap")
-  # 左 = group 表示切替 / 右 = ヒートマップ本体 (タイトル右に PNG ボタン)
+  # 左 = group 表示切替 / 右 = ヒートマップ本体 (タイトル右に Download csv + PNG ボタン)
   ctrl <- group_toggle_panel(group_pal)
   view <- paste0(
-    sprintf('<div class="pic-sub-hd"><h3>Expression heatmap (%d differentially expressed genes)</h3>%s</div>',
-            nrow(z), png_button(cap_id, "deg_heatmap")),
-    src_note(report_rel_path(f, proj_dir)),
+    sub_head(sprintf('Expression heatmap (%d DEGs)', nrow(z)),
+             src_note(report_rel_path(f, proj_dir)), png_button(cap_id, "deg_heatmap")),
     '<p class="pic-note">Each row is a gene, each column a sample (grouped by color). ',
     'Cell color is the gene&rsquo;s z-score across samples &mdash; <b style="color:#b2182b">red</b> is higher than that gene&rsquo;s average, ',
     '<b style="color:#2166ac">blue</b> is lower. Genes are ordered by similarity. Hover a cell for the gene, sample, and z-score.</p>',
@@ -816,7 +843,7 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     dir <- ifelse(is_sig & lfc > 0, "up", ifelse(is_sig & lfc < 0, "down", "ns"))
 
     legend_top <- list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0)
-    meta_html <- sprintf('<p class="pic-contrast-meta"><b>%s</b></p>', html_escape(a))
+    meta_html <- sprintf('<p class="pic-contrast-meta">%s</p>', color_contrast(a, group_pal))
     cells <- character(0)
 
     # ---- MA (hover に padj) ----
@@ -868,14 +895,16 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     )
   }
 
-  note <- paste0('<h3>Differential expression (MA &amp; volcano)</h3>',
-    src_note(stats_src),
+  # 説明文 (info バッジに集約される)。マーカー用の目印は <div class="pic-degsel"> 側に置く。
+  note <- paste0(
     '<p class="pic-note">Each gene is one point. The <b>MA plot</b> shows the fold change vs. average expression; ',
     'the <b>volcano plot</b> shows the fold change vs. statistical significance (&minus;log<sub>10</sub> p-value). ',
     '<b style="color:#d7301f">Red</b> / <b style="color:#2166ac">blue</b> points are significantly up / down (padj below the FDR); grey is not significant. ',
     'Hover a point for its gene name, fold change and padj.</p>')
+  # 右パネル先頭のタイトル行 (右パネルに限局・Download csv を隣に)
+  view_head <- sub_head('M-A &amp; Volcano Plot', src_note(stats_src))
 
-  # contrast 選択: group×group 行列 (各セルに DEG 数 + チェックボックス)。1 つだけなら行列不要。
+  # contrast 選択: group×group 行列 (各セルに radio)。1 つだけなら行列不要。
   groups <- if (!is.null(group_order) && length(group_order) > 0) group_order else
     unique(unlist(lapply(aspects, function(a) trimws(strsplit(a, " / ", fixed = TRUE)[[1]]))))
   entries <- lapply(items, function(it) list(
@@ -888,14 +917,16 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     sprintf('<div class="pic-select-item" id="%s"%s>%s</div>', it$id, hid, it$html)
   }, character(1))
   sel_html <- if (length(items) <= 1) {
-    if (length(items) == 1) sprintf('<div class="pic-select-item">%s</div>', items[[1]]$html) else ""
+    view_body <- if (length(items) == 1) sprintf('<div class="pic-select-item">%s</div>', items[[1]]$html) else ""
+    sprintf('<div class="pic-degsel pic-degsel-single"><div class="pic-degsel-view">%s%s</div></div>', view_head, view_body)
   } else if (nzchar(matrix_html)) {
-    # 左 = contrast 行列 (radio)、右 = MA/volcano ブロック
+    # 左 = contrast 行列 (radio)、右 = タイトル行 + MA/volcano ブロック
     paste0('<div class="pic-degsel"><div class="pic-degsel-ctrl"><h4>Comparison</h4>',
-           matrix_html, '</div><div class="pic-degsel-view">',
+           matrix_html, '</div><div class="pic-degsel-view">', view_head,
            paste(blocks, collapse = ""), '</div></div>')
   } else {
-    build_select_group(items)
+    sprintf('<div class="pic-degsel pic-degsel-single"><div class="pic-degsel-view">%s%s</div></div>',
+            view_head, build_select_group(items))
   }
   paste0(note, sel_html)
 }
@@ -1236,7 +1267,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         sp <- strsplit(contrast, " / ", fixed = TRUE)[[1]]
         numerator <- if (length(sp) >= 1) sp[[1]] else ""
         denominator <- if (length(sp) >= 2) sp[[2]] else ""
-        spec <- tryCatch(build_gsea_plotly(df, numerator, denominator), error = function(e) NULL)
+        spec <- tryCatch(build_gsea_plotly(df, numerator, denominator, group_pal), error = function(e) NULL)
         if (is.null(spec)) next
         pid <- sprintf("%sgseaplot_%s_%s", id_prefix, method, format_contrast_file_label(contrast))
         register_plot(reg, pid, list(data = spec$data, layout = spec$layout, config = spec$config))
@@ -1264,20 +1295,20 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         info <- cellmap[[contrast]][[method]]
         if (is.null(info)) return("")
         sprintf('<div class="pic-enrich-item"><h4>%s &mdash; %s</h4><div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
-                html_escape(contrast), html_escape(method), info$id, info$h)
+                color_contrast(contrast, group_pal), html_escape(method), info$id, info$h)
       }
       row_groups <- if (!is.null(group_order) && length(group_order) > 0) group_order else
         unique(unlist(lapply(contrasts, function(a) trimws(strsplit(a, " / ", fixed = TRUE)[[1]]))))
+      gsea_head <- sub_head('GSEA', src_note(report_rel_path(gsea_root, proj_dir)))
       gsea_html <- build_matrix_group(rows, methods, cell_html, row_groups = row_groups,
-                                      row_counts = NULL, group_pal = group_pal)
+                                      row_counts = NULL, group_pal = group_pal, view_header = gsea_head)
     }
   }
   if (nzchar(gsea_html)) {
     parts <- c(parts, sprintf(
-      paste0('<div class="pic-enrich-gsea">%s',
+      paste0('<div class="pic-enrich-gsea">',
              '<p class="pic-note">GSEA asks which biological terms (GO, pathways&hellip;) are shifted up or down in a comparison, using the whole ranked gene list. Each dot is a term: position is its enrichment score (NES), color its significance (padj), size the number of genes.</p>',
              '%s</div>'),
-      src_note(report_rel_path(gsea_root, proj_dir)),
       gsea_html
     ))
   }
@@ -1327,12 +1358,12 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         )
       }
     }
+    ora_head <- sub_head('ORA', src_note(report_rel_path(ora_root, proj_dir)))
     parts <- c(parts, sprintf(
-      paste0('<div class="pic-enrich-ora">%s',
+      paste0('<div class="pic-enrich-ora">',
              '<p class="pic-note">ORA takes the differentially expressed genes in each cluster and asks which biological terms are over-represented among them. ',
              'Dot color is significance (padj), size the gene ratio. Pick a term set on the left to view it.</p>%s</div>'),
-      src_note(report_rel_path(ora_root, proj_dir)),
-      build_select_group(ora_items, prefix = prefix_html, ctrl_title = "Term set")
+      build_select_group(ora_items, prefix = prefix_html, ctrl_title = "Term set", view_header = ora_head)
     ))
   }
 
@@ -1433,7 +1464,7 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   if (is.null(sec_enrich)) sec_enrich <- ""
 
   grp_panel  <- group_toggle_panel(group_pal)
-  tb <- build_tabs(list(
+  data_tabs <- list(
     list(html = sec_qc, label = "QC", shared_controls = grp_panel, subs = list(
       list(label = "Read distribution", id = "qc-readdist", marker = ""),
       list(label = "Sequencing depth",  id = "qc-depth",    marker = '<div class="pic-sub-hd"><h3>Sequencing depth'))),
@@ -1442,12 +1473,14 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
     list(html = sec_pca,    label = "PCA",         controls = grp_panel),
     list(html = sec_deg, label = "DEG", subs = list(
       list(label = "Heatmap",     id = "deg-heatmap",   marker = ""),
-      list(label = "MA / volcano", id = "deg-mavolcano", marker = "<h3>Differential expression (MA"))),
+      list(label = "MA / volcano", id = "deg-mavolcano", marker = '<div class="pic-degsel'))),
     list(html = sec_expr,   label = "Expression"),
     list(html = sec_enrich, label = "Enrichment", subs = list(
       list(label = "GSEA", id = "enrich-gsea", marker = ""),
       list(label = "ORA",  id = "enrich-ora",  marker = '<div class="pic-enrich-ora">')))
-  ))
+  )
+  home_sec <- build_home_section(data_tabs, project)
+  tb <- build_tabs(c(list(list(html = home_sec, label = "Home")), data_tabs))
   out_html <- file.path(out_dir, sprintf("report_%s.html", project))
   render_report_page(project, tb$bar, tb$panels, reg, asset_dir, out_html)
   unlink(tmp_dir, recursive = TRUE)
@@ -1510,26 +1543,44 @@ pic_tab_panel <- function(sec_html, active = FALSE, controls = "", subs = NULL, 
     return(sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s%s</div><div class="%s">%s<div class="pic-view">%s</div></div></section>',
                    if (active) " active" else "", x$id, x$title, info, src_hdr(p$src), pane_cls, ctrl, p$html))
   }
+  # サブタブは左パネル (縦並び) で選択。source は各サブパネル内 (右パネルのタイトル行) に置く。
   chunks <- pic_split_inner(x$inner, vapply(subs, function(s) s$marker, character(1)))
-  # サブタブごとの source を判定: すべて同一ならヘッダに 1 度、異なれば各サブパネル内に残す
-  pulled <- lapply(chunks, pic_pull_src)
-  uniq <- unique(Filter(nzchar, vapply(pulled, function(z) z$src, character(1))))
-  same_src <- length(uniq) <= 1
-  chunk_html <- if (same_src) vapply(pulled, function(z) z$html, character(1)) else chunks
-  hdr_src <- if (same_src && length(uniq) == 1) uniq[[1]] else ""
   btns <- vapply(seq_along(subs), function(i) sprintf(
     '<button class="pic-subtabbtn%s" type="button" data-sub="%s">%s</button>',
     if (i == 1L) " active" else "", subs[[i]]$id, html_escape(subs[[i]]$label)), character(1))
   panels <- vapply(seq_along(subs), function(i) sprintf(
-    '<div class="pic-subpanel%s" id="%s">%s</div>', if (i == 1L) " active" else "", subs[[i]]$id, chunk_html[[i]]), character(1))
-  subtab_bar <- sprintf('<nav class="pic-subtabs">%s</nav>', paste(btns, collapse = ""))
-  body <- if (nzchar(shared_controls)) {
-    sprintf('<div class="pic-2pane"><aside class="pic-ctrl">%s</aside><div class="pic-view">%s</div></div>',
-            shared_controls, paste(panels, collapse = ""))
-  } else paste(panels, collapse = "")
-  # ヘッダ順: タイトル -> (info) -> サブタブ -> source
-  sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s%s%s</div>%s</section>',
-          if (active) " active" else "", x$id, x$title, info, subtab_bar, src_hdr(hdr_src), body)
+    '<div class="pic-subpanel%s" id="%s">%s</div>', if (i == 1L) " active" else "", subs[[i]]$id, chunks[[i]]), character(1))
+  subnav <- sprintf('<nav class="pic-subtabs"><h4>View</h4>%s</nav>', paste(btns, collapse = ""))
+  left <- paste0(subnav, if (nzchar(shared_controls)) shared_controls else "")
+  body <- sprintf('<div class="pic-subtab-layout"><aside class="pic-subnav">%s</aside><div class="pic-view">%s</div></div>',
+                  left, paste(panels, collapse = ""))
+  # ヘッダ: タイトル -> (info)。サブタブは左パネルへ移動。
+  sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s</div>%s</section>',
+          if (active) " active" else "", x$id, x$title, info, body)
+}
+
+# Home (概要) セクションを組み立てる。各タブの説明文と source ファイル一覧を掲載。
+build_home_section <- function(tabs, project) {
+  cards <- character(0)
+  for (t in tabs) {
+    if (is.null(t$html) || !nzchar(t$html)) next
+    x <- pic_extract_section(t$html)
+    paths <- unique(regmatches(t$html, gregexpr('(?<=<a class="pic-dlcsv" href=")[^"]+', t$html, perl = TRUE))[[1]])
+    srcs_html <- if (length(paths) > 0) sprintf('<div class="pic-home-srcs">%s</div>',
+      paste(vapply(paths, function(p) sprintf(
+        '<a class="pic-dlcsv" href="%s" download title="Download %s"><span class="pic-src-dl">&#8681;</span>%s</a>',
+        p, p, p), character(1)), collapse = "")) else ""
+    desc_html <- if (nzchar(x$desc)) sprintf('<div class="pic-home-desc">%s</div>', x$desc) else ""
+    cards <- c(cards, sprintf(
+      '<div class="pic-home-card" data-target="%s" tabindex="0"><h3>%s</h3>%s%s</div>',
+      x$id, html_escape(x$title), desc_html, srcs_html))
+  }
+  intro <- sprintf(paste0('<p class="pic-home-intro">Interactive analysis report for <b>%s</b>. ',
+    'Each card below is one analysis step &mdash; click it to open that tab. ',
+    'The files listed under each card are the source data the figures are drawn from; click a file to download it.</p>'),
+    html_escape(project))
+  sprintf('<section id="home"><h2>Overview</h2>%s<div class="pic-home-cards">%s</div></section>',
+          intro, paste(cards, collapse = ""))
 }
 
 # タブバー + パネルを組み立てる。tabs: list(list(html=, label=, controls=, subs=, shared_controls=))。

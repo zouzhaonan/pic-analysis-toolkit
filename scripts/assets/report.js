@@ -373,6 +373,14 @@
       }
       activateTab(initial);
     }
+    // Home のカードをクリック/Enter でそのタブへ (ダウンロードリンクは除外)
+    document.querySelectorAll(".pic-home-card[data-target]").forEach(function (card) {
+      function go() { activateTab(card.dataset.target); }
+      card.addEventListener("click", function (e) { if (e.target.closest("a")) return; go(); });
+      card.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+      });
+    });
     // アクティブなタブのプロットを描画 (renderPlot が非表示を自己判定)
     renderWithin(document.body);
     // details は開いた時に描画
