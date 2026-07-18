@@ -1751,37 +1751,116 @@ pic_tab_src_paths <- function(tab_html) {
   paths
 }
 
-# Overview セクション。解析パイプラインの説明 + 各タブが何を示すかの解説カード。
+# Overview セクション。解析パイプラインを Materials & Methods 風のフローチャート
+# (各ステップの使用ツール + パラメータ + 再現用コード) で提示する。
 build_overview_section <- function(run, genome) {
-  # 各解析ステップの説明 (data-target はタブ id)
-  steps <- list(
-    list(tab = "qc",        n = "1", name = "Mapping QC",
-         d = "Per-sample read fate and sequencing depth. The stacked bars show how each read was assigned (trimmed, unmapped, multimapping, no-feature, ambiguous, assigned); the depth table lists total reads, UMIs, detected genes and their ratios."),
-    list(tab = "aggregate", n = "2", name = "Aggregation",
-         d = "Gene-body coverage metagene, scaled from the transcription start (TSS) to the end (TES). It shows where reads pile up along genes &mdash; the strong 3&prime; bias here is characteristic of PIC / 3&prime;-tag libraries."),
-    list(tab = "cor",       n = "3", name = "Sample correlation",
-         d = "Sample-to-sample correlation of the regularized-log expression. Replicates of the same group should correlate most strongly; a sample that stands apart from its group may be an outlier."),
-    list(tab = "pca",       n = "4", name = "PCA",
-         d = "Principal-component analysis of the whole expression matrix. The scree plot shows how much variance each axis captures; the scatter plots show how samples relate on PC1&ndash;PC3 (replicates should cluster)."),
-    list(tab = "deg",       n = "5", name = "Differential expression",
-         d = "DESeq2 differential expression. The heatmap shows z-scored expression of the differentially expressed genes across samples; the M-A and Volcano plots show, for a chosen group&times;group contrast, the log<sub>2</sub> fold change vs. mean expression and vs. significance."),
-    list(tab = "expr",      n = "6", name = "Gene expression",
-         d = "Normalized counts of individual genes across sample groups (box + beeswarm). Type a gene ID or symbol to add it; the plot updates automatically, and a gene name turns red when significant."),
-    list(tab = "enrich",    n = "7", name = "Enrichment",
-         d = "Functional enrichment of the differential signal. <b>GSEA</b> asks which biological terms are shifted up or down along the whole ranked gene list for each contrast &times; method; <b>ORA</b> asks which terms are over-represented among the genes of each DEG cluster.")
+  gtf <- sprintf("%s.gtf", genome)
+  code_block <- function(txt) sprintf('<pre class="pic-code">%s</pre>', txt)
+  tools_html <- function(ts) paste(vapply(ts, function(t) sprintf('<span class="pic-tool">%s</span>', html_escape(t)), character(1)), collapse = "")
+  step <- function(n, name, ts, desc, code)  # name/desc/code は HTML 済み
+    sprintf(paste0('<div class="pic-flow-step"><div class="pic-flow-head"><span class="pic-flow-n">%s</span>',
+                   '<h3>%s</h3><span class="pic-flow-tools">%s</span></div><p>%s</p>%s</div>'),
+            n, name, tools_html(ts), desc, code)
+  arrow <- '<div class="pic-flow-arrow">&#9660;</div>'
+
+  steps <- c(
+    step("0", "Setup (sample sheet &amp; parameters)", c("bash"),
+      'Everything below is parameterised by the sample sheet (sample &rarr; barcode &rarr; group). Set these once and every step loops over the samples.',
+      code_block(sprintf(paste0(
+'GENOME=%s                 <span class="c"># reference assembly</span>\n',
+'GTF=%s                    <span class="c"># gene models (same assembly)</span>\n',
+'IDX=hisat2_index/genome              <span class="c"># HISAT2 index (hisat2-build from FASTA)</span>\n',
+'ADAPTER=GATCGTCGGACT                 <span class="c"># PIC 3&#39; library adapter</span>\n',
+'THREADS=8 ; FDR=0.1\n',
+'<span class="c"># sample -&gt; 6&nbsp;bp barcode, and sample -&gt; group</span>\n',
+'declare -A BC=(  [Cntl_Nega_1]=ACAGTG [Cntl_Nega_2]=GCCAAT  ... )\n',
+'declare -A GRP=( [Cntl_Nega_1]=Cntl_Nega [Cntl_Nega_2]=Cntl_Nega ... )\n',
+'SAMPLES=( "${!BC[@]}" )'), html_escape(genome), html_escape(gtf)))),
+    step("1", "Demultiplex &amp; UMI extraction", c("seqkit", "awk"),
+      'Split the pooled paired-end FASTQ by cell barcode. On <b>R1</b>, bases 1&ndash;6 are the <b>UMI</b> and 7&ndash;12 the 6&nbsp;bp <b>barcode</b>; the biological cDNA is <b>R2</b>. Each read is assigned to a sample by its barcode, and the UMI&#43;barcode are written into the read name so they can be recovered after alignment.',
+      code_block(paste0(
+'<span class="c"># keep R2 reads whose R1 barcode matches; tag name with barcode_UMI</span>\n',
+'for s in "${SAMPLES[@]}"; do\n',
+'  paste &lt;(seqkit fx2tab R1.fastq.gz) &lt;(seqkit fx2tab R2.fastq.gz) \\\n',
+'  | awk -F\'\\t\' -v bc="${BC[$s]}" \'substr($2,7,6)==bc {\n',
+'      umi=substr($2,1,6);\n',
+'      print "@"$4"_"bc"_"umi"\\n"$5"\\n+\\n"$6 }\' \\\n',
+'  | gzip &gt; demux/${s}.fastq.gz\ndone'))),
+
+    step("2", "Adapter trimming &amp; alignment", c("Trim Galore", "HISAT2", "samtools"),
+      'The 3&#39; adapter is removed with Trim Galore, then the trimmed cDNA is aligned single-end with HISAT2 to a plain index (no splice sites baked in; strand is enforced later at counting).',
+      code_block(paste0(
+'for s in "${SAMPLES[@]}"; do\n',
+'  trim_galore -j $THREADS -a $ADAPTER -o trim/ demux/${s}.fastq.gz\n',
+'  hisat2 -p $THREADS -x $IDX -U trim/${s}_trimmed.fq.gz \\\n',
+'         --summary-file map/${s}.log \\\n',
+'  | samtools sort -@ $THREADS -o map/${s}.bam\ndone'))),
+
+    step("3", "Assign reads to genes", c("featureCounts", "samtools"),
+      'featureCounts assigns each read to a gene on the <b>forward/sense</b> strand (<code>-s 1</code>, matching 3&#39;-biased PIC) and, with <code>-R BAM</code>, writes the gene id into each read&#39;s <code>XT</code> tag &mdash; the key for UMI counting.',
+      code_block(paste0(
+'for s in "${SAMPLES[@]}"; do\n',
+'  featureCounts -T $THREADS -s 1 -t exon -g gene_id \\\n',
+'      -a $GTF -R BAM -o count/${s}.fc.tsv map/${s}.bam\n',
+'  samtools sort -@ $THREADS -o map/${s}.assigned.bam map/${s}.bam.featureCounts.bam\n',
+'  samtools index map/${s}.assigned.bam\ndone'))),
+
+    step("4", "UMI counting &amp; deduplication", c("UMI-tools", "samtools"),
+      'UMIs are collapsed per gene (<code>XT</code>) per barcode with the exact-<code>unique</code> method, giving a per-gene UMI count table; a UMI-deduplicated BAM is also kept for coverage tracks.',
+      code_block(paste0(
+'for s in "${SAMPLES[@]}"; do\n',
+'  umi_tools count --method=unique --per-gene --gene-tag=XT --per-cell \\\n',
+'      -I map/${s}.assigned.bam -S count/${s}.umi.tsv\n',
+'  umi_tools dedup --method=unique --per-gene --gene-tag=XT --per-cell \\\n',
+'      -I map/${s}.assigned.bam -S map/${s}.umi.bam ; samtools index map/${s}.umi.bam\ndone'))),
+
+    step("5", "DESeq2: normalization &amp; differential expression", c("DESeq2", "R"),
+      'Per-gene UMI counts (summed over barcodes) are modelled with design <code>~group</code> and <b>poscounts</b> size factors (robust to sparse 3&#39; zeros). All pairwise <b>group&times;group</b> contrasts are tested; DEGs are <code>padj&nbsp;&lt;&nbsp;FDR</code>. rlog values feed the PCA, heatmap and (via hierarchical clustering of group-mean profiles) the DEG clusters used by ORA.',
+      code_block(paste0(
+'<span class="c"># R</span>\n',
+'dds &lt;- DESeqDataSetFromMatrix(umi_counts, coldata, design = ~ group)\n',
+'dds &lt;- DESeq(dds, sfType = "poscounts")\n',
+'norm &lt;- counts(dds, normalized = TRUE)         <span class="c"># normalized table</span>\n',
+'rld  &lt;- rlog(dds)                              <span class="c"># PCA / heatmap / clustering</span>\n',
+'for (p in combn(levels(coldata$group), 2, simplify = FALSE))\n',
+'  res &lt;- results(dds, contrast = c("group", p[1], p[2]),\n',
+'                 independentFiltering = FALSE, cooksCutoff = FALSE)  <span class="c"># DEG: padj &lt; 0.1</span>'))),
+
+    step("6", "Coverage tracks &amp; gene-body aggregation", c("bedtools", "bigWigAverageOverBed"),
+      'A CPM-scaled bigWig is made from each UMI-deduplicated BAM, then averaged over a tiled gene-body BED (each gene scaled TSS&rarr;TES into 100 bins with 1&nbsp;kb / 10-bin flanks) to build the metagene profile.',
+      code_block(paste0(
+'for s in "${SAMPLES[@]}"; do\n',
+'  n=$(samtools view -c map/${s}.umi.bam)                   <span class="c"># CPM denominator</span>\n',
+'  bedtools genomecov -split -bg -ibam map/${s}.umi.bam \\\n',
+'  | awk -v n=$n \'{ $4=$4*1e6/n; print }\' | sort -k1,1 -k2,2n &gt; bw/${s}.bg\n',
+'  bedGraphToBigWig bw/${s}.bg ${GENOME}.chrom.sizes bw/${s}.cpm.bw\n',
+'  bigWigAverageOverBed bw/${s}.cpm.bw genebody_bins.bed agg/${s}.tab  <span class="c"># mean0 per bin</span>\ndone'))),
+
+    step("7", "Functional enrichment", c("clusterProfiler", "R"),
+      'Enrichment uses human-ortholog gene <b>symbols</b> against custom gene-set libraries (GO / KEGG / Reactome / WikiPathways / HDO / HPO / MPO). <b>GSEA</b> runs per contrast on the DESeq2 <code>stat</code> ranking; <b>ORA</b> (<code>enricher</code>, BH-adjusted) tests each DEG cluster against all tested genes.',
+      code_block(paste0(
+'<span class="c"># R &mdash; GSEA per contrast (ranked by DESeq2 stat)</span>\n',
+'ranks &lt;- sort(setNames(res$stat, res$symbol), decreasing = TRUE)\n',
+'gsea  &lt;- GSEA(ranks, gson = lib, minGSSize = 10, maxGSSize = 500, pvalueCutoff = 1)\n',
+'<span class="c"># ORA per DEG cluster; universe = all tested symbols</span>\n',
+'ora   &lt;- enricher(cluster_genes, universe = all_symbols, gson = lib,\n',
+'                  minGSSize = 10, maxGSSize = 500, pvalueCutoff = 1)')))
   )
-  cards <- vapply(steps, function(s) sprintf(
-    '<div class="pic-ov-step" data-target="%s" tabindex="0"><h3><span class="pic-ov-num">%s</span>%s</h3><p>%s</p></div>',
-    s$tab, s$n, html_escape(s$name), s$d), character(1))
+
   intro <- sprintf(paste0('<p class="pic-ov-intro">This report summarizes a <b>PIC</b> (photo-isolation chemistry) ',
     '3&prime;-biased RNA-seq analysis for run <b>%s</b>, mapped to <b>%s</b>. ',
-    'The pipeline runs, in order: read mapping &amp; QC &rarr; gene-body aggregation &rarr; sample correlation ',
-    '&rarr; PCA &rarr; DESeq2 differential expression &rarr; per-gene expression &rarr; functional enrichment ',
-    '(GSEA / ORA). Each tab below is one step &mdash; click a card to open it. Every source table can be ',
-    'saved from the <b>Downloads</b> tab.</p>'),
+    'The flowchart below is a reproducible summary of the pipeline: each step lists the tool(s) used and an ',
+    'example command (using the underlying tools rather than the <code>pic</code> wrapper), with a ',
+    '<code>for</code>-loop over samples so it generalises to any design. Open a tab to see that step&#39;s ',
+    'results; download the underlying tables from the <b>Downloads</b> tab.</p>'),
     html_escape(run), html_escape(genome))
-  sprintf('<section id="overview"><h2>Overview</h2>%s<div class="pic-ov-steps">%s</div></section>',
-          intro, paste(cards, collapse = ""))
+  note <- paste0('<p class="pic-methods-note">Key parameters: barcode/UMI = 6&nbsp;bp each on R1; adapter ',
+    '<code>GATCGTCGGACT</code>; featureCounts <code>-s 1</code> (forward); UMI method <code>unique</code>; ',
+    'DESeq2 <code>~group</code>, <code>sfType=poscounts</code>, no LFC shrinkage, FDR&nbsp;=&nbsp;0.1; ',
+    'PCA on rlog (top 500 variable genes); metagene 100 body bins + 1&nbsp;kb flanks; GSEA/ORA ',
+    'gene-set size 10&ndash;500, BH adjustment. R package versions come from the pinned conda environment.</p>')
+  sprintf('<section id="overview"><h2>Overview &mdash; analysis pipeline</h2>%s<div class="pic-flow">%s</div>%s</section>',
+          intro, paste(steps, collapse = arrow), note)
 }
 
 # Downloads セクション。プロジェクトの全 csv/tsv をカテゴリ別 (折りたたみ) に列挙。
@@ -1843,8 +1922,7 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL) {
     first <- FALSE
   }
   intro <- paste0('<p class="pic-ov-intro"><b>Every source table is embedded in this HTML file</b> &mdash; ',
-    'expand a section and click a file to download it (or use the <b>Download</b> button on any figure). ',
-    'Downloads are decompressed in your browser, so no separate data files are needed.</p>')
+    'expand a section and click a file to download it.</p>')
   sprintf('<section id="downloads"><h2>Downloads</h2>%s<div class="pic-ov-groups">%s</div></section>',
           intro, paste(sections, collapse = ""))
 }
@@ -1886,9 +1964,9 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
     '<title>pic report — ', html_escape(title), '</title>',
     '<style>', report_css(), '</style>',
     '</head><body>',
-    # ナビバー左端にレポート名 (クリックでレポート先頭へ戻る)、右側にタブを両端揃え
-    '<nav class="pic-tabs"><a class="pic-brand" href="', html_escape(basename(out_html)), '">',
-    html_escape(title), ' Report</a><div class="pic-tabbtns">', nav_html, '</div></nav>',
+    # ナビバー左端にレポート名 (ただの文字)、区切り線、右側にタブを両端揃え
+    '<nav class="pic-tabs"><span class="pic-brand">', html_escape(title), ' Report</span>',
+    '<div class="pic-tabbtns">', nav_html, '</div></nav>',
     '<main class="pic-main">', body_html, '</main>',
     '<script>', plotly_js, '</script>',
     '<script>var PIC_PLOTS=', plots_json, ';var PIC_EXPR=', expr_json, ';var PIC_FILES=', files_json, ';</script>',
