@@ -82,7 +82,7 @@ h4{font-size:14px;margin:6px 0;color:var(--muted)}
 .pic-plot-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
 .pic-plot-cell{border:1px solid var(--line);border-radius:8px;padding:8px}
 .pic-plot{width:100%;height:420px}
-.pic-pca-scree-row .pic-plot{height:140px}
+.pic-pca-scree-row .pic-plot{height:180px}
 .pic-pca-scree-row .pic-plot-cell{padding:4px 8px}
 .pic-pca-scree-row h4{margin:2px 0 2px}
 

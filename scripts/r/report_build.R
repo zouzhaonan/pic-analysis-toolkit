@@ -751,7 +751,7 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
       hovermode = "x", margin = list(l = 56, r = 16, t = 8, b = 28), showlegend = FALSE  # 1 色なので凡例不要
     )))
   }
-  scree_block <- sprintf('<div class="pic-plot-cell"><h4>Variance explained</h4><div id="%spca_scree" class="pic-plot"></div></div>', id_prefix)
+  scree_block <- sprintf('<div class="pic-plot-cell"><div id="%spca_scree" class="pic-plot"></div></div>', id_prefix)
 
   pair_blocks <- character(0)
   pairs <- list(c("PC1", "PC2"), c("PC2", "PC3"))
@@ -783,7 +783,7 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
       legend = list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0)
     )
     register_plot(reg, id, list(data = traces, layout = layout))
-    pair_blocks <- c(pair_blocks, sprintf('<div class="pic-plot-cell"><h4>%s vs %s</h4><div id="%s" class="pic-plot"></div></div>', xc, yc, id))
+    pair_blocks <- c(pair_blocks, sprintf('<div class="pic-plot-cell"><div id="%s" class="pic-plot"></div></div>', id))
   }
   if (is.null(varpct) && length(pair_blocks) == 0) return(NULL)
   # 1 行目: 寄与率のみ / 2 行目: PC1-2, PC2-3
