@@ -115,6 +115,10 @@
       });
     });
   }
+  // Downloads タブ内の graft/host ブロックを現ゲノムに合わせて表示切替
+  function applyGenoDl() {
+    document.querySelectorAll(".pic-geno-dl").forEach(function (d) { d.hidden = (d.dataset.geno !== currentGeno); });
+  }
 
   // HTML 要素 (heatmap / QC / correlation テーブル) を PNG 化してダウンロードする。
   // 外部ライブラリ不要: SVG <foreignObject> に要素とレポート CSS を埋めて canvas 描画。
@@ -434,11 +438,13 @@
     var genobtns = document.querySelectorAll(".pic-genobtn");
     if (genobtns.length) {
       currentGeno = (document.querySelector(".pic-genobtn.active") || genobtns[0]).dataset.geno;
+      applyGenoDl();  // Downloads の graft/host ブロック初期表示
       genobtns.forEach(function (b) {
         b.addEventListener("click", function () {
           var from = currentGeno;
           currentGeno = b.dataset.geno;
           genobtns.forEach(function (x) { x.classList.toggle("active", x === b); });
+          applyGenoDl();
           if (currentTab && from && from !== currentGeno) syncGenoState(from, currentGeno, currentTab);
           if (currentTab) {
             activateTab(currentTab);
@@ -585,8 +591,10 @@
           try { Plotly.restyle(div, { visible: hide[g] ? "legendonly" : true }, groups[g]); } catch (e) {}
         });
       });
-      // HTML テーブル: 行 (data-group/data-grow) と列 (data-gcol) を隠す
+      // HTML テーブル/バー: 行 (data-group/data-grow) と列 (data-gcol) を隠す。
+      // ただし group トグル自身 (.pic-gtoggle) は data-group を持つが隠さない。
       tab.querySelectorAll("[data-group],[data-grow]").forEach(function (r) {
+        if (r.classList.contains("pic-gtoggle")) return;
         r.style.display = hide[r.dataset.group || r.dataset.grow] ? "none" : "";
       });
       tab.querySelectorAll("[data-gcol]").forEach(function (c) {

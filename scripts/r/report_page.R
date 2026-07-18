@@ -273,7 +273,7 @@ pic_tab_src_paths <- function(tab_html) {
 
 # Overview セクション。解析パイプラインを Materials & Methods 風のフローチャート
 # (各ステップの使用ツール + パラメータ + 再現用コード) で提示する。
-build_overview_section <- function(run, genome) {
+build_overview_section <- function(run, genome, pre_steps = list()) {
   code_block <- function(txt) sprintf('<pre class="pic-code">%s</pre>', txt)
   # ツールバッジ: name|version を 1 つの monospace バッジ "name version" にまとめる。
   tools_html <- function(ts) paste(vapply(ts, function(t) {
@@ -291,32 +291,32 @@ build_overview_section <- function(run, genome) {
     tools_html(c("Trim Galore|0.6.10", "HISAT2|2.2.1", "samtools|1.23.1", "featureCounts|2.1.1",
                  "UMI-tools|1.1.4", "DESeq2|1.46.0", "R|4.4.3")))
 
-  steps <- c(
-    step("1", "Adapter Trimming &amp; Alignment",
-      'Trim the 3&#39; PIC adapter (<code>Trim Galore</code>), then align single-end to the <code>HISAT2</code> index.',
-      code_block(sprintf(paste0(
+  step_defs <- c(pre_steps, list(
+    list(name = "Adapter Trimming &amp; Alignment",
+      desc = 'Trim the 3&#39; PIC adapter (<code>Trim Galore</code>), then align single-end to the <code>HISAT2</code> index.',
+      code = code_block(sprintf(paste0(
 'trim_galore -a GATCGTCGGACT -o trim/ demux/${sample}.fastq.gz\n',
 'hisat2 -x hisat2_index/%s -U trim/${sample}_trimmed.fq.gz -S map/${sample}.sam\n',
 'samtools sort -o map/${sample}.bam map/${sample}.sam\n',
 'samtools index map/${sample}.bam'), html_escape(genome)))),
 
-    step("2", "Read-to-Gene Assignment",
-      '<code>featureCounts</code> on the forward/sense strand (<code>-s 1</code>); the gene id is stored in each read&#39;s <code>XT</code> tag.',
-      code_block(sprintf(paste0(
+    list(name = "Read-to-Gene Assignment",
+      desc = '<code>featureCounts</code> on the forward/sense strand (<code>-s 1</code>); the gene id is stored in each read&#39;s <code>XT</code> tag.',
+      code = code_block(sprintf(paste0(
 'featureCounts -s 1 -t exon -g gene_id -a %s.gtf -R BAM \\\n',
 '    -o count/${sample}.fc.tsv map/${sample}.bam\n',
 'samtools sort -o map/${sample}.assigned.bam map/${sample}.bam.featureCounts.bam\n',
 'samtools index map/${sample}.assigned.bam'), html_escape(genome)))),
 
-    step("3", "UMI Counting",
-      'Collapse UMIs per gene (<code>XT</code>) per barcode with <code>UMI-tools</code> (exact-<code>unique</code> method).',
-      code_block(paste0(
+    list(name = "UMI Counting",
+      desc = 'Collapse UMIs per gene (<code>XT</code>) per barcode with <code>UMI-tools</code> (exact-<code>unique</code> method).',
+      code = code_block(paste0(
 'umi_tools count --method=unique --per-gene --gene-tag=XT --per-cell \\\n',
 '    -I map/${sample}.assigned.bam -S count/${sample}.umi.tsv'))),
 
-    step("4", "Differential Expression",
-      'Join the per-sample UMI counts into a genes&times;samples matrix and run <code>DESeq2</code>: <code>~group</code> design, <b>poscounts</b> size factors, all pairwise group contrasts, DEGs at <code>padj&nbsp;&lt;&nbsp;0.1</code>.',
-      code_block(paste0(
+    list(name = "Differential Expression",
+      desc = 'Join the per-sample UMI counts into a genes&times;samples matrix and run <code>DESeq2</code>: <code>~group</code> design, <b>poscounts</b> size factors, all pairwise group contrasts, DEGs at <code>padj&nbsp;&lt;&nbsp;0.1</code>.',
+      code = code_block(paste0(
 '<span class="c"># R</span>\n',
 'grp &lt;- c("Cntl_Nega","Cntl_Nega","Cntl_Nega", "Cntl_Posi","Cntl_Posi","Cntl_Posi", ...)  <span class="c"># one per sample</span>\n',
 'coldata &lt;- data.frame(group = factor(grp), row.names = colnames(umi_counts))\n',
@@ -324,8 +324,11 @@ build_overview_section <- function(run, genome) {
 'dds &lt;- DESeq(dds, sfType = "poscounts")\n',
 '<span class="c"># for each pairwise group contrast (A vs B):</span>\n',
 'res &lt;- results(dds, contrast = c("group", "A", "B"),\n',
-'               independentFiltering = FALSE, cooksCutoff = FALSE)')))
+'               independentFiltering = FALSE, cooksCutoff = FALSE)'))))
   )
+  steps <- vapply(seq_along(step_defs), function(i) {
+    d <- step_defs[[i]]; step(as.character(i), d$name, d$desc, d$code)
+  }, character(1))
 
   overview <- sprintf(paste0('<p class="pic-ov-intro">This self-contained report presents the <b>PIC</b> ',
     '(photo-isolation chemistry) 3&prime;-biased RNA-seq run <b>%s</b>, mapped to <b>%s</b>.</p>'),
@@ -371,7 +374,7 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL) {
                      vapply(cats, function(ct) { r <- match(ct_base(ct), order_cats); if (is.na(r)) length(order_cats) + 1L else r }, integer(1)),
                      cats)]
 
-  secs <- character(0)
+  secs <- character(0); sec_cts <- character(0)
   for (ct in cats) {
     ids <- names(files)[vapply(files, function(f) identical(f$cat, ct), logical(1))]
     if (length(ids) == 0) next
@@ -413,11 +416,22 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL) {
     # GSEA/ORA 以外は展開、GSEA/ORA は畳む
     sec <- sprintf('<details class="pic-ov-sec"%s><summary><span class="pic-ov-cat">%s</span>%s</summary>%s</details>',
                    if (open_this) " open" else "", html_escape(ct), jump, body)
-    secs <- c(secs, sec)
+    secs <- c(secs, sec); sec_cts <- c(sec_cts, ct)
   }
-  # 2 欄グリッド (行優先) で列挙。既定では Differential Expression まで展開
-  sprintf('<section id="downloads"><h2>Downloads</h2><div class="pic-ov-groups pic-ov-2col">%s</div></section>',
-          paste(secs, collapse = ""))
+  fr <- vapply(sec_cts, ct_frac, integer(1))
+  if (!any(fr > 0L)) {
+    # 通常レポート: 2 欄グリッド
+    return(sprintf('<section id="downloads"><h2>Downloads</h2><div class="pic-ov-groups pic-ov-2col">%s</div></section>',
+                   paste(secs, collapse = "")))
+  }
+  # xenograft: Genome split を上部 (全幅) に、graft/host は 2 欄でゲノム切替
+  split_i <- which(sec_cts == "Genome split")
+  graft_i <- which(fr == 1L); host_i <- which(fr == 2L)
+  top <- if (length(split_i)) sprintf('<div class="pic-dl-top">%s</div>', paste(secs[split_i], collapse = "")) else ""
+  grid <- function(sel) sprintf('<div class="pic-ov-groups pic-ov-2col">%s</div>', paste(secs[sel], collapse = ""))
+  graft_block <- sprintf('<div class="pic-geno-dl" data-geno="graft">%s</div>', grid(graft_i))
+  host_block  <- sprintf('<div class="pic-geno-dl" data-geno="host" hidden>%s</div>', grid(host_i))
+  sprintf('<section id="downloads"><h2>Downloads</h2>%s%s%s</section>', top, graft_block, host_block)
 }
 
 # タブバー + パネルを組み立てる。tabs: list(list(html=, label=, controls=, subs=, shared_controls=))。
@@ -504,9 +518,12 @@ section_genome_split <- function(summary_df, src = "", geno_map = NULL,
   samples <- as.character(summary_df$sample)
   ord <- if (!is.null(sample_order)) order(match(samples, sample_order)) else seq_along(samples)
   ruler <- '<div class="pic-bar-ruler"><span>0%</span><span>20%</span><span>40%</span><span>60%</span><span>80%</span><span>100%</span></div>'
-  rows <- character(0)
+  rows <- character(0); grp_prev <- NULL
   for (i in ord) {
     sample <- samples[[i]]
+    g_cur <- grpof(sample)
+    sep_cls <- if (!is.null(grp_prev) && !identical(g_cur, grp_prev)) " pic-grp-start" else ""
+    grp_prev <- g_cur
     vals <- vapply(cats, function(cc) suppressWarnings(as.numeric(summary_df[[cc]][[i]])), numeric(1))
     vals[!is.finite(vals)] <- 0
     tot <- sum(vals); if (tot <= 0) tot <- 1
@@ -518,8 +535,8 @@ section_genome_split <- function(summary_df, src = "", geno_map = NULL,
       segs <- c(segs, sprintf('<div class="pic-seg" style="width:%.4f%%;background:%s" title="%s — %s"></div>',
                               pct, PIC_XENO_COLORS[[cc]], html_escape(sample), html_escape(tip)))
     }
-    rows <- c(rows, sprintf('<div class="pic-bar-row" data-group="%s"><div class="pic-bar-label" style="color:%s;font-weight:600">%s</div><div class="pic-bar-track">%s</div></div>',
-                            html_escape(grpof(sample)), scol(sample), html_escape(sample), paste(segs, collapse = "")))
+    rows <- c(rows, sprintf('<div class="pic-bar-row%s" data-group="%s"><div class="pic-bar-label" style="color:%s;font-weight:600">%s</div><div class="pic-bar-track">%s</div></div>',
+                            sep_cls, html_escape(g_cur), scol(sample), html_escape(sample), paste(segs, collapse = "")))
   }
   legend <- vapply(cats, function(cc) sprintf('<span class="pic-legend-item"><span class="pic-swatch" style="background:%s"></span>%s</span>',
                                               PIC_XENO_COLORS[[cc]], html_escape(cat_label(cc))), character(1))
@@ -587,7 +604,13 @@ pic_is_xenograft_out <- function(out_dir) {
 # 冒頭の intro のみ xenograft 用 (2 ゲノム + xengsort split + ゲノム切替の案内) に差し替える。
 build_overview_section_xeno <- function(run, fr_list) {
   base_genome <- if (length(fr_list) > 0) fr_list[[1]]$genome else ""
-  base <- build_overview_section(run, base_genome)  # <section><h2>Overview</h2><intro><h3>Analysis Pipeline</h3>...
+  # パイプライン先頭に xengsort によるゲノム振り分けステップを追加
+  xengsort_step <- list(
+    name = "Genome split (xengsort)",
+    desc = 'Classify each read to the <b>graft</b> or <b>host</b> genome with <code>xengsort</code>; each fraction is then mapped to its own reference by the steps below (run per genome).',
+    code = paste0('<pre class="pic-code">pic xenograft --index &lt;index&gt; --demux-fastq-dir demux --out-dir out/\n',
+                  '<span class="c"># -&gt; out/classified/{graft,host}/  +  xenograft_classify_summary__&lt;run&gt;.tsv</span></pre>'))
+  base <- build_overview_section(run, base_genome, pre_steps = list(xengsort_step))  # <section><h2>Overview</h2><intro><h3>Analysis Pipeline</h3>...
   gl <- vapply(names(fr_list), function(fr) {
     fa <- fr_list[[fr]]
     sprintf('<b>%s</b>%s', html_escape(fr), if (nzchar(fa$genome)) sprintf(" (%s)", html_escape(fa$genome)) else "")

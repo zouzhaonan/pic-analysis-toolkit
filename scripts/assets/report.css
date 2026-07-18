@@ -249,6 +249,9 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-ov-groups{columns:2;column-gap:14px}
 .pic-ov-groups.pic-ov-2col{columns:auto;display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;margin-top:2px}
 @media(max-width:820px){.pic-ov-groups,.pic-ov-groups.pic-ov-2col{columns:1;grid-template-columns:1fr}}
+/* xenograft Downloads: 上部の Genome split (全幅) */
+.pic-dl-top{margin-bottom:14px}
+.pic-dl-top .pic-ov-sec{break-inside:avoid}
 .pic-ov-sec{border:1px solid var(--line);border-radius:10px;background:#fcfdff;padding:2px 16px;break-inside:avoid;margin-bottom:12px}
 .pic-ov-2col .pic-ov-sec{margin-bottom:0}
 .pic-ov-sec>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:12px;padding:12px 0;font-weight:700}
