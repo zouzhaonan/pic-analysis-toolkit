@@ -70,7 +70,7 @@
     var css = "";
     document.querySelectorAll("style").forEach(function (s) {
       var t = s.textContent || "";
-      if (t.indexOf(".pic-header") !== -1 || t.indexOf(".pic-hm") !== -1) css += t + "\n";
+      if (t.indexOf(".pic-tabs") !== -1 || t.indexOf(".pic-hm") !== -1) css += t + "\n";
     });
     // スクロール/sticky を解除して全体を描く
     css += ".pic-hm-scroll{max-height:none!important;overflow:visible!important}" +
@@ -375,11 +375,11 @@
       }
       activateTab(initial);
     }
-    // Overview の「open tab →」でそのタブへ (summary の折りたたみは発火させない)
-    document.querySelectorAll(".pic-ov-jump[data-target]").forEach(function (jump) {
-      function go() { activateTab(jump.dataset.target); }
-      jump.addEventListener("click", function (e) { e.preventDefault(); e.stopPropagation(); go(); });
-      jump.addEventListener("keydown", function (e) {
+    // Overview の解説カード / Downloads の「open tab →」でそのタブへ
+    document.querySelectorAll(".pic-ov-step[data-target],.pic-ov-jump[data-target]").forEach(function (el) {
+      function go() { activateTab(el.dataset.target); }
+      el.addEventListener("click", function (e) { e.preventDefault(); e.stopPropagation(); go(); });
+      el.addEventListener("keydown", function (e) {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); go(); }
       });
     });

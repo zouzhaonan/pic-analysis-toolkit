@@ -134,7 +134,7 @@ file_category <- function(rel) {
   if (grepl("correlation", b))    return(list(key = "cor", title = "Sample Correlation", tab = "cor"))
   if (grepl("PCA", b))            return(list(key = "pca", title = "PCA", tab = "pca"))
   if (grepl("^stats|DEG", b))     return(list(key = "deg", title = "Differential Expression", tab = "deg"))
-  if (grepl("UMI_count|normalizedCountTable", b)) return(list(key = "expr", title = "Gene Expression", tab = "expr"))
+  if (grepl("UMI_count|normalizedCountTable", b)) return(list(key = "expr", title = "Count table", tab = "expr"))
   list(key = "mapping", title = "Mapping", tab = "qc")
 }
 
@@ -1616,8 +1616,11 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
       list(label = "GSEA", id = "enrich-gsea", marker = ""),
       list(label = "ORA",  id = "enrich-ora",  marker = '<div class="pic-enrich-ora">')))
   )
-  overview_sec <- build_overview_section(data_tabs, run, genome, group_pal)
-  tb <- build_tabs(c(list(list(html = overview_sec, label = "Overview")), data_tabs))
+  overview_sec  <- build_overview_section(run, genome)
+  downloads_sec <- build_downloads_section(data_tabs, run, genome, group_pal)
+  tb <- build_tabs(c(list(list(html = overview_sec, label = "Overview")),
+                     data_tabs,
+                     list(list(html = downloads_sec, label = "Downloads"))))
   out_html <- file.path(out_dir, sprintf("report_%s.html", project))
   render_report_page(run, tb$bar, tb$panels, reg, asset_dir, out_html)
   unlink(tmp_dir, recursive = TRUE)
@@ -1748,9 +1751,42 @@ pic_tab_src_paths <- function(tab_html) {
   paths
 }
 
-# Overview & Downloads セクション。全幅の説明 + プロジェクトの全 csv/tsv を
-# カテゴリ別 (折りたたみ) に列挙。各ファイルは HTML 埋め込み・クリックで DL。
-build_overview_section <- function(tabs, run, genome, group_pal = NULL) {
+# Overview セクション。解析パイプラインの説明 + 各タブが何を示すかの解説カード。
+build_overview_section <- function(run, genome) {
+  # 各解析ステップの説明 (data-target はタブ id)
+  steps <- list(
+    list(tab = "qc",        n = "1", name = "Mapping QC",
+         d = "Per-sample read fate and sequencing depth. The stacked bars show how each read was assigned (trimmed, unmapped, multimapping, no-feature, ambiguous, assigned); the depth table lists total reads, UMIs, detected genes and their ratios."),
+    list(tab = "aggregate", n = "2", name = "Aggregation",
+         d = "Gene-body coverage metagene, scaled from the transcription start (TSS) to the end (TES). It shows where reads pile up along genes &mdash; the strong 3&prime; bias here is characteristic of PIC / 3&prime;-tag libraries."),
+    list(tab = "cor",       n = "3", name = "Sample correlation",
+         d = "Sample-to-sample correlation of the regularized-log expression. Replicates of the same group should correlate most strongly; a sample that stands apart from its group may be an outlier."),
+    list(tab = "pca",       n = "4", name = "PCA",
+         d = "Principal-component analysis of the whole expression matrix. The scree plot shows how much variance each axis captures; the scatter plots show how samples relate on PC1&ndash;PC3 (replicates should cluster)."),
+    list(tab = "deg",       n = "5", name = "Differential expression",
+         d = "DESeq2 differential expression. The heatmap shows z-scored expression of the differentially expressed genes across samples; the M-A and Volcano plots show, for a chosen group&times;group contrast, the log<sub>2</sub> fold change vs. mean expression and vs. significance."),
+    list(tab = "expr",      n = "6", name = "Gene expression",
+         d = "Normalized counts of individual genes across sample groups (box + beeswarm). Type a gene ID or symbol to add it; the plot updates automatically, and a gene name turns red when significant."),
+    list(tab = "enrich",    n = "7", name = "Enrichment",
+         d = "Functional enrichment of the differential signal. <b>GSEA</b> asks which biological terms are shifted up or down along the whole ranked gene list for each contrast &times; method; <b>ORA</b> asks which terms are over-represented among the genes of each DEG cluster.")
+  )
+  cards <- vapply(steps, function(s) sprintf(
+    '<div class="pic-ov-step" data-target="%s" tabindex="0"><h3><span class="pic-ov-num">%s</span>%s</h3><p>%s</p></div>',
+    s$tab, s$n, html_escape(s$name), s$d), character(1))
+  intro <- sprintf(paste0('<p class="pic-ov-intro">This report summarizes a <b>PIC</b> (photo-isolation chemistry) ',
+    '3&prime;-biased RNA-seq analysis for run <b>%s</b>, mapped to <b>%s</b>. ',
+    'The pipeline runs, in order: read mapping &amp; QC &rarr; gene-body aggregation &rarr; sample correlation ',
+    '&rarr; PCA &rarr; DESeq2 differential expression &rarr; per-gene expression &rarr; functional enrichment ',
+    '(GSEA / ORA). Each tab below is one step &mdash; click a card to open it. Every source table can be ',
+    'saved from the <b>Downloads</b> tab.</p>'),
+    html_escape(run), html_escape(genome))
+  sprintf('<section id="overview"><h2>Overview</h2>%s<div class="pic-ov-steps">%s</div></section>',
+          intro, paste(cards, collapse = ""))
+}
+
+# Downloads セクション。プロジェクトの全 csv/tsv をカテゴリ別 (折りたたみ) に列挙。
+# 各ファイルは HTML 埋め込み・クリックで DL。
+build_downloads_section <- function(tabs, run, genome, group_pal = NULL) {
   proj <- getOption("pic.report.projdir")
   if (!is.null(proj)) {
     all <- list.files(proj, pattern = "\\.(csv|tsv)$", recursive = TRUE)
@@ -1765,12 +1801,12 @@ build_overview_section <- function(tabs, run, genome, group_pal = NULL) {
   ext_label <- function(name) { ext <- toupper(tools::file_ext(name)); if (nzchar(ext)) sprintf("Download %s", ext) else "Download" }
   file_li <- function(i) {
     f <- files[[i]]
-    sprintf('<li>%s<code class="pic-ov-fname">%s</code><span class="pic-ov-desc">%s</span></li>',
-            dl_btn(i, ext_label(f$name)), html_escape(f$name), html_escape(f$desc))
+    sprintf('<li>%s<span class="pic-ov-desc">%s</span></li>',
+            dl_btn(i, ext_label(f$name)), html_escape(f$desc))
   }
 
   order_cats <- c("Mapping", "Aggregation", "Sample Correlation", "PCA",
-                  "Differential Expression", "Gene Expression",
+                  "Count table", "Differential Expression",
                   "Enrichment — GSEA", "Enrichment — ORA")
   cats <- unique(vapply(files, function(f) f$cat, character(1)))
   cats <- c(intersect(order_cats, cats), setdiff(cats, order_cats))
@@ -1806,11 +1842,10 @@ build_overview_section <- function(tabs, run, genome, group_pal = NULL) {
                                     if (first) " open" else "", html_escape(ct), jump, body))
     first <- FALSE
   }
-  intro <- sprintf(paste0('<p class="pic-ov-intro">Interactive analysis report for run <b>%s</b>, ',
-    'mapped to <b>%s</b>. <b>Every source table is embedded in this file</b> &mdash; expand a section and ',
-    'click a file to download it (or use the <b>Download</b> button on any figure). No separate data files needed.</p>'),
-    html_escape(run), html_escape(genome))
-  sprintf('<section id="overview"><h2>Overview &amp; Downloads</h2>%s<div class="pic-ov-groups">%s</div></section>',
+  intro <- paste0('<p class="pic-ov-intro"><b>Every source table is embedded in this HTML file</b> &mdash; ',
+    'expand a section and click a file to download it (or use the <b>Download</b> button on any figure). ',
+    'Downloads are decompressed in your browser, so no separate data files are needed.</p>')
+  sprintf('<section id="downloads"><h2>Downloads</h2>%s<div class="pic-ov-groups">%s</div></section>',
           intro, paste(sections, collapse = ""))
 }
 
@@ -1831,7 +1866,7 @@ build_tabs <- function(tabs, extra_nav = "") {
                                       subs = t$subs,
                                       shared_controls = if (!is.null(t$shared_controls)) t$shared_controls else ""))
   }
-  list(bar = sprintf('<nav class="pic-tabs">%s%s</nav>', paste(btns, collapse = ""), extra_nav),
+  list(bar = paste0(paste(btns, collapse = ""), extra_nav),
        panels = paste(panels, collapse = "\n"))
 }
 
@@ -1851,8 +1886,9 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
     '<title>pic report — ', html_escape(title), '</title>',
     '<style>', report_css(), '</style>',
     '</head><body>',
-    '<header class="pic-header"><h1>', html_escape(title), ' Report</h1></header>',
-    nav_html,
+    # ナビバー左端にレポート名 (クリックでレポート先頭へ戻る)、右側にタブを両端揃え
+    '<nav class="pic-tabs"><a class="pic-brand" href="', html_escape(basename(out_html)), '">',
+    html_escape(title), ' Report</a><div class="pic-tabbtns">', nav_html, '</div></nav>',
     '<main class="pic-main">', body_html, '</main>',
     '<script>', plotly_js, '</script>',
     '<script>var PIC_PLOTS=', plots_json, ';var PIC_EXPR=', expr_json, ';var PIC_FILES=', files_json, ';</script>',
