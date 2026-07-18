@@ -1755,7 +1755,6 @@ pic_tab_src_paths <- function(tab_html) {
 # (各ステップの使用ツール + パラメータ + 再現用コード) で提示する。
 build_overview_section <- function(run, genome) {
   gtf <- sprintf("%s.gtf", genome)
-  project <- paste0(genome, "_", run); dz <- sprintf("deseq2/%s", genome)
   code_block <- function(txt) sprintf('<pre class="pic-code">%s</pre>', txt)
   # ツールバッジ (name|version)。version は薄色で表示。
   tools_html <- function(ts) paste(vapply(ts, function(t) {
@@ -1763,49 +1762,54 @@ build_overview_section <- function(run, genome) {
     ver <- if (length(p) >= 2) sprintf(' <span class="pic-tool-v">%s</span>', html_escape(p[[2]])) else ""
     sprintf('<span class="pic-tool">%s%s</span>', html_escape(p[[1]]), ver)
   }, character(1)), collapse = "")
-  # このステップの入出力ファイルのうち HTML に埋め込めるものを DL ボタンに (無ければ非表示)。
-  io_dl <- function(...) {
+  # このステップに必要な入力ファイルと入手方法 (前ステップ / DL / 準備コマンド)。
+  # items: 各 c(ファイル名, 入手方法の HTML)。
+  inputs_html <- function(...) {  # 各要素 c(ファイル名 HTML, 入手方法 HTML)
     items <- list(...)
-    bs <- Filter(nzchar, vapply(items, function(it) {
-      id <- register_file(it[[1]])
-      if (is.null(id)) "" else sprintf('<a class="pic-dlcsv pic-flow-dl" role="button" tabindex="0" data-file="%s">%s</a>', id, html_escape(it[[2]]))
-    }, character(1)))
-    if (length(bs) == 0) "" else sprintf('<div class="pic-flow-io"><span class="pic-flow-io-lbl">Download:</span>%s</div>', paste(bs, collapse = ""))
+    lis <- vapply(items, function(it) sprintf('<li><code>%s</code> &mdash; %s</li>', it[[1]], it[[2]]), character(1))
+    sprintf('<div class="pic-flow-in"><span class="pic-flow-in-lbl">Inputs</span><ul>%s</ul></div>', paste(lis, collapse = ""))
   }
-  step <- function(n, name, ts, desc, code, io = "")  # name/desc/code は HTML 済み
+  step <- function(n, name, ts, desc, inputs, code)  # name/desc/inputs/code は HTML 済み
     sprintf(paste0('<div class="pic-flow-step"><div class="pic-flow-head"><span class="pic-flow-n">%s</span>',
                    '<h3>%s</h3><span class="pic-flow-tools">%s</span></div><p>%s</p>%s%s</div>'),
-            n, name, tools_html(ts), desc, code, io)
+            n, name, tools_html(ts), desc, inputs, code)
   arrow <- '<div class="pic-flow-arrow">&#9660;</div>'
 
   steps <- c(
     step("0", "Setup &amp; inputs", c("bash"),
-      'The pipeline starts from the <b>demultiplexed</b>, per-sample FASTQ (each read name already carries its <code>barcode_UMI</code>). Everything is parameterised by the sample sheet (sample &rarr; barcode &rarr; group); set these once and every step loops over the samples.',
+      'The pipeline starts from the <b>demultiplexed</b>, per-sample FASTQ (each read name already carries its <code>barcode_UMI</code>). Set the parameters below once; every step then loops over the samples. The sample &rarr; group assignment comes from the run&#39;s <code>deftable</code> (see Inputs).',
+      inputs_html(
+        c("demux/&lt;sample&gt;.fastq.gz", "your demultiplexed reads, one file per sample (the starting input; barcode-split, read name ends in <code>_barcode_UMI</code>)"),
+        c("deftable / sample sheet", "the sample &rarr; barcode &rarr; group table &mdash; download it from the <b>Downloads &rsaquo; Mapping</b> tab, or use your own sample sheet"),
+        c("genome FASTA + GTF", "the reference assembly and its gene annotation for this species")),
       code_block(sprintf(paste0(
 'GENOME=%s                 <span class="c"># reference assembly</span>\n',
 'GTF=%s                    <span class="c"># gene models (same assembly)</span>\n',
-'IDX=hisat2_index/genome              <span class="c"># HISAT2 index (hisat2-build from FASTA)</span>\n',
+'IDX=hisat2_index/genome              <span class="c"># HISAT2 index (built in step 1)</span>\n',
 'ADAPTER=GATCGTCGGACT                 <span class="c"># PIC 3&#39; library adapter</span>\n',
 'THREADS=8 ; FDR=0.1\n',
-'<span class="c"># sample -&gt; 6&nbsp;bp barcode, and sample -&gt; group</span>\n',
+'<span class="c"># sample -&gt; group (read from the deftable)</span>\n',
 'declare -A GRP=( [Cntl_Nega_1]=Cntl_Nega [Cntl_Nega_2]=Cntl_Nega ... )\n',
-'SAMPLES=( "${!GRP[@]}" )\n',
-'<span class="c"># INPUT: demux/&lt;sample&gt;.fastq.gz  (barcode-split; name = ..._barcode_UMI)</span>'),
-        html_escape(genome), html_escape(gtf)))),
+'SAMPLES=( "${!GRP[@]}" )'), html_escape(genome), html_escape(gtf)))),
 
     step("1", "Adapter trimming &amp; alignment", c("Trim Galore|0.6.10", "HISAT2|2.2.1", "samtools|1.23.1"),
-      'The 3&#39; adapter is removed with Trim Galore, then the trimmed cDNA is aligned single-end with HISAT2 to a plain index (no splice sites baked in; strand is enforced later at counting). Each command writes an explicit file &mdash; no shell pipes between tools.',
+      'The 3&#39; adapter is removed with Trim Galore, then the trimmed cDNA is aligned single-end with HISAT2 to a plain index (no splice sites baked in; strand is enforced later at counting).',
+      inputs_html(
+        c("demux/&lt;sample&gt;.fastq.gz", "the starting input (step 0)"),
+        c("$IDX  (HISAT2 index)", "build it once from the genome FASTA: <code>hisat2-build genome.fa hisat2_index/genome</code>")),
       code_block(paste0(
 'for s in "${SAMPLES[@]}"; do\n',
 '  trim_galore -j $THREADS -a $ADAPTER -o trim/ demux/${s}.fastq.gz\n',
 '  hisat2 -p $THREADS -x $IDX -U trim/${s}_trimmed.fq.gz \\\n',
 '         -S map/${s}.sam --summary-file map/${s}.log\n',
 '  samtools sort  -@ $THREADS -o map/${s}.bam map/${s}.sam\n',
-'  samtools index map/${s}.bam\ndone')),
-      io_dl(c(sprintf("mapping_sum__%s.tsv", run), "Mapping QC (TSV)"))),
+'  samtools index map/${s}.bam\ndone'))),
 
     step("2", "Assign reads to genes", c("featureCounts|2.1.1", "samtools|1.23.1"),
       'featureCounts assigns each read to a gene on the <b>forward/sense</b> strand (<code>-s 1</code>, matching 3&#39;-biased PIC) and, with <code>-R BAM</code>, writes the gene id into each read&#39;s <code>XT</code> tag &mdash; the key for UMI counting.',
+      inputs_html(
+        c("map/&lt;sample&gt;.bam", "aligned reads (step 1)"),
+        c("$GTF  (gene models)", "your assembly&#39;s gene annotation (the GTF matched to the genome)")),
       code_block(paste0(
 'for s in "${SAMPLES[@]}"; do\n',
 '  featureCounts -T $THREADS -s 1 -t exon -g gene_id \\\n',
@@ -1814,18 +1818,22 @@ build_overview_section <- function(run, genome) {
 '  samtools index map/${s}.assigned.bam\ndone'))),
 
     step("3", "UMI counting &amp; deduplication", c("UMI-tools|1.1.4", "samtools|1.23.1"),
-      'UMIs are collapsed per gene (<code>XT</code>) per barcode with the exact-<code>unique</code> method, giving a per-gene UMI count table; a UMI-deduplicated BAM is also kept for coverage tracks. pic then sums the per-sample counts into one matrix.',
+      'UMIs are collapsed per gene (<code>XT</code>) per barcode with the exact-<code>unique</code> method, giving a per-gene UMI count table; a UMI-deduplicated BAM is also kept for the coverage tracks.',
+      inputs_html(
+        c("map/&lt;sample&gt;.assigned.bam", "gene-tagged reads (step 2)")),
       code_block(paste0(
 'for s in "${SAMPLES[@]}"; do\n',
 '  umi_tools count --method=unique --per-gene --gene-tag=XT --per-cell \\\n',
 '      -I map/${s}.assigned.bam -S count/${s}.umi.tsv\n',
 '  umi_tools dedup --method=unique --per-gene --gene-tag=XT --per-cell \\\n',
 '      -I map/${s}.assigned.bam -S map/${s}.umi.bam\n',
-'  samtools index map/${s}.umi.bam\ndone')),
-      io_dl(c(sprintf("%s/UMI_count_%s.csv", dz, project), "UMI count matrix (CSV)"))),
+'  samtools index map/${s}.umi.bam\ndone'))),
 
     step("4", "DESeq2: normalization &amp; differential expression", c("DESeq2|1.46.0", "R|4.4.3"),
-      'The per-gene UMI matrix is modelled with design <code>~group</code> and <b>poscounts</b> size factors (robust to sparse 3&#39; zeros). All pairwise <b>group&times;group</b> contrasts are tested; DEGs are <code>padj&nbsp;&lt;&nbsp;FDR</code>. rlog values feed the PCA, heatmap, correlation and (via hierarchical clustering of group-mean profiles) the DEG clusters used by ORA.',
+      'The per-gene UMI counts are joined into a genes&times;samples matrix and modelled with design <code>~group</code> and <b>poscounts</b> size factors (robust to sparse 3&#39; zeros). All pairwise <b>group&times;group</b> contrasts are tested; DEGs are <code>padj&nbsp;&lt;&nbsp;FDR</code>. rlog values feed the PCA, heatmap, correlation and (via hierarchical clustering of group-mean profiles) the DEG clusters used by ORA.',
+      inputs_html(
+        c("count/&lt;sample&gt;.umi.tsv", "per-sample UMI counts (step 3) &mdash; join into one genes&times;samples matrix"),
+        c("sample &rarr; group", "the <code>GRP</code> map from step 0 (the deftable)")),
       code_block(paste0(
 '<span class="c"># R</span>\n',
 'dds  &lt;- DESeqDataSetFromMatrix(umi_counts, coldata, design = ~ group)\n',
@@ -1834,14 +1842,14 @@ build_overview_section <- function(run, genome) {
 'rld  &lt;- rlog(dds)                              <span class="c"># PCA / heatmap / correlation</span>\n',
 'for (p in combn(levels(coldata$group), 2, simplify = FALSE))\n',
 '  res &lt;- results(dds, contrast = c("group", p[1], p[2]),\n',
-'                 independentFiltering = FALSE, cooksCutoff = FALSE)  <span class="c"># DEG: padj &lt; 0.1</span>')),
-      io_dl(c(sprintf("%s/normalizedCountTable_%s.csv", dz, project), "Normalized counts (CSV)"),
-            c(sprintf("%s/stats_%s.csv", dz, project), "DE statistics (CSV)"),
-            c(sprintf("%s/correlation_%s.csv", dz, project), "Sample correlation (CSV)"),
-            c(sprintf("%s/PCA/PCA_RegLog_%s.csv", dz, project), "PCA coordinates (CSV)"))),
+'                 independentFiltering = FALSE, cooksCutoff = FALSE)  <span class="c"># DEG: padj &lt; 0.1</span>'))),
 
     step("5", "Coverage tracks &amp; gene-body aggregation", c("bedtools|2.31.1", "bedGraphToBigWig|v482", "bigWigAverageOverBed|v482"),
-      'A CPM-scaled bigWig is made from each UMI-deduplicated BAM, then averaged over a tiled gene-body BED (each gene scaled TSS&rarr;TES into 100 bins with 1&nbsp;kb / 10-bin flanks) to build the metagene profile. Each command writes an intermediate file (no pipes).',
+      'A CPM-scaled bigWig is made from each UMI-deduplicated BAM, then averaged over a tiled gene-body BED (each gene scaled TSS&rarr;TES into 100 bins with 1&nbsp;kb / 10-bin flanks) to build the metagene profile.',
+      inputs_html(
+        c("map/&lt;sample&gt;.umi.bam", "deduplicated reads (step 3)"),
+        c("${GENOME}.chrom.sizes", "chromosome sizes &mdash; prepare: <code>faSize -detailed -tab genome.fa &gt; ${GENOME}.chrom.sizes</code> (or <code>cut -f1,2 genome.fa.fai</code>)"),
+        c("genebody_bins.bed", "a tiled gene-body BED (100 body bins + 1&nbsp;kb / 10-bin flanks) built from <code>$GTF</code>")),
       code_block(paste0(
 'for s in "${SAMPLES[@]}"; do\n',
 '  n=$(samtools view -c map/${s}.umi.bam)                          <span class="c"># CPM denominator</span>\n',
@@ -1849,11 +1857,13 @@ build_overview_section <- function(run, genome) {
 '  awk -v n=$n \'{ $4 = $4*1e6/n; print }\' bw/${s}.bg &gt; bw/${s}.cpm.bg   <span class="c"># CPM scale</span>\n',
 '  sort -k1,1 -k2,2n bw/${s}.cpm.bg -o bw/${s}.cpm.bg\n',
 '  bedGraphToBigWig bw/${s}.cpm.bg ${GENOME}.chrom.sizes bw/${s}.cpm.bw\n',
-'  bigWigAverageOverBed bw/${s}.cpm.bw genebody_bins.bed agg/${s}.tab  <span class="c"># mean0 per bin</span>\ndone')),
-      io_dl(c(sprintf("aggregate/%s/aggregate_profile.csv", genome), "Metagene profile (CSV)"))),
+'  bigWigAverageOverBed bw/${s}.cpm.bw genebody_bins.bed agg/${s}.tab  <span class="c"># mean0 per bin</span>\ndone'))),
 
     step("6", "Functional enrichment", c("clusterProfiler|4.14.0", "R|4.4.3"),
-      'Enrichment uses human-ortholog gene <b>symbols</b> against custom gene-set libraries (GO / KEGG / Reactome / WikiPathways / HDO / HPO / MPO). <b>GSEA</b> runs per contrast on the DESeq2 <code>stat</code> ranking; <b>ORA</b> (<code>enricher</code>, BH-adjusted) tests each DEG cluster against all tested genes. The per-contrast / per-method result CSVs are in the <b>Downloads</b> tab.',
+      'Enrichment uses human-ortholog gene <b>symbols</b> against gene-set libraries (GO / KEGG / Reactome / WikiPathways / HDO / HPO / MPO). <b>GSEA</b> runs per contrast on the DESeq2 <code>stat</code> ranking; <b>ORA</b> (<code>enricher</code>, BH-adjusted) tests each DEG cluster against all tested genes.',
+      inputs_html(
+        c("res  (DESeq2 results)", "per-contrast <code>stat</code> &amp; DEG clusters (step 4)"),
+        c("lib  (gene-set library)", "GO/KEGG/&hellip; as a clusterProfiler <code>gson</code> object, built once per species with <code>gson_GO()</code> / <code>gson_KEGG()</code> / <code>gson_WP()</code> &hellip;")),
       code_block(paste0(
 '<span class="c"># R &mdash; GSEA per contrast (ranked by DESeq2 stat)</span>\n',
 'ranks &lt;- sort(setNames(res$stat, res$symbol), decreasing = TRUE)\n',
@@ -1866,15 +1876,15 @@ build_overview_section <- function(run, genome) {
   intro <- sprintf(paste0('<p class="pic-ov-intro">This report summarizes a <b>PIC</b> (photo-isolation chemistry) ',
     '3&prime;-biased RNA-seq analysis for run <b>%s</b>, mapped to <b>%s</b>. ',
     'The flowchart below is a reproducible summary of the pipeline (starting from the demultiplexed FASTQ): ',
-    'each step lists the tool + <b>version</b> used and an example command with the underlying tools (not the ',
-    '<code>pic</code> wrapper), looping over samples. Where a step&#39;s input/output table is embedded here, a ',
-    '<b>Download</b> button is shown inline.</p>'),
+    'each step lists the tool + <b>version</b> used, its required <b>input</b> files (and where each comes ',
+    'from), and an example command with the underlying tools, looping over samples. Result tables are on the ',
+    '<b>Downloads</b> tab.</p>'),
     html_escape(run), html_escape(genome))
   note <- paste0('<p class="pic-methods-note">Key parameters: barcode/UMI = 6&nbsp;bp each on R1; adapter ',
     '<code>GATCGTCGGACT</code>; featureCounts <code>-s 1</code> (forward); UMI method <code>unique</code>; ',
     'DESeq2 <code>~group</code>, <code>sfType=poscounts</code>, no LFC shrinkage, FDR&nbsp;=&nbsp;0.1; ',
     'PCA on rlog (top 500 variable genes); metagene 100 body bins + 1&nbsp;kb flanks; GSEA/ORA ',
-    'gene-set size 10&ndash;500, BH adjustment. Tool versions are from the pinned <code>pic</code> conda environment.</p>')
+    'gene-set size 10&ndash;500, BH adjustment. Tool versions are from the pinned conda environment used for this run.</p>')
   sprintf('<section id="overview"><h2>Overview &mdash; analysis pipeline</h2>%s<div class="pic-flow">%s</div>%s</section>',
           intro, paste(steps, collapse = arrow), note)
 }
