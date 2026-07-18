@@ -373,8 +373,8 @@
       }
       activateTab(initial);
     }
-    // Home のカードをクリック/Enter でそのタブへ (ダウンロードリンクは除外)
-    document.querySelectorAll(".pic-home-card[data-target]").forEach(function (card) {
+    // Overview のカードをクリック/Enter でそのタブへ (リンクは除外)
+    document.querySelectorAll(".pic-ov-card[data-target]").forEach(function (card) {
       function go() { activateTab(card.dataset.target); }
       card.addEventListener("click", function (e) { if (e.target.closest("a")) return; go(); });
       card.addEventListener("keydown", function (e) {
@@ -403,13 +403,14 @@
         } else { showTarget(cb); }
       });
     });
-    // セクション内サブタブの切替
+    // セクション内サブタブの切替 (ボタンはサブパネルごとに複製されるため data-sub で照合)
     document.querySelectorAll(".pic-subtabbtn").forEach(function (b) {
       b.addEventListener("click", function () {
         var sec = b.closest("section.pic-tab"); if (!sec) return;
-        sec.querySelectorAll(".pic-subtabbtn").forEach(function (x) { x.classList.toggle("active", x === b); });
+        var key = b.dataset.sub;
+        sec.querySelectorAll(".pic-subtabbtn").forEach(function (x) { x.classList.toggle("active", x.dataset.sub === key); });
         sec.querySelectorAll(".pic-subpanel").forEach(function (p) {
-          var on = (p.id === b.dataset.sub);
+          var on = (p.id === key);
           p.classList.toggle("active", on);
           if (on) { renderWithin(p); resizeWithin(p); }
         });

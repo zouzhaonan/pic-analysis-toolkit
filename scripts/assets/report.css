@@ -25,18 +25,17 @@ section.pic-tab.active{display:block}
 .pic-tab-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:2px solid var(--accent);padding-bottom:6px;margin-bottom:14px}
 .pic-tab-head h2{border:none;padding:0;margin:0}
 /* セクション内サブタブ */
-/* サブタブは左パネルに縦並びで配置 */
-.pic-subtab-layout{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:18px;align-items:start}
-.pic-subnav{position:sticky;top:60px;align-self:start}
-.pic-subtabs{display:flex;flex-direction:column;gap:5px}
-.pic-subtabs h4{margin:0 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+/* サブタブは左コントロール内 (View 見出し + 縦並びボタン) で選択 */
+.pic-subbody{min-width:0}
+.pic-subtabs{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
 .pic-subtabbtn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--muted);font-size:13px;font-weight:600;padding:7px 16px;cursor:pointer;border-radius:6px;text-align:left;white-space:nowrap}
 .pic-subtabbtn:hover{background:#eef3fb;color:var(--accent)}
 .pic-subtabbtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-.pic-subnav>h4{margin-top:16px}
 .pic-subpanel{display:none}
 .pic-subpanel.active{display:block}
-@media(max-width:900px){.pic-subtab-layout{grid-template-columns:1fr}.pic-subnav{position:static}.pic-subtabs{flex-direction:row;flex-wrap:wrap}}
+/* 左コントロール内の見出し (View / Groups / Comparison / Term set / Genes) を統一 */
+.pic-ctrl h4,.pic-subtabs h4,.pic-hmsel-ctrl h4,.pic-degsel-ctrl h4,.pic-selgrid-ctrl h4,.pic-matrix-sel h4,.pic-expr-side h4{margin:2px 0 8px;color:var(--fg);font-size:13px;font-weight:700;text-transform:none;letter-spacing:normal;font-family:inherit}
+@media(max-width:900px){.pic-subtabs{flex-direction:row;flex-wrap:wrap}}
 /* info (丸 i) + hover 吹き出し */
 .pic-info{position:relative;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--accent);color:var(--accent);font-size:12px;font-weight:700;font-style:italic;font-family:Georgia,serif;cursor:help;flex:none}
 .pic-info-pop{display:none;position:absolute;left:26px;top:50%;transform:translateY(-50%);z-index:80;width:min(520px,70vw);background:#1f2933;color:#fff;font-weight:400;font-style:normal;font-size:13px;line-height:1.5;padding:10px 13px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
@@ -75,9 +74,9 @@ h4{font-size:14px;margin:6px 0;color:var(--muted)}
 .pic-src-dl{font-weight:700}
 .pic-sub-hd-actions{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap}
 .pic-head-right{margin-left:auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-/* HTML テーブルの PNG ダウンロードボタン */
-.pic-png-btn{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:6px;padding:3px 12px;font-size:12px;font-weight:600;cursor:pointer;margin:2px 0 8px}
-.pic-png-btn:hover{background:#eef3fb;color:var(--accent);border-color:#bcd3ea}
+/* HTML テーブルの PNG ダウンロードボタン (Download CSV と同じ見た目) */
+.pic-png-btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+.pic-png-btn:hover{background:#17518f}
 /* 「ここで選択」案内バッジ */
 .pic-pick{display:flex;align-items:center;gap:8px;background:#eaf3fc;border:1px solid #a9cbe9;border-left:4px solid var(--accent);color:#164a7a;font-weight:700;font-size:14px;padding:8px 14px;border-radius:8px;margin:10px 0 6px}
 .pic-pick-ic{font-size:16px;line-height:1}
@@ -220,15 +219,18 @@ table.pic-hm{border-collapse:separate;border-spacing:0}
 .pic-notes h3{margin-top:8px}
 code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 
-/* Home (Overview) タブ */
-.pic-home-intro{font-size:15px;color:var(--fg);max-width:70ch;margin:6px 0 20px}
-.pic-home-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
-.pic-home-card{border:1px solid var(--line);border-radius:10px;padding:16px 18px;background:#fcfdff;cursor:pointer;transition:border-color .12s,box-shadow .12s,transform .06s}
-.pic-home-card:hover{border-color:var(--accent);box-shadow:0 3px 12px rgba(33,102,172,.12)}
-.pic-home-card:active{transform:translateY(1px)}
-.pic-home-card h3{margin:0 0 8px;font-size:16px;color:var(--accent)}
-.pic-home-desc{font-size:13.5px;color:var(--muted);margin-bottom:12px}
-.pic-home-desc p{margin:4px 0}
-.pic-home-srcs{display:flex;flex-direction:column;gap:6px;align-items:flex-start;min-width:0}
-.pic-home-srcs .pic-dlcsv{display:block;width:fit-content;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:500}
-.pic-home-srcs .pic-src-dl{margin-right:5px}
+/* Overview タブ (説明は全幅、カードはパスをテキスト表示) */
+.pic-ov-intro{font-size:15px;color:var(--fg);margin:6px 0 20px}
+.pic-ov-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.pic-ov-card{border:1px solid var(--line);border-radius:10px;padding:16px 18px;background:#fcfdff;cursor:pointer;transition:border-color .12s,box-shadow .12s,transform .06s}
+.pic-ov-card:hover{border-color:var(--accent);box-shadow:0 3px 12px rgba(33,102,172,.12)}
+.pic-ov-card:active{transform:translateY(1px)}
+.pic-ov-card h3{margin:0 0 10px;font-size:16px;color:var(--accent)}
+.pic-ov-srcs{display:flex;flex-direction:column;gap:5px;align-items:flex-start;min-width:0}
+.pic-ov-path{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#eef1f5;font-size:12px}
+/* Sources タブ (ファイル一覧) */
+.pic-src-group{margin:16px 0}
+.pic-src-group h3{margin:6px 0 8px;font-size:15px;color:var(--accent)}
+.pic-src-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.pic-src-list li{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.pic-src-list .pic-ov-path{flex:1 1 340px;min-width:0}
