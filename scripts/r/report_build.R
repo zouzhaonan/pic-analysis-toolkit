@@ -1795,9 +1795,11 @@ build_overview_section <- function(run, genome) {
 '    -I map/${sample}.assigned.bam -S count/${sample}.umi.tsv'))),
 
     step("4", "Differential Expression",
-      'Join the per-sample UMI counts into a genes&times;samples matrix (sample&rarr;group from the <code>deftable</code>), then run <code>DESeq2</code>: <code>~group</code> design, <b>poscounts</b> size factors, all pairwise group contrasts, DEGs at <code>padj&nbsp;&lt;&nbsp;0.1</code>.',
+      'Join the per-sample UMI counts into a genes&times;samples matrix and run <code>DESeq2</code>: <code>~group</code> design, <b>poscounts</b> size factors, all pairwise group contrasts, DEGs at <code>padj&nbsp;&lt;&nbsp;0.1</code>.',
       code_block(paste0(
 '<span class="c"># R</span>\n',
+'grp &lt;- c("Cntl_Nega","Cntl_Nega","Cntl_Nega", "Cntl_Posi","Cntl_Posi","Cntl_Posi", ...)  <span class="c"># one per sample</span>\n',
+'coldata &lt;- data.frame(group = factor(grp), row.names = colnames(umi_counts))\n',
 'dds &lt;- DESeqDataSetFromMatrix(umi_counts, coldata, design = ~ group)\n',
 'dds &lt;- DESeq(dds, sfType = "poscounts")\n',
 '<span class="c"># for each pairwise group contrast (A vs B):</span>\n',
