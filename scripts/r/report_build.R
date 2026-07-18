@@ -1207,8 +1207,9 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
       }
       qval <- lapply(seq_len(nrow(qmat)), function(i) as.numeric(qmat[i, ]))
       # 表示用 contrast 名は deftable どおりの casing に (stats$aspect は小文字化されている)
+      # 注: 名前付きベクトルにすると JSON が配列でなくオブジェクトになり JS 側で map できないため unname
       canon_grp <- function(g) { idx <- if (!is.null(group_pal)) match(tolower(g), tolower(names(group_pal))) else NA_integer_; if (!is.na(idx)) names(group_pal)[[idx]] else g }
-      contrasts <- vapply(contrasts, function(cc) paste(vapply(strsplit(cc, " / ", fixed = TRUE)[[1]], canon_grp, character(1)), collapse = " / "), character(1))
+      contrasts <- unname(vapply(contrasts, function(cc) paste(vapply(strsplit(cc, " / ", fixed = TRUE)[[1]], canon_grp, character(1)), collapse = " / "), character(1)))
     }
   }
 
