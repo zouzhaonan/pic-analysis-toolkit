@@ -262,12 +262,24 @@
           function show(e) {
             var qq = data.qval[gi] || [];
             var rows = data.contrasts.map(function (c, ci) {
+              var v = qq[ci];
+              if (v != null && !isNaN(v) && v >= 1) return "";  // padj=1 (有意でない) の行は非表示
               return "<tr><td>" + escHtml(c) + "</td><td>" + fmtQ(qq[ci]) + "</td></tr>";
             }).join("");
             tip.innerHTML = "<div class='pic-expr-tip-h'>" + escHtml(data.ext[gi] || data.ens[gi]) +
               "</div><table><tr><th>contrast</th><th>padj</th></tr>" + rows + "</table>";
             tip.style.display = "block";
-            tip.style.left = (e.clientX + 14) + "px"; tip.style.top = (e.clientY + 14) + "px";
+            // 描画後の実寸で viewport 内にクランプ (下端の見切れ防止・必要なら上/左へ反転)
+            tip.style.left = "0px"; tip.style.top = "0px";
+            var tw = tip.offsetWidth, th = tip.offsetHeight;
+            var vw = window.innerWidth, vh = window.innerHeight;
+            var left = e.clientX + 14;
+            if (left + tw > vw - 6) left = e.clientX - 14 - tw;
+            if (left < 6) left = 6;
+            var top = e.clientY + 14;
+            if (top + th > vh - 6) top = vh - th - 6;
+            if (top < 6) top = 6;
+            tip.style.left = left + "px"; tip.style.top = top + "px";
           }
           zone.addEventListener("mouseenter", show);
           zone.addEventListener("mousemove", show);

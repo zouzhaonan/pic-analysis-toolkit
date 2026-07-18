@@ -915,9 +915,10 @@ scatter_traces_by_dir <- function(df, x, y, numerator, denominator, hovertemplat
   # df は idx で絞り込み済み。direction 列 (up/down/ns) でトレース分割。
   # df には cd1 (padj), cd2 (pvalue) 列を含み、customdata として hover に渡す。
   # 凡例の group 名は group 色付き文字。
+  # 凡例の group 名はドット色 (up=赤 / down=青) に合わせる
   cats <- list(
-    up = list(name = paste0(group_span(numerator, group_pal), " ↑"), color = "#d7301f"),
-    down = list(name = paste0(group_span(denominator, group_pal), " ↑"), color = "#2166ac"),
+    up = list(name = sprintf('<span style="color:#d7301f">%s ↑</span>', html_escape(numerator)), color = "#d7301f"),
+    down = list(name = sprintf('<span style="color:#2166ac">%s ↑</span>', html_escape(denominator)), color = "#2166ac"),
     ns = list(name = "not significant", color = "#bdbdbd")
   )
   traces <- list()
@@ -969,6 +970,9 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     sp <- strsplit(a, " / ", fixed = TRUE)[[1]]
     numerator <- if (length(sp) >= 1) sp[[1]] else "num"
     denominator <- if (length(sp) >= 2) sp[[2]] else "den"
+    # 表示用に deftable どおりの casing へ (stats$aspect は小文字化されている)
+    canon_grp <- function(g) { idx <- if (!is.null(group_pal)) match(tolower(g), tolower(names(group_pal))) else NA_integer_; if (!is.na(idx)) names(group_pal)[[idx]] else g }
+    numerator <- canon_grp(numerator); denominator <- canon_grp(denominator)
     flab <- format_contrast_file_label(a)
 
     gene <- if ("ext_gene" %in% colnames(cs)) {
@@ -988,8 +992,7 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
       idx <- if (!is.null(group_pal)) match(tolower(g), tolower(names(group_pal))) else NA_integer_
       if (!is.na(idx)) unname(group_pal[[idx]]) else "#1f2933"
     }
-    lfc_lab <- sprintf('log<sub>2</sub>(<span style="color:%s">%s</span> / <span style="color:%s">%s</span>)',
-                       grp_col(numerator), html_escape(numerator), grp_col(denominator), html_escape(denominator))
+    lfc_lab <- sprintf('log<sub>2</sub>(%s / %s)', html_escape(numerator), html_escape(denominator))
     cells <- character(0)
 
     # ---- M-A (hover に padj) ----
@@ -1203,6 +1206,9 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
         qmat[, ci] <- signif(as.numeric(sub$padj)[idx], 3)
       }
       qval <- lapply(seq_len(nrow(qmat)), function(i) as.numeric(qmat[i, ]))
+      # 表示用 contrast 名は deftable どおりの casing に (stats$aspect は小文字化されている)
+      canon_grp <- function(g) { idx <- if (!is.null(group_pal)) match(tolower(g), tolower(names(group_pal))) else NA_integer_; if (!is.na(idx)) names(group_pal)[[idx]] else g }
+      contrasts <- vapply(contrasts, function(cc) paste(vapply(strsplit(cc, " / ", fixed = TRUE)[[1]], canon_grp, character(1)), collapse = " / "), character(1))
     }
   }
 
