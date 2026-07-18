@@ -451,7 +451,7 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
   if (have_fate) {
     parts <- c(parts,
                sub_head("Read distribution", src_note(src), png_button(rd_cap, "read_distribution")),
-               paste0('<p class="pic-note">Each trimmed read is traced to its fate: uniquely <b>Assigned</b> to a gene, ',
+               paste0('<p class="pic-note">Each trimmed read is classified into one category: uniquely <b>Assigned</b> to a gene, ',
                       'or lost as <b>No feature</b> (overlaps no gene), <b>Ambiguous</b> (overlaps several genes), ',
                       '<b>Multi-mapping</b>, or <b>Unmapped</b>. A too-low Assigned fraction &mdash; a large ',
                       '<b>No feature</b> / <b>Ambiguous</b> / <b>Unmapped</b> share &mdash; flags a poor-quality sample. ',
