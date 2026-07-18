@@ -215,15 +215,16 @@ table.pic-hm{border-collapse:separate;border-spacing:0}
 .pic-notes h3{margin-top:8px}
 code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 
-/* Overview: Materials & Methods フローチャート (再現可能なステップ + コード) */
+/* Overview: 全体説明 + Analysis Pipeline フローチャート */
+.pic-flow-title{font-size:18px;margin:26px 0 2px;color:var(--fg);border-bottom:1px solid var(--line);padding-bottom:6px}
+.pic-flow-sub{font-size:14px;color:var(--muted);margin:0 0 16px}
 .pic-flow{display:flex;flex-direction:column;align-items:stretch;gap:0;max-width:900px}
 .pic-flow-step{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;background:#fcfdff;padding:14px 18px}
 .pic-flow-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
 .pic-flow-n{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:700}
 .pic-flow-head h3{margin:0;font-size:16px;color:var(--fg)}
 .pic-flow-tools{display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:auto}
-.pic-tool{font-size:11.5px;font-weight:600;color:#164a7a;background:#e7f0fa;border:1px solid #c4dbef;border-radius:4px;padding:1px 8px;white-space:nowrap}
-.pic-tool-v{font-weight:500;color:#5c7fa3}
+.pic-tool{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;font-weight:600;color:#164a7a;background:#e7f0fa;border:1px solid #c4dbef;border-radius:4px;padding:1px 8px;white-space:nowrap}
 .pic-flow-step>p{margin:2px 0 8px;font-size:13.5px;color:var(--muted);line-height:1.55}
 .pic-flow-arrow{align-self:center;color:var(--accent);font-size:18px;line-height:1;margin:2px 0}
 .pic-code{margin:6px 0 0;background:#1f2933;color:#e6edf3;border-radius:8px;padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;overflow-x:auto;white-space:pre}
@@ -232,8 +233,9 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 
 /* Downloads (全 csv/tsv を HTML 埋め込み・折りたたみ・クリックで DL) */
 .pic-ov-intro{font-size:15px;color:var(--fg);margin:6px 0 22px}
-.pic-ov-groups{display:flex;flex-direction:column;gap:10px}
-.pic-ov-sec{border:1px solid var(--line);border-radius:10px;background:#fcfdff;padding:2px 16px}
+.pic-ov-groups{columns:2;column-gap:14px}
+@media(max-width:820px){.pic-ov-groups{columns:1}}
+.pic-ov-sec{border:1px solid var(--line);border-radius:10px;background:#fcfdff;padding:2px 16px;break-inside:avoid;margin-bottom:12px}
 .pic-ov-sec>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:12px;padding:12px 0;font-weight:700}
 .pic-ov-sec>summary::-webkit-details-marker{display:none}
 .pic-ov-sec>summary::before{content:"\25B8";color:var(--muted);font-size:12px;transition:transform .12s}

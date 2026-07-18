@@ -134,7 +134,7 @@ file_category <- function(rel) {
   if (grepl("correlation", b))    return(list(key = "cor", title = "Sample Correlation", tab = "cor"))
   if (grepl("PCA", b))            return(list(key = "pca", title = "PCA", tab = "pca"))
   if (grepl("^stats|DEG", b))     return(list(key = "deg", title = "Differential Expression", tab = "deg"))
-  if (grepl("UMI_count|normalizedCountTable", b)) return(list(key = "expr", title = "Count table", tab = "expr"))
+  if (grepl("UMI_count|normalizedCountTable", b)) return(list(key = "expr", title = "Count Table", tab = "expr"))
   list(key = "mapping", title = "Mapping", tab = "qc")
 }
 
@@ -1755,11 +1755,11 @@ pic_tab_src_paths <- function(tab_html) {
 # (各ステップの使用ツール + パラメータ + 再現用コード) で提示する。
 build_overview_section <- function(run, genome) {
   code_block <- function(txt) sprintf('<pre class="pic-code">%s</pre>', txt)
-  # ツールバッジ (name|version)。version は薄色で表示。
+  # ツールバッジ: name|version を 1 つの monospace バッジ "name version" にまとめる。
   tools_html <- function(ts) paste(vapply(ts, function(t) {
     p <- strsplit(t, "|", fixed = TRUE)[[1]]
-    ver <- if (length(p) >= 2) sprintf(' <span class="pic-tool-v">%s</span>', html_escape(p[[2]])) else ""
-    sprintf('<span class="pic-tool">%s%s</span>', html_escape(p[[1]]), ver)
+    label <- if (length(p) >= 2) paste0(p[[1]], " ", p[[2]]) else p[[1]]
+    sprintf('<span class="pic-tool">%s</span>', html_escape(label))
   }, character(1)), collapse = "")
   step <- function(n, name, ts, desc, code)  # name/desc/code は HTML 済み
     sprintf(paste0('<div class="pic-flow-step"><div class="pic-flow-head"><span class="pic-flow-n">%s</span>',
@@ -1768,30 +1768,30 @@ build_overview_section <- function(run, genome) {
   arrow <- '<div class="pic-flow-arrow">&#9660;</div>'
 
   steps <- c(
-    step("1", "Adapter trimming &amp; alignment", c("Trim Galore|0.6.10", "HISAT2|2.2.1", "samtools|1.23.1"),
-      'Trim the 3&#39; PIC adapter, then align single-end to the existing HISAT2 index.',
+    step("1", "Adapter Trimming &amp; Alignment", c("Trim Galore|0.6.10", "HISAT2|2.2.1", "samtools|1.23.1"),
+      'Trim the 3&#39; PIC adapter (<code>Trim Galore</code>), then align single-end to the <code>HISAT2</code> index.',
       code_block(sprintf(paste0(
 'trim_galore -j 8 -a GATCGTCGGACT -o trim/ demux/${sample}.fastq.gz\n',
 'hisat2 -p 8 -x hisat2_index/%s -U trim/${sample}_trimmed.fq.gz -S map/${sample}.sam\n',
 'samtools sort  -@ 8 -o map/${sample}.bam map/${sample}.sam\n',
 'samtools index map/${sample}.bam'), html_escape(genome)))),
 
-    step("2", "Assign reads to genes", c("featureCounts|2.1.1", "samtools|1.23.1"),
-      'featureCounts on the forward/sense strand (<code>-s 1</code>); the gene id is stored in each read&#39;s <code>XT</code> tag.',
+    step("2", "Read-to-Gene Assignment", c("featureCounts|2.1.1", "samtools|1.23.1"),
+      '<code>featureCounts</code> on the forward/sense strand (<code>-s 1</code>); the gene id is stored in each read&#39;s <code>XT</code> tag.',
       code_block(sprintf(paste0(
 'featureCounts -T 8 -s 1 -t exon -g gene_id -a %s.gtf -R BAM \\\n',
 '    -o count/${sample}.fc.tsv map/${sample}.bam\n',
 'samtools sort  -@ 8 -o map/${sample}.assigned.bam map/${sample}.bam.featureCounts.bam\n',
 'samtools index map/${sample}.assigned.bam'), html_escape(genome)))),
 
-    step("3", "UMI counting", c("UMI-tools|1.1.4"),
-      'Collapse UMIs per gene (<code>XT</code>) per barcode with the exact-<code>unique</code> method.',
+    step("3", "UMI Counting", c("UMI-tools|1.1.4"),
+      'Collapse UMIs per gene (<code>XT</code>) per barcode with <code>UMI-tools</code> (exact-<code>unique</code> method).',
       code_block(paste0(
 'umi_tools count --method=unique --per-gene --gene-tag=XT --per-cell \\\n',
 '    -I map/${sample}.assigned.bam -S count/${sample}.umi.tsv'))),
 
-    step("4", "DESeq2: differential expression", c("DESeq2|1.46.0", "R|4.4.3"),
-      'Join the per-sample UMI counts into a genes&times;samples matrix (sample&rarr;group from the deftable): design <code>~group</code>, <b>poscounts</b> size factors, all pairwise group contrasts, DEGs at <code>padj&nbsp;&lt;&nbsp;0.1</code>.',
+    step("4", "Differential Expression", c("DESeq2|1.46.0", "R|4.4.3"),
+      'Join the per-sample UMI counts into a genes&times;samples matrix (sample&rarr;group from the <code>deftable</code>), then run <code>DESeq2</code>: <code>~group</code> design, <b>poscounts</b> size factors, all pairwise group contrasts, DEGs at <code>padj&nbsp;&lt;&nbsp;0.1</code>.',
       code_block(paste0(
 '<span class="c"># R</span>\n',
 'dds &lt;- DESeqDataSetFromMatrix(umi_counts, coldata, design = ~ group)\n',
@@ -1801,13 +1801,16 @@ build_overview_section <- function(run, genome) {
 '               independentFiltering = FALSE, cooksCutoff = FALSE)')))
   )
 
-  intro <- sprintf(paste0('<p class="pic-ov-intro">For advanced re-analysis &mdash; the core pipeline reproduced ',
-    'with the underlying tools (versions shown on each step). It starts from the <b>demultiplexed</b> per-sample ',
-    'FASTQ, the existing HISAT2 index <code>hisat2_index/%s</code>, and the run&#39;s <code>deftable</code> ',
-    '(sample &rarr; group). Run each command per sample &mdash; <code>${sample}</code> stands for the sample name.</p>'),
-    html_escape(genome))
-  sprintf('<section id="overview"><h2>Overview &mdash; Analysis pipeline</h2>%s<div class="pic-flow">%s</div></section>',
-          intro, paste(steps, collapse = arrow))
+  overview <- sprintf(paste0('<p class="pic-ov-intro">This self-contained report presents the <b>PIC</b> ',
+    '(photo-isolation chemistry) 3&prime;-biased RNA-seq run <b>%s</b>, mapped to <b>%s</b>. ',
+    'Each tab is one analysis step &mdash; Mapping QC, Aggregation, Sample Correlation, PCA, Differential ',
+    'Expression, Gene Expression and Enrichment; hover the round <i>i</i> on a tab for what its figures show. ',
+    'Every source table is embedded in this file and can be saved from the <b>Downloads</b> tab.</p>'),
+    html_escape(run), html_escape(genome))
+  pipe_intro <- '<p class="pic-flow-sub">Starting from the demultiplexed per-sample FASTQ. Run each command per sample (<code>${sample}</code>).</p>'
+  sprintf(paste0('<section id="overview"><h2>Overview</h2>%s',
+                 '<h3 class="pic-flow-title">Analysis Pipeline</h3>%s<div class="pic-flow">%s</div></section>'),
+          overview, pipe_intro, paste(steps, collapse = arrow))
 }
 
 # Downloads セクション。プロジェクトの全 csv/tsv をカテゴリ別 (折りたたみ) に列挙。
@@ -1832,12 +1835,12 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL) {
   }
 
   order_cats <- c("Mapping", "Aggregation", "Sample Correlation", "PCA",
-                  "Count table", "Differential Expression",
+                  "Count Table", "Differential Expression",
                   "Enrichment — GSEA", "Enrichment — ORA")
   cats <- unique(vapply(files, function(f) f$cat, character(1)))
   cats <- c(intersect(order_cats, cats), setdiff(cats, order_cats))
 
-  sections <- character(0); first <- TRUE
+  sections <- character(0); open_flag <- TRUE
   for (ct in cats) {
     ids <- names(files)[vapply(files, function(f) identical(f$cat, ct), logical(1))]
     if (length(ids) == 0) next
@@ -1864,14 +1867,13 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL) {
       body <- sprintf('<ul class="pic-ov-list">%s</ul>', paste(vapply(ids, file_li, character(1)), collapse = ""))
     }
     jump <- if (!is.null(tab) && nzchar(tab)) sprintf('<a class="pic-ov-jump" data-target="%s" tabindex="0">open tab &rarr;</a>', tab) else ""
+    # 既定では Differential Expression までのセクションを展開し、以降 (GSEA/ORA) は畳む
     sections <- c(sections, sprintf('<details class="pic-ov-sec"%s><summary><span class="pic-ov-cat">%s</span>%s</summary>%s</details>',
-                                    if (first) " open" else "", html_escape(ct), jump, body))
-    first <- FALSE
+                                    if (open_flag) " open" else "", html_escape(ct), jump, body))
+    if (identical(ct, "Differential Expression")) open_flag <- FALSE
   }
-  intro <- paste0('<p class="pic-ov-intro"><b>Every source table is embedded in this HTML file</b> &mdash; ',
-    'expand a section and click a file to download it.</p>')
-  sprintf('<section id="downloads"><h2>Downloads</h2>%s<div class="pic-ov-groups">%s</div></section>',
-          intro, paste(sections, collapse = ""))
+  sprintf('<section id="downloads"><h2>Downloads</h2><div class="pic-ov-groups">%s</div></section>',
+          paste(sections, collapse = ""))
 }
 
 # タブバー + パネルを組み立てる。tabs: list(list(html=, label=, controls=, subs=, shared_controls=))。
