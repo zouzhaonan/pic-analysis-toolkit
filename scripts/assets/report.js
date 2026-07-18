@@ -199,7 +199,9 @@
         });
         var col = data.palette[g] || "#1f77b4";
         return {
-          type: "box", name: g, x: xs, y: ys, boxpoints: "all", jitter: 0.5, pointpos: 0,
+          // 凡例テキストも group 色付き。group トグルは legendgroup (素の g) で判定
+          type: "box", name: '<span style="color:' + col + '">' + escHtml(g) + '</span>', legendgroup: g,
+          x: xs, y: ys, boxpoints: "all", jitter: 0.5, pointpos: 0,
           marker: { color: col, size: 5 }, line: { color: col }, fillcolor: hexToRgba(col, 0.25)
         };
       });
@@ -373,11 +375,11 @@
       }
       activateTab(initial);
     }
-    // Overview のカードをクリック/Enter でそのタブへ (リンクは除外)
-    document.querySelectorAll(".pic-ov-card[data-target]").forEach(function (card) {
-      function go() { activateTab(card.dataset.target); }
-      card.addEventListener("click", function (e) { if (e.target.closest("a")) return; go(); });
-      card.addEventListener("keydown", function (e) {
+    // Overview のセクション見出しをクリック/Enter でそのタブへ
+    document.querySelectorAll(".pic-ov-jump[data-target]").forEach(function (jump) {
+      function go() { activateTab(jump.dataset.target); }
+      jump.addEventListener("click", function () { go(); });
+      jump.addEventListener("keydown", function (e) {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
       });
     });
