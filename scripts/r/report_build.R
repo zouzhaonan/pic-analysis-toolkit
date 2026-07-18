@@ -51,8 +51,7 @@ group_toggle_panel <- function(group_pal) {
 # sample 表示切替パネル (HTML テーブル用: 行/列を隠す)。ラベルは group 配色。
 sample_toggle_panel <- function(samples, group_map = NULL, group_pal = NULL) {
   if (length(samples) == 0) return("")
-  scol <- function(s) { g <- if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
-    if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else "#333333" }
+  scol <- function(s) sample_color(s, group_map, group_pal)
   items <- vapply(samples, function(s) sprintf(
     '<label class="pic-tgl"><input type="checkbox" class="pic-stoggle" data-sample="%s" checked><span style="color:%s;font-weight:600">%s</span></label>',
     html_escape(s), scol(s), html_escape(s)), character(1))
@@ -194,6 +193,33 @@ group_color <- function(g, group_pal) {
   if (!is.na(idx)) unname(group_pal[[idx]]) else NULL
 }
 
+# group 色 (大文字小文字は無視)。見つからなければ default。
+group_color_or <- function(g, group_pal, default = "#1f2933") {
+  col <- group_color(g, group_pal)
+  if (!is.null(col)) col else default
+}
+
+# group 名 -> deftable どおりの正規名 (大文字小文字は無視)。見つからなければそのまま。
+group_name_of <- function(g, group_pal) {
+  if (is.null(group_pal)) return(g)
+  idx <- match(tolower(g), tolower(names(group_pal)))
+  if (!is.na(idx)) names(group_pal)[[idx]] else g
+}
+
+# sample -> その group 色 (group_map 経由)。見つからなければ default。
+sample_color <- function(s, group_map, group_pal, default = "#333333") {
+  g <- if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
+  if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else default
+}
+
+# group_pal が無ければ groups から生成し、欠けている group を補完したパレットを返す。
+ensure_palette <- function(group_pal, groups) {
+  pal <- if (!is.null(group_pal)) group_pal else group_palette(groups)
+  miss <- setdiff(groups, names(pal))
+  if (length(miss) > 0) pal <- c(pal, group_palette(miss))
+  pal
+}
+
 # group 名を group 色の <span> で装飾 (plotly の name/legend でも色付き文字になる)。
 group_span <- function(g, group_pal) {
   col <- group_color(g, group_pal)
@@ -274,7 +300,7 @@ build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = T
     mix <- function(a, b) round(a + t * (b - a))
     sprintf("rgb(%d,%d,%d)", mix(255, 178), mix(255, 24), mix(255, 43))  # #ffffff -> #b2182b
   }
-  hcol <- function(g) if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else "#1f2933"
+  hcol <- function(g) group_color_or(g, group_pal)
   n <- length(groups)
   ths <- paste(vapply(seq_len(n), function(j)
     sprintf('<th class="pic-cmx-h"><span style="color:%s">%s</span></th>', hcol(groups[[j]]), html_escape(groups[[j]])),
@@ -458,10 +484,7 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
   parts <- c(sprintf('<section id="%s"><h2>%s</h2>', section_id, heading))
 
   # サンプル名を group 配色で (heatmap と同じ)
-  scol <- function(s) {
-    g <- if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
-    if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else "#333333"
-  }
+  scol <- function(s) sample_color(s, group_map, group_pal)
 
   # ---- 100% 積み上げ棒 ----
   if (have_fate) {
@@ -744,10 +767,7 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
   d <- as.data.frame(d, check.names = FALSE)
   if (!("group" %in% colnames(d))) d$group <- "all"
   varpct <- pca_variance_pct(deseq2_dir, project)
-  pal <- if (!is.null(group_pal)) group_pal else group_palette(d$group)
-  # パレットに無いグループがあれば補完
-  miss <- setdiff(unique(d$group), names(pal))
-  if (length(miss) > 0) pal <- c(pal, group_palette(miss))
+  pal <- ensure_palette(group_pal, d$group)
   # group (凡例) の順は palette (= sample_sheet) の順に従う
   groups_ord <- pic_reorder_vec(unique(as.character(d$group)), names(pal))
 
@@ -971,8 +991,7 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     numerator <- if (length(sp) >= 1) sp[[1]] else "num"
     denominator <- if (length(sp) >= 2) sp[[2]] else "den"
     # 表示用に deftable どおりの casing へ (stats$aspect は小文字化されている)
-    canon_grp <- function(g) { idx <- if (!is.null(group_pal)) match(tolower(g), tolower(names(group_pal))) else NA_integer_; if (!is.na(idx)) names(group_pal)[[idx]] else g }
-    numerator <- canon_grp(numerator); denominator <- canon_grp(denominator)
+    numerator <- group_name_of(numerator, group_pal); denominator <- group_name_of(denominator, group_pal)
     flab <- format_contrast_file_label(a)
 
     gene <- if ("ext_gene" %in% colnames(cs)) {
@@ -988,10 +1007,7 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
 
     legend_top <- list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0)
     # 縦軸 (fold change) ラベル: log2(numerator / denominator) を group 色で
-    grp_col <- function(g) {
-      idx <- if (!is.null(group_pal)) match(tolower(g), tolower(names(group_pal))) else NA_integer_
-      if (!is.na(idx)) unname(group_pal[[idx]]) else "#1f2933"
-    }
+    grp_col <- function(g) group_color_or(g, group_pal)
     lfc_lab <- sprintf('log<sub>2</sub>(%s / %s)', html_escape(numerator), html_escape(denominator))
     cells <- character(0)
 
@@ -1104,8 +1120,7 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL,
       d <- suppressMessages(readr::read_csv(csv, show_col_types = FALSE, progress = FALSE))
       d <- as.data.frame(d, check.names = FALSE)
       if (nrow(d) == 0 || !all(c("sample", "group", "pos", "value") %in% colnames(d))) next
-      pal <- if (!is.null(group_pal)) group_pal else group_palette(unique(as.character(d$group)))
-      miss <- setdiff(unique(as.character(d$group)), names(pal)); if (length(miss) > 0) pal <- c(pal, group_palette(miss))
+      pal <- ensure_palette(group_pal, unique(as.character(d$group)))
       traces <- list()
       # 凡例は group 単位 (各 group の最初の trace のみ凡例に表示、他は legendgroup で連動)。
       # サンプルは sample_sheet の順に描画し、hover にサンプル名を表示。
@@ -1174,8 +1189,7 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
   ord <- order(grank, srank, sample_cols)
   sample_cols <- sample_cols[ord]; grp <- unname(grp[ord])
   ug <- unique(grp)
-  pal <- if (!is.null(group_pal)) group_pal else group_palette(ug)
-  miss <- setdiff(ug, names(pal)); if (length(miss) > 0) pal <- c(pal, group_palette(miss))
+  pal <- ensure_palette(group_pal, ug)
   mat <- as.matrix(d[, sample_cols, drop = FALSE]); storage.mode(mat) <- "double"
   mat <- round(mat, 2)
   ens_all <- as.character(d$ens_gene)
@@ -1208,8 +1222,7 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
       qval <- lapply(seq_len(nrow(qmat)), function(i) as.numeric(qmat[i, ]))
       # 表示用 contrast 名は deftable どおりの casing に (stats$aspect は小文字化されている)
       # 注: 名前付きベクトルにすると JSON が配列でなくオブジェクトになり JS 側で map できないため unname
-      canon_grp <- function(g) { idx <- if (!is.null(group_pal)) match(tolower(g), tolower(names(group_pal))) else NA_integer_; if (!is.na(idx)) names(group_pal)[[idx]] else g }
-      contrasts <- unname(vapply(contrasts, function(cc) paste(vapply(strsplit(cc, " / ", fixed = TRUE)[[1]], canon_grp, character(1)), collapse = " / "), character(1)))
+      contrasts <- unname(vapply(contrasts, function(cc) paste(vapply(strsplit(cc, " / ", fixed = TRUE)[[1]], function(g) group_name_of(g, group_pal), character(1)), collapse = " / "), character(1)))
     }
   }
 
@@ -1335,7 +1348,7 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
   clusters <- unique(as.character(prof$cluster_id))
   clab <- function(cl) if (!is.null(nmap) && cl %in% names(nmap)) sprintf("%s (n=%s)", cl, nmap[[cl]]) else cl
   groups <- unique(as.character(prof$group))
-  pal <- if (!is.null(group_pal)) group_pal else group_palette(groups)
+  pal <- ensure_palette(group_pal, groups)
   # group を palette (= sample_sheet) の順に並べる
   if (!is.null(group_pal)) groups <- pic_reorder_vec(groups, names(group_pal))
 
