@@ -424,8 +424,8 @@ PIC_FATE_COLORS <- c(
   assigned     = "#70AD47"
 )
 PIC_FATE_LABELS <- c(
-  trimmed = "trimmed", unmapped = "unmapped", multimapping = "multimapping",
-  nofeatures = "nofeatures", ambiguity = "ambiguity", assigned = "assigned"
+  trimmed = "Trimmed", unmapped = "Unmapped", multimapping = "Multi-mapping",
+  nofeatures = "No feature", ambiguity = "Ambiguous", assigned = "Assigned"
 )
 
 read_mapping_sum <- function(path) {
@@ -451,6 +451,10 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
   if (have_fate) {
     parts <- c(parts,
                sub_head("Read distribution", src_note(src), png_button(rd_cap, "read_distribution")),
+               paste0('<p class="pic-note">Each trimmed read is traced to its fate: uniquely <b>Assigned</b> to a gene, ',
+                      'or lost as <b>No feature</b> (overlaps no gene), <b>Ambiguous</b> (overlaps several genes), ',
+                      '<b>Multi-mapping</b>, or <b>Unmapped</b>. A healthy library is dominated by the Assigned fraction. ',
+                      'Bars are scaled to 100% so samples are comparable regardless of depth.</p>'),
                sprintf('<div class="pic-capbox" id="%s">', rd_cap))
     # 目盛り (0-100%)
     ruler <- '<div class="pic-bar-ruler"><span>0%</span><span>20%</span><span>40%</span><span>60%</span><span>80%</span><span>100%</span></div>'
@@ -496,22 +500,30 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
   # ---- データバー表 ----
   parts <- c(parts,
              sub_head("Sequencing depth", src_note(src), png_button(sd_cap, "sequencing_depth")),
+             paste0('<p class="pic-note">Photo-isolation chemistry (PIC) is a spatially targeted 3&prime;-end RNA-seq method ',
+                    '(Honda <i>et&nbsp;al.</i>, <i>Nat.&nbsp;Commun.</i> 2021). Reverse transcription tags every cDNA with a ',
+                    '<b>UMI</b> (unique molecular identifier) &mdash; a short random barcode carried, together with the sample ',
+                    'barcode, on Read&nbsp;1, while Read&nbsp;2 holds the cDNA sequence. Because all PCR copies of a molecule ',
+                    'inherit its UMI, collapsing reads by UMI (UMI-tools) counts each captured transcript once and cancels ',
+                    'amplification bias. Here <b>Total reads</b> is the raw sequenced depth, <b>UMIs</b> the de-duplicated ',
+                    'transcript molecules, and <b>Genes</b> the genes detected with at least one UMI; <b>UMIs/gene</b> and ',
+                    '<b>Assigned/UMI</b> summarize library complexity.</p>'),
              sprintf('<div class="pic-capbox" id="%s">', sd_cap))
   bar_cols <- list(
-    total = list(label = "total", grad = c("#9DC3E6", "#D9E7F5")),
-    umis  = list(label = "umis",  grad = c("#63C384", "#D6EFDD")),
-    genes = list(label = "genes", grad = c("#FFC000", "#FFE9AE"))
+    total = list(label = "Total reads", grad = c("#9DC3E6", "#D9E7F5")),
+    umis  = list(label = "UMIs",  grad = c("#63C384", "#D6EFDD")),
+    genes = list(label = "Genes", grad = c("#FFC000", "#FFE9AE"))
   )
   plain_cols <- list()
-  if ("umis/genes" %in% colnames(msum)) plain_cols[["umis/genes"]] <- "umis/genes"
-  if ("assigned/umis" %in% colnames(msum)) plain_cols[["assigned/umis"]] <- "assigned/umi"
+  if ("umis/genes" %in% colnames(msum)) plain_cols[["umis/genes"]] <- "UMIs/gene"
+  if ("assigned/umis" %in% colnames(msum)) plain_cols[["assigned/umis"]] <- "Assigned/UMI"
 
   maxima <- lapply(names(bar_cols), function(cc) {
     if (cc %in% colnames(msum)) max(suppressWarnings(as.numeric(msum[[cc]])), na.rm = TRUE) else NA_real_
   })
   names(maxima) <- names(bar_cols)
 
-  thead <- '<tr><th>sample</th>'
+  thead <- '<tr><th>Sample</th>'
   for (cc in names(bar_cols)) if (cc %in% colnames(msum)) thead <- paste0(thead, sprintf("<th>%s</th>", bar_cols[[cc]]$label))
   for (cc in names(plain_cols)) thead <- paste0(thead, sprintf("<th>%s</th>", plain_cols[[cc]]))
   thead <- paste0(thead, "</tr>")
