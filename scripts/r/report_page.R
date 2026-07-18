@@ -273,7 +273,7 @@ pic_tab_src_paths <- function(tab_html) {
 
 # Overview セクション。解析パイプラインを Materials & Methods 風のフローチャート
 # (各ステップの使用ツール + パラメータ + 再現用コード) で提示する。
-build_overview_section <- function(run, genome, pre_steps = list()) {
+build_overview_section <- function(run, genome, pre_steps = list(), extra_tools = character(0)) {
   code_block <- function(txt) sprintf('<pre class="pic-code">%s</pre>', txt)
   # ツールバッジ: name|version を 1 つの monospace バッジ "name version" にまとめる。
   tools_html <- function(ts) paste(vapply(ts, function(t) {
@@ -286,9 +286,9 @@ build_overview_section <- function(run, genome, pre_steps = list()) {
                    '<h3>%s</h3></div><p>%s</p>%s</div>'),
             n, name, desc, code)
   arrow <- '<div class="pic-flow-arrow">&#9660;</div>'
-  # 全ステップで使用するツール + バージョンを 1 箇所にまとめて表示
+  # 全ステップで使用するツール + バージョンを 1 箇所にまとめて表示 (extra_tools は先頭に)
   tools_block <- sprintf('<div class="pic-flow-tools"><span class="pic-flow-tools-lbl">Tools</span>%s</div>',
-    tools_html(c("Trim Galore|0.6.10", "HISAT2|2.2.1", "samtools|1.23.1", "featureCounts|2.1.1",
+    tools_html(c(extra_tools, "Trim Galore|0.6.10", "HISAT2|2.2.1", "samtools|1.23.1", "featureCounts|2.1.1",
                  "UMI-tools|1.1.4", "DESeq2|1.46.0", "R|4.4.3")))
 
   step_defs <- c(pre_steps, list(
@@ -435,18 +435,20 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL) {
 }
 
 # タブバー + パネルを組み立てる。tabs: list(list(html=, label=, controls=, subs=, shared_controls=))。
-# extra_nav: タブボタンの後に付ける追加ナビ HTML (例: Sources フォルダへのリンク)。
+# 各 tab は任意で target (ボタンの data-target。未指定なら section id)、active (既定は先頭)、
+# prebuilt (TRUE なら html は pic_tab_panel 済みとして 1 ボタン複数セクションに使う) を持てる。
+# extra_nav: タブボタンの後に付ける追加ナビ HTML。
 build_tabs <- function(tabs, extra_nav = "") {
   tabs <- Filter(function(t) nzchar(t$html), tabs)
   if (length(tabs) == 0) return(list(bar = "", panels = ""))
   btns <- character(0); panels <- character(0)
   for (i in seq_along(tabs)) {
-    active <- (i == 1L)
     t <- tabs[[i]]
-    id <- regmatches(t$html, regexpr('(?<=<section id=")[^"]+', t$html, perl = TRUE))
+    active <- if (!is.null(t$active)) isTRUE(t$active) else (i == 1L)
+    target <- if (!is.null(t$target)) t$target else regmatches(t$html, regexpr('(?<=<section id=")[^"]+', t$html, perl = TRUE))
     btns <- c(btns, sprintf('<button class="pic-tabbtn%s" type="button" data-target="%s">%s</button>',
-                            if (active) " active" else "", id, html_escape(t$label)))
-    panels <- c(panels, pic_tab_panel(t$html, active,
+                            if (active) " active" else "", target, html_escape(t$label)))
+    panels <- c(panels, if (isTRUE(t$prebuilt)) t$html else pic_tab_panel(t$html, active,
                                       controls = if (!is.null(t$controls)) t$controls else "",
                                       subs = t$subs,
                                       shared_controls = if (!is.null(t$shared_controls)) t$shared_controls else ""))
@@ -604,13 +606,15 @@ pic_is_xenograft_out <- function(out_dir) {
 # 冒頭の intro のみ xenograft 用 (2 ゲノム + xengsort split + ゲノム切替の案内) に差し替える。
 build_overview_section_xeno <- function(run, fr_list) {
   base_genome <- if (length(fr_list) > 0) fr_list[[1]]$genome else ""
-  # パイプライン先頭に xengsort によるゲノム振り分けステップを追加
+  # パイプライン先頭に xengsort によるゲノム振り分けステップを追加 (実コマンド)
   xengsort_step <- list(
     name = "Genome split (xengsort)",
-    desc = 'Classify each read to the <b>graft</b> or <b>host</b> genome with <code>xengsort</code>; each fraction is then mapped to its own reference by the steps below (run per genome).',
-    code = paste0('<pre class="pic-code">pic xenograft --index &lt;index&gt; --demux-fastq-dir demux --out-dir out/\n',
-                  '<span class="c"># -&gt; out/classified/{graft,host}/  +  xenograft_classify_summary__&lt;run&gt;.tsv</span></pre>'))
-  base <- build_overview_section(run, base_genome, pre_steps = list(xengsort_step))  # <section><h2>Overview</h2><intro><h3>Analysis Pipeline</h3>...
+    desc = 'Classify each demultiplexed read to the <b>graft</b> or <b>host</b> genome with <code>xengsort</code>; each fraction is then mapped to its own reference by the steps below (run per genome).',
+    code = paste0('<pre class="pic-code">xengsort classify --index &lt;index&gt; --fastq demux/${sample}.fastq.gz \\\n',
+                  '    -o xengsort/${sample} --mode count\n',
+                  '<span class="c"># writes xengsort/${sample}-{graft,host,both,neither,ambiguous}.fq.gz</span></pre>'))
+  base <- build_overview_section(run, base_genome, pre_steps = list(xengsort_step),
+                                 extra_tools = "xengsort|2.2.0")  # <section><h2>Overview</h2><intro><h3>Analysis Pipeline</h3>...
   gl <- vapply(names(fr_list), function(fr) {
     fa <- fr_list[[fr]]
     sprintf('<b>%s</b>%s', html_escape(fr), if (nzchar(fa$genome)) sprintf(" (%s)", html_escape(fa$genome)) else "")
@@ -655,12 +659,11 @@ build_xenograft_report <- function(out_dir, asset_dir) {
 
   keys <- c("qc", "aggregate", "cor", "pca", "deg", "expr", "enrich")
 
-  # --- パネル + ナビボタン ---
-  panels <- character(0); nav_btns <- character(0)
-
-  # Overview (先頭 = 初期アクティブ)
-  panels <- c(panels, pic_tab_panel(build_overview_section_xeno(run, fr_list), active = TRUE))
-  nav_btns <- c(nav_btns, '<button class="pic-tabbtn active" type="button" data-target="overview">Overview</button>')
+  # --- 通常レポートと同じ build_tabs 経路でタブを組み立てる ---
+  # 各 tab は prebuilt (pic_tab_panel 済み) + target (論理キー) で 1 ボタンに対応。
+  # 解析タブは graft/host の 2 セクションを 1 タブに束ね、JS のゲノム切替で出し分ける。
+  tabs <- list(list(target = "overview", label = "Overview", active = TRUE, prebuilt = TRUE,
+                    html = pic_tab_panel(build_overview_section_xeno(run, fr_list), active = TRUE)))
 
   # Genome split (Read distribution と同じ 2 ペイン: 左に group トグル)
   gsplit_pal <- if (length(fr_list) > 0) fr_list[[1]]$group_pal else NULL
@@ -668,32 +671,32 @@ build_xenograft_report <- function(out_dir, asset_dir) {
   gsplit_ord <- if (length(fr_list) > 0) fr_list[[1]]$sample_order else NULL
   gs <- section_genome_split(summary_df, report_rel_path(summary_files[[1]], out_dir), geno_map,
                              gsplit_map, gsplit_pal, gsplit_ord)
-  panels <- c(panels, pic_tab_panel(gs, active = FALSE, controls = group_toggle_panel(gsplit_pal)))
-  nav_btns <- c(nav_btns, '<button class="pic-tabbtn" type="button" data-target="genomesplit">Genome split</button>')
+  tabs <- c(tabs, list(list(target = "genomesplit", label = "Genome split", prebuilt = TRUE,
+                            html = pic_tab_panel(gs, active = FALSE, controls = group_toggle_panel(gsplit_pal)))))
 
-  # 解析タブ: 論理キーごとに両画分の <section id="<frac>__<key>"> を出す
+  # 解析タブ: 論理キーごとに両画分の <section id="<frac>__<key>"> を 1 タブに束ねる
   for (ki in seq_along(keys)) {
-    k <- keys[[ki]]; present <- FALSE; label <- NULL
+    k <- keys[[ki]]; sec_html <- character(0); label <- NULL
     for (frac in names(fr_list)) {
       t <- fr_list[[frac]]$data_tabs[[ki]]
       if (is.null(t) || !nzchar(t$html)) next
-      present <- TRUE; if (is.null(label)) label <- t$label
-      panels <- c(panels, pic_tab_panel(t$html, active = FALSE,
-                                        controls = if (!is.null(t$controls)) t$controls else "",
-                                        subs = t$subs,
-                                        shared_controls = if (!is.null(t$shared_controls)) t$shared_controls else ""))
+      if (is.null(label)) label <- t$label
+      sec_html <- c(sec_html, pic_tab_panel(t$html, active = FALSE,
+                                            controls = if (!is.null(t$controls)) t$controls else "",
+                                            subs = t$subs,
+                                            shared_controls = if (!is.null(t$shared_controls)) t$shared_controls else ""))
     }
-    if (present) nav_btns <- c(nav_btns, sprintf('<button class="pic-tabbtn" type="button" data-target="%s">%s</button>',
-                                                 k, html_escape(label)))
+    if (length(sec_html) > 0)
+      tabs <- c(tabs, list(list(target = k, label = label, prebuilt = TRUE, html = paste(sec_html, collapse = ""))))
   }
 
   # Downloads (out_dir を再帰スキャンして graft/host 両方を収録)
   merged_tabs <- if (length(fr_list) > 0) fr_list[[1]]$data_tabs else list()
   dl <- build_downloads_section(merged_tabs, run, if (length(fr_list) > 0) fr_list[[1]]$genome else "", NULL)
-  panels <- c(panels, pic_tab_panel(dl, active = FALSE))
-  nav_btns <- c(nav_btns, '<button class="pic-tabbtn" type="button" data-target="downloads">Downloads</button>')
+  tabs <- c(tabs, list(list(target = "downloads", label = "Downloads", prebuilt = TRUE,
+                            html = pic_tab_panel(dl, active = FALSE))))
 
-  # ゲノム切替コントロール (navbar 右端)
+  # ゲノム切替コントロール (navbar 右端 = render の extra_nav)
   geno_btns <- vapply(names(fr_list), function(frac) {
     fa <- fr_list[[frac]]
     lab <- sprintf("%s%s", frac, if (nzchar(fa$genome)) sprintf(" (%s)", fa$genome) else "")
@@ -702,9 +705,9 @@ build_xenograft_report <- function(out_dir, asset_dir) {
   }, character(1))
   geno_switch <- if (length(geno_btns) > 0) sprintf('<div class="pic-genoswitch">%s</div>', paste(geno_btns, collapse = "")) else ""
 
+  tb <- build_tabs(tabs)
   out_html <- file.path(out_dir, sprintf("report_%s.html", run))
-  render_report_page(run, paste(nav_btns, collapse = ""), paste(panels, collapse = "\n"),
-                     reg, asset_dir, out_html, extra_nav = geno_switch)
+  render_report_page(run, tb$bar, tb$panels, reg, asset_dir, out_html, extra_nav = geno_switch)
   unlink(tmp_dir, recursive = TRUE)
   out_html
 }
