@@ -72,7 +72,8 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         lapply(contrasts, function(cc) if (!is.null(deg_counts) && cc %in% names(deg_counts)) deg_counts[[cc]] else NA_real_),
         vapply(contrasts, format_contrast_file_label, character(1)))
       gsea_html <- build_matrix_group(rows, methods, cell_html, row_groups = row_groups,
-                                      row_counts = row_counts, group_pal = group_pal, view_header = "")
+                                      row_counts = row_counts, group_pal = group_pal, view_header = "",
+                                      id_prefix = id_prefix)
     }
   }
   if (nzchar(gsea_html)) {
@@ -102,7 +103,9 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
       spec <- tryCatch(build_ora_plotly(ora_all), error = function(e) NULL)
       if (is.null(spec)) next
       # method ごとに cluster をまとめた 1 本の CSV を仮想ファイルとして埋め込み (ワンクリック DL)
-      vrel <- sprintf("enrich/ORA/%s/ORA_%s_%s.csv", method, method, project)
+      # xenograft では id_prefix ("graft__" 等) から画分ディレクトリを付け、Downloads で画分を区別
+      frac_dir <- if (nzchar(id_prefix)) paste0(sub("__$", "", id_prefix), "/") else ""
+      vrel <- sprintf("%senrich/ORA/%s/ORA_%s_%s.csv", frac_dir, method, method, project)
       vid <- tryCatch(register_virtual_file(vrel, readr::format_csv(ora_all),
                                             desc = sprintf("ORA result — %s (all clusters combined).", method)),
                       error = function(e) NULL)

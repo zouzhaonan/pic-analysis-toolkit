@@ -84,6 +84,7 @@ png_button <- function(cap_id, name) {
 file_desc <- function(rel) {
   b <- basename(rel)
   d <- function(...) paste0(...)
+  if (grepl("^xenograft_classify_summary", b)) return("Xenograft read classification summary (per-sample genome split: graft/host/both/neither/ambiguous).")
   if (grepl("^mapping_sum", b)) return("Per-sample mapping/QC summary (read fate, total reads, UMIs, genes).")
   if (grepl("^sample_sheet", b)) return("Input sample sheet (fastq prefix, barcode, sample, group).")
   if (grepl("^deftable", b)) return("DESeq2 definition table (count prefix, sample, group).")
@@ -127,20 +128,29 @@ file_excluded <- function(rel) {
     grepl("^DEGCluster_summary", b) || grepl("^DEGCluster_gene_for_ora", b) ||
     grepl("^DEGCluster_merge_map", b) ||
     # ORA は method ごとの結合 CSV のみ提供し、cluster ごとの表は含めない
-    (grepl("(^|/)enrich/ORA/", rel) && grepl("_cluster_[0-9]", b))
+    # (enrich/<genome>/ORA/ や <frac>/enrich/... など genome ネスト構造にも対応)
+    (grepl("(^|/)ORA/", rel) && grepl("_cluster_[0-9]", b))
 }
 
 # 相対パスからカタログ用のカテゴリ (見出し + 対応タブ id) を返す。タブ順に並べる。
+# rel の分類。enrich/aggregate は genome ネスト (enrich/<genome>/GSEA) や
+# xenograft の <frac>/enrich/... にも対応するためパス中の GSEA/ORA/aggregate で判定。
+# xenograft (先頭が graft//host/) では title に画分を付けて Downloads で区別する。
 file_category <- function(rel) {
   b <- basename(rel)
-  if (grepl("^enrich/GSEA", rel)) return(list(key = "gsea", title = "Enrichment — GSEA", tab = "enrich"))
-  if (grepl("^enrich/ORA", rel))  return(list(key = "ora",  title = "Enrichment — ORA",  tab = "enrich"))
-  if (grepl("^aggregate/", rel))  return(list(key = "agg", title = "Aggregation", tab = "aggregate"))
-  if (grepl("correlation", b))    return(list(key = "cor", title = "Sample Correlation", tab = "cor"))
-  if (grepl("PCA", b))            return(list(key = "pca", title = "PCA", tab = "pca"))
-  if (grepl("^stats|DEG", b))     return(list(key = "deg", title = "Differential Expression", tab = "deg"))
-  if (grepl("UMI_count|normalizedCountTable", b)) return(list(key = "expr", title = "Count Table", tab = "expr"))
-  list(key = "mapping", title = "Mapping", tab = "qc")
+  if (grepl("^xenograft_classify_summary", b)) return(list(key = "split", title = "Genome split", tab = "genomesplit"))
+  frac <- if (grepl("^(graft|host)/", rel)) sub("^(graft|host)/.*$", "\\1", rel) else ""
+  base <-
+    if (grepl("enrich", rel, fixed = TRUE) && grepl("(^|/)GSEA/", rel)) list(key = "gsea", title = "Enrichment — GSEA", tab = "enrich")
+    else if (grepl("enrich", rel, fixed = TRUE) && grepl("(^|/)ORA/", rel)) list(key = "ora", title = "Enrichment — ORA", tab = "enrich")
+    else if (grepl("(^|/)aggregate/", rel)) list(key = "agg", title = "Aggregation", tab = "aggregate")
+    else if (grepl("correlation", b)) list(key = "cor", title = "Sample Correlation", tab = "cor")
+    else if (grepl("PCA", b)) list(key = "pca", title = "PCA", tab = "pca")
+    else if (grepl("^stats|DEG", b)) list(key = "deg", title = "Differential Expression", tab = "deg")
+    else if (grepl("UMI_count|normalizedCountTable", b)) list(key = "expr", title = "Count Table", tab = "expr")
+    else list(key = "mapping", title = "Mapping", tab = "qc")
+  if (nzchar(frac)) base$title <- sprintf("%s — %s", base$title, frac)
+  base
 }
 
 # ファイル (相対パス) を gzip+base64 で埋め込みレジストリに登録し、id を返す。
@@ -340,12 +350,14 @@ build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = T
 # 2 軸 (行 = contrast, 列 = method) をチェックボックスで選び、両方選択のセルのみ表示。
 # row_groups を渡すと、行 (contrast) の選択を group×group 行列で提示する。
 build_matrix_group <- function(rows, cols, cell_html, row_title = "Comparison", col_title = "Method",
-                               row_groups = NULL, row_counts = NULL, group_pal = NULL, view_header = "") {
+                               row_groups = NULL, row_counts = NULL, group_pal = NULL, view_header = "",
+                               id_prefix = "") {
   if (length(rows) == 0 || length(cols) == 0) return("")
   first_row <- rows[[1]]$key
   first_col <- cols[[1]]
-  # 行 (contrast) セレクタ: group 行列 or 線形バー
-  rname <- paste0("gseacon_", gsub("[^A-Za-z0-9_]", "", rows[[1]]$key))
+  # 行 (contrast) セレクタ: group 行列 or 線形バー。radio name は id_prefix で一意化
+  # (xenograft で graft/host の GSEA 行列が同名ラジオになり相互干渉するのを防ぐ)
+  rname <- paste0(id_prefix, "gseacon_", gsub("[^A-Za-z0-9_]", "", rows[[1]]$key))
   gm <- ""
   if (!is.null(row_groups) && length(row_groups) >= 2) {
     entries <- lapply(seq_along(rows), function(i) list(
@@ -364,7 +376,7 @@ build_matrix_group <- function(rows, cols, cell_html, row_title = "Comparison", 
     sprintf('<div class="pic-select-bar"><span class="pic-select-lbl">%s:</span>%s</div>',
             html_escape(row_title), paste(row_bar, collapse = ""))
   }
-  cname <- paste0("gseameth_", gsub("[^A-Za-z0-9_]", "", cols[[1]]))
+  cname <- paste0(id_prefix, "gseameth_", gsub("[^A-Za-z0-9_]", "", cols[[1]]))
   col_bar <- vapply(seq_along(cols), function(i) {
     ck <- if (i == 1L) " checked" else ""
     sprintf('<label class="pic-select-chk"><input type="radio" name="%s" data-axis="c"%s data-key="%s">%s</label>',

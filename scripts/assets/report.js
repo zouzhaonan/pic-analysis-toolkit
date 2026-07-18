@@ -78,6 +78,44 @@
     window.scrollTo(0, 0);
   }
 
+  // xenograft: ゲノム切替時に、現タブの UI 状態 (サブタブ / チェックボックス / ラジオ) を
+  // 旧ゲノムのセクションから新ゲノムのセクションへ引き継ぐ (ゲノム間比較のため)。
+  function stripGeno(s) { return s ? s.replace(/^(graft|host)__/, "") : s; }
+  function syncGenoState(fromGeno, toGeno, tabKey) {
+    var fromSec = document.getElementById(fromGeno + "__" + tabKey);
+    var toSec = document.getElementById(toGeno + "__" + tabKey);
+    if (!fromSec || !toSec) return;  // 解析タブ以外は対象外
+    // 1. サブタブ (Read distribution/Sequencing depth, Heatmap/MA・Volcano, GSEA/ORA)
+    var actSub = fromSec.querySelector(".pic-subtabbtn.active");
+    if (actSub) {
+      var suf = stripGeno(actSub.dataset.sub);
+      var dstSub = Array.prototype.filter.call(toSec.querySelectorAll(".pic-subtabbtn"),
+        function (x) { return stripGeno(x.dataset.sub) === suf; })[0];
+      if (dstSub && !dstSub.classList.contains("active")) dstSub.click();
+    }
+    // 2. ラジオ (DEG contrast: data-target / GSEA matrix: data-axis+data-key)
+    fromSec.querySelectorAll("input[type=radio]:checked").forEach(function (src) {
+      var dst = null;
+      if (src.dataset.target) {
+        var s = stripGeno(src.dataset.target);
+        dst = Array.prototype.filter.call(toSec.querySelectorAll("input[type=radio][data-target]"),
+          function (r) { return stripGeno(r.dataset.target) === s; })[0];
+      } else if (src.dataset.key && src.dataset.axis) {
+        dst = toSec.querySelector("input[type=radio][data-axis='" + src.dataset.axis + "'][data-key='" + src.dataset.key + "']");
+      }
+      if (dst && !dst.checked) dst.click();
+    });
+    // 3. チェックボックス (group / sample トグル)
+    fromSec.querySelectorAll("input[type=checkbox]").forEach(function (src) {
+      var sel = src.dataset.group ? "[data-group='" + src.dataset.group + "']"
+              : (src.dataset.sample ? "[data-sample='" + src.dataset.sample + "']" : null);
+      if (!sel) return;
+      toSec.querySelectorAll("input[type=checkbox]" + sel).forEach(function (dst) {
+        if (dst.checked !== src.checked) { dst.checked = src.checked; dst.dispatchEvent(new Event("change", { bubbles: true })); }
+      });
+    });
+  }
+
   // HTML 要素 (heatmap / QC / correlation テーブル) を PNG 化してダウンロードする。
   // 外部ライブラリ不要: SVG <foreignObject> に要素とレポート CSS を埋めて canvas 描画。
   function capturePng(el, filename, btn) {
@@ -398,9 +436,16 @@
       currentGeno = (document.querySelector(".pic-genobtn.active") || genobtns[0]).dataset.geno;
       genobtns.forEach(function (b) {
         b.addEventListener("click", function () {
+          var from = currentGeno;
           currentGeno = b.dataset.geno;
           genobtns.forEach(function (x) { x.classList.toggle("active", x === b); });
-          if (currentTab) activateTab(currentTab);
+          if (currentTab && from && from !== currentGeno) syncGenoState(from, currentGeno, currentTab);
+          if (currentTab) {
+            activateTab(currentTab);
+            // 新セクションの plot を描画後に group トグル状態を再適用
+            var newSec = document.getElementById(currentGeno + "__" + currentTab);
+            if (newSec) applyGroupToggles(newSec);
+          }
         });
       });
     }

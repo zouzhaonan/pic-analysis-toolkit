@@ -361,18 +361,26 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL) {
   order_cats <- c("Mapping", "PCA", "Aggregation", "Sample Correlation",
                   "Count Table", "Differential Expression",
                   "Enrichment — GSEA", "Enrichment — ORA")
+  # xenograft では "… — graft/host" 接尾辞が付く。base 部で並べ、画分は graft->host。
+  ct_base <- function(ct) sub(" — (graft|host)$", "", ct)
+  ct_frac <- function(ct) if (grepl(" — graft$", ct)) 1L else if (grepl(" — host$", ct)) 2L else 0L
+  meth_of <- function(i) { segs <- strsplit(files[[i]]$path, "/", fixed = TRUE)[[1]]
+    gi <- which(segs %in% c("GSEA", "ORA")); if (length(gi) && gi[[1]] < length(segs)) segs[[gi[[1]] + 1L]] else "?" }
   cats <- unique(vapply(files, function(f) f$cat, character(1)))
-  cats <- c(intersect(order_cats, cats), setdiff(cats, order_cats))
+  cats <- cats[order(vapply(cats, ct_frac, integer(1)),
+                     vapply(cats, function(ct) { r <- match(ct_base(ct), order_cats); if (is.na(r)) length(order_cats) + 1L else r }, integer(1)),
+                     cats)]
 
-  secs <- character(0); open_flag <- TRUE
+  secs <- character(0)
   for (ct in cats) {
     ids <- names(files)[vapply(files, function(f) identical(f$cat, ct), logical(1))]
     if (length(ids) == 0) next
     tab <- files[[ids[[1]]]]$tab
-    if (identical(ct, "Enrichment — GSEA")) {
+    open_this <- !(ct_base(ct) %in% c("Enrichment — GSEA", "Enrichment — ORA"))
+    if (identical(ct_base(ct), "Enrichment — GSEA")) {
       meth_order <- strsplit(pic_plot_spec()$defaults$enrich_methods_csv, ",", fixed = TRUE)[[1]]
       order_meths <- function(ms) c(meth_order[meth_order %in% ms], sort(setdiff(ms, meth_order)))
-      meth <- vapply(ids, function(i) { p <- strsplit(files[[i]]$path, "/", fixed = TRUE)[[1]]; if (length(p) >= 3) p[[3]] else "GSEA" }, character(1))
+      meth <- vapply(ids, meth_of, character(1))
       subs <- character(0)
       for (mth in order_meths(unique(meth))) {
         mids <- ids[meth == mth]
@@ -385,11 +393,11 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL) {
                                 html_escape(mth), length(mids), paste(clis, collapse = "")))
       }
       body <- paste(subs, collapse = "")
-    } else if (identical(ct, "Enrichment — ORA")) {
+    } else if (identical(ct_base(ct), "Enrichment — ORA")) {
       # ORA は method ごとに 1 本の結合 CSV。method 順に並べ、名前 + Download を列挙
       meth_order <- strsplit(pic_plot_spec()$defaults$enrich_methods_csv, ",", fixed = TRUE)[[1]]
       order_meths <- function(ms) c(meth_order[meth_order %in% ms], sort(setdiff(ms, meth_order)))
-      meth <- vapply(ids, function(i) { p <- strsplit(files[[i]]$path, "/", fixed = TRUE)[[1]]; if (length(p) >= 3) p[[3]] else "ORA" }, character(1))
+      meth <- vapply(ids, meth_of, character(1))
       lis <- unlist(lapply(order_meths(unique(meth)), function(mth) {
         vapply(ids[meth == mth], function(i)
           sprintf('<li>%s<span class="pic-ov-desc">%s</span></li>',
@@ -402,11 +410,10 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL) {
       body <- sprintf('<ul class="pic-ov-list">%s</ul>', paste(vapply(ids, file_li, character(1)), collapse = ""))
     }
     jump <- if (!is.null(tab) && nzchar(tab)) sprintf('<a class="pic-ov-jump" data-target="%s" tabindex="0">open tab &rarr;</a>', tab) else ""
-    # 既定では Differential Expression までのセクションを展開し、以降 (GSEA/ORA) は畳む
+    # GSEA/ORA 以外は展開、GSEA/ORA は畳む
     sec <- sprintf('<details class="pic-ov-sec"%s><summary><span class="pic-ov-cat">%s</span>%s</summary>%s</details>',
-                   if (open_flag) " open" else "", html_escape(ct), jump, body)
+                   if (open_this) " open" else "", html_escape(ct), jump, body)
     secs <- c(secs, sec)
-    if (identical(ct, "Differential Expression")) open_flag <- FALSE
   }
   # 2 欄グリッド (行優先) で列挙。既定では Differential Expression まで展開
   sprintf('<section id="downloads"><h2>Downloads</h2><div class="pic-ov-groups pic-ov-2col">%s</div></section>',
@@ -474,12 +481,17 @@ PIC_XENO_COLORS <- c(
 )
 
 # 分類サマリ TSV から「Genome split」タブ (2 ゲノムへの振り分け割合) を作る。
-# geno_map: c(graft="hg38", host="mm10") のような画分->ゲノム名 (凡例ラベル用)。
-section_genome_split <- function(summary_df, src = "", geno_map = NULL) {
+# Read distribution と同じ 2 ペイン設計 (左に group トグル、行は data-group + 色付きラベル)。
+# geno_map: c(graft="hg38", host="mm10") — 凡例ラベル用。group_map/group_pal/sample_order で
+# サンプルの色・並び・group トグル対応。
+section_genome_split <- function(summary_df, src = "", geno_map = NULL,
+                                 group_map = NULL, group_pal = NULL, sample_order = NULL) {
   cats <- names(PIC_XENO_COLORS)
   have <- all(cats %in% colnames(summary_df))
   cat_label <- function(cc) if (!is.null(geno_map) && cc %in% names(geno_map) && nzchar(geno_map[[cc]]))
     sprintf("%s (%s)", cc, geno_map[[cc]]) else cc
+  scol <- function(s) sample_color(s, group_map, group_pal)
+  grpof <- function(s) if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
   note <- paste0('<p class="pic-note">Each library was split between the two reference genomes with ',
                  '<b>xengsort</b>. Each bar is one sample (100&thinsp;% stacked): <b>graft</b> / <b>host</b> are reads ',
                  'assigned uniquely to each genome; <b>both</b> map to either, <b>ambiguous</b> are undecided, ',
@@ -489,10 +501,12 @@ section_genome_split <- function(summary_df, src = "", geno_map = NULL) {
     parts <- c(parts, '<p>classification summary not found.</p></section>')
     return(paste(parts, collapse = "\n"))
   }
+  samples <- as.character(summary_df$sample)
+  ord <- if (!is.null(sample_order)) order(match(samples, sample_order)) else seq_along(samples)
   ruler <- '<div class="pic-bar-ruler"><span>0%</span><span>20%</span><span>40%</span><span>60%</span><span>80%</span><span>100%</span></div>'
   rows <- character(0)
-  for (i in seq_len(nrow(summary_df))) {
-    sample <- as.character(summary_df$sample[[i]])
+  for (i in ord) {
+    sample <- samples[[i]]
     vals <- vapply(cats, function(cc) suppressWarnings(as.numeric(summary_df[[cc]][[i]])), numeric(1))
     vals[!is.finite(vals)] <- 0
     tot <- sum(vals); if (tot <= 0) tot <- 1
@@ -504,14 +518,14 @@ section_genome_split <- function(summary_df, src = "", geno_map = NULL) {
       segs <- c(segs, sprintf('<div class="pic-seg" style="width:%.4f%%;background:%s" title="%s — %s"></div>',
                               pct, PIC_XENO_COLORS[[cc]], html_escape(sample), html_escape(tip)))
     }
-    rows <- c(rows, sprintf('<div class="pic-bar-row"><div class="pic-bar-label">%s</div><div class="pic-bar-track">%s</div></div>',
-                            html_escape(sample), paste(segs, collapse = "")))
+    rows <- c(rows, sprintf('<div class="pic-bar-row" data-group="%s"><div class="pic-bar-label" style="color:%s;font-weight:600">%s</div><div class="pic-bar-track">%s</div></div>',
+                            html_escape(grpof(sample)), scol(sample), html_escape(sample), paste(segs, collapse = "")))
   }
   legend <- vapply(cats, function(cc) sprintf('<span class="pic-legend-item"><span class="pic-swatch" style="background:%s"></span>%s</span>',
                                               PIC_XENO_COLORS[[cc]], html_escape(cat_label(cc))), character(1))
   parts <- c(parts,
+    sprintf('<div class="pic-legend" style="margin-left:0;margin-bottom:6px">%s</div>', paste(legend, collapse = "")),
     '<div class="pic-bars">', ruler, paste(rows, collapse = "\n"), '</div>',
-    sprintf('<div class="pic-legend">%s</div>', paste(legend, collapse = "")),
     '</section>')
   paste(parts, collapse = "\n")
 }
@@ -559,7 +573,8 @@ build_fraction_analysis <- function(reg, frac_key, out_dir, frac_dir, tmp_dir) {
   data_tabs <- build_analysis_data_tabs(reg, desc, frac_dir, out_dir, id_prefix, fdr,
                                         msum, group_map, group_pal, sample_order, group_order,
                                         stats, deg_counts, tmp_dir)
-  list(key = frac_key, genome = genome, data_tabs = data_tabs)
+  list(key = frac_key, genome = genome, data_tabs = data_tabs,
+       group_pal = group_pal, group_map = group_map, sample_order = sample_order)
 }
 
 # out_dir 配下に xenograft 分類結果 (classify summary + graft/host) があるか
@@ -568,21 +583,27 @@ pic_is_xenograft_out <- function(out_dir) {
   length(s) > 0 && (dir.exists(file.path(out_dir, "graft")) || dir.exists(file.path(out_dir, "host")))
 }
 
-# xenograft レポート用の Overview (2 ゲノム + xengsort split の説明)。
+# xenograft レポート用の Overview。通常 Overview (Analysis Pipeline 含む) を再利用し、
+# 冒頭の intro のみ xenograft 用 (2 ゲノム + xengsort split + ゲノム切替の案内) に差し替える。
 build_overview_section_xeno <- function(run, fr_list) {
+  base_genome <- if (length(fr_list) > 0) fr_list[[1]]$genome else ""
+  base <- build_overview_section(run, base_genome)  # <section><h2>Overview</h2><intro><h3>Analysis Pipeline</h3>...
   gl <- vapply(names(fr_list), function(fr) {
     fa <- fr_list[[fr]]
     sprintf('<b>%s</b>%s', html_escape(fr), if (nzchar(fa$genome)) sprintf(" (%s)", html_escape(fa$genome)) else "")
   }, character(1))
   genomes_txt <- paste(gl, collapse = " and ")
-  overview <- sprintf(paste0('<p class="pic-ov-intro">This self-contained report presents the <b>PIC</b> ',
+  xeno_intro <- sprintf(paste0('<p class="pic-ov-intro">This self-contained report presents the <b>PIC</b> ',
     '(photo-isolation chemistry) 3&prime;-biased RNA-seq run <b>%s</b>, a <b>xenograft</b> library whose reads were ',
-    'split between two reference genomes (%s) with <b>xengsort</b>.</p>'),
-    html_escape(run), genomes_txt)
-  guide <- paste0('<p class="pic-flow-sub">The <b>Genome split</b> tab shows how reads divided between the two genomes. ',
-    'Every other tab shows the standard analysis for one genome at a time — use the ',
-    '<b>graft / host</b> switch at the top-right to change genome. All source tables are embedded and downloadable from <b>Downloads</b>.</p>')
-  sprintf('<section id="overview"><h2>Overview</h2>%s%s</section>', overview, guide)
+    'split between two reference genomes (%s) with <b>xengsort</b>. The <b>Genome split</b> tab shows how reads divided ',
+    'between the genomes; every other tab shows the standard analysis for one genome at a time &mdash; use the ',
+    '<b>graft / host</b> switch at the top-right to change genome. The pipeline below runs independently per genome ',
+    '(after the xengsort split), shown here for <b>%s</b>.</p>'),
+    html_escape(run), genomes_txt, html_escape(base_genome))
+  # <h2>Overview</h2> と <h3 class="pic-flow-title"> の間 (= 元の intro) を差し替え
+  marker <- '<h3 class="pic-flow-title">'
+  segs <- strsplit(base, marker, fixed = TRUE)[[1]]
+  paste0('<section id="overview"><h2>Overview</h2>', xeno_intro, marker, paste(segs[-1], collapse = marker))
 }
 
 build_xenograft_report <- function(out_dir, asset_dir) {
@@ -618,9 +639,13 @@ build_xenograft_report <- function(out_dir, asset_dir) {
   panels <- c(panels, pic_tab_panel(build_overview_section_xeno(run, fr_list), active = TRUE))
   nav_btns <- c(nav_btns, '<button class="pic-tabbtn active" type="button" data-target="overview">Overview</button>')
 
-  # Genome split
-  gs <- section_genome_split(summary_df, report_rel_path(summary_files[[1]], out_dir), geno_map)
-  panels <- c(panels, pic_tab_panel(gs, active = FALSE))
+  # Genome split (Read distribution と同じ 2 ペイン: 左に group トグル)
+  gsplit_pal <- if (length(fr_list) > 0) fr_list[[1]]$group_pal else NULL
+  gsplit_map <- if (length(fr_list) > 0) fr_list[[1]]$group_map else NULL
+  gsplit_ord <- if (length(fr_list) > 0) fr_list[[1]]$sample_order else NULL
+  gs <- section_genome_split(summary_df, report_rel_path(summary_files[[1]], out_dir), geno_map,
+                             gsplit_map, gsplit_pal, gsplit_ord)
+  panels <- c(panels, pic_tab_panel(gs, active = FALSE, controls = group_toggle_panel(gsplit_pal)))
   nav_btns <- c(nav_btns, '<button class="pic-tabbtn" type="button" data-target="genomesplit">Genome split</button>')
 
   # 解析タブ: 論理キーごとに両画分の <section id="<frac>__<key>"> を出す
