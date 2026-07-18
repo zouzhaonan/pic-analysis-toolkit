@@ -1775,17 +1775,17 @@ build_overview_section <- function(run, genome) {
     step("1", "Adapter Trimming &amp; Alignment",
       'Trim the 3&#39; PIC adapter (<code>Trim Galore</code>), then align single-end to the <code>HISAT2</code> index.',
       code_block(sprintf(paste0(
-'trim_galore -j 8 -a GATCGTCGGACT -o trim/ demux/${sample}.fastq.gz\n',
-'hisat2 -p 8 -x hisat2_index/%s -U trim/${sample}_trimmed.fq.gz -S map/${sample}.sam\n',
-'samtools sort  -@ 8 -o map/${sample}.bam map/${sample}.sam\n',
+'trim_galore -a GATCGTCGGACT -o trim/ demux/${sample}.fastq.gz\n',
+'hisat2 -x hisat2_index/%s -U trim/${sample}_trimmed.fq.gz -S map/${sample}.sam\n',
+'samtools sort -o map/${sample}.bam map/${sample}.sam\n',
 'samtools index map/${sample}.bam'), html_escape(genome)))),
 
     step("2", "Read-to-Gene Assignment",
       '<code>featureCounts</code> on the forward/sense strand (<code>-s 1</code>); the gene id is stored in each read&#39;s <code>XT</code> tag.',
       code_block(sprintf(paste0(
-'featureCounts -T 8 -s 1 -t exon -g gene_id -a %s.gtf -R BAM \\\n',
+'featureCounts -s 1 -t exon -g gene_id -a %s.gtf -R BAM \\\n',
 '    -o count/${sample}.fc.tsv map/${sample}.bam\n',
-'samtools sort  -@ 8 -o map/${sample}.assigned.bam map/${sample}.bam.featureCounts.bam\n',
+'samtools sort -o map/${sample}.assigned.bam map/${sample}.bam.featureCounts.bam\n',
 'samtools index map/${sample}.assigned.bam'), html_escape(genome)))),
 
     step("3", "UMI Counting",
