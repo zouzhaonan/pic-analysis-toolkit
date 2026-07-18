@@ -54,11 +54,11 @@ main <- function() {
     fdr = args$fdr
   )
 
-  readr::write_tsv(def, file.path(args$out_dir, sprintf("deftable_%s.tsv", args$project_name)))
+  # 注: deftable のコピー / Num_UMIs_genes は下流・レポートのいずれからも参照されないため書き出さない
+  #     (ルートの deftable と mapping_sum で代替される)。
   readr::write_csv(mat, file.path(args$out_dir, sprintf("UMI_count_%s.csv", args$project_name)))
   readr::write_csv(stats_tables$stats, file.path(args$out_dir, sprintf("stats_%s.csv", args$project_name)))
   readr::write_csv(normcount, file.path(args$out_dir, sprintf("normalizedCountTable_%s.csv", args$project_name)))
-  readr::write_csv(num_umi_gene, file.path(args$out_dir, sprintf("Num_UMIs_genes_%s.csv", args$project_name)))
 
   if (nrow(deg_count_summary) > 0) {
     readr::write_csv(deg_count_summary, file.path(deg_dir, sprintf("DEG_count_%s.csv", args$project_name)))
@@ -79,12 +79,7 @@ main <- function() {
       degpattern$cluster_profile,
       file.path(degpattern_dir, sprintf("DEGCluster_profile_%s.csv", args$project_name))
     )
-    if (!is.null(degpattern$merge_map) && nrow(degpattern$merge_map) > 0) {
-      readr::write_csv(
-        degpattern$merge_map,
-        file.path(degpattern_dir, sprintf("DEGCluster_merge_map_%s.csv", args$project_name))
-      )
-    }
+    # 注: DEGCluster_merge_map はどこからも参照されないため書き出さない
   } else {
     message("[INFO] DEG clustering returned no cluster assignments")
   }
