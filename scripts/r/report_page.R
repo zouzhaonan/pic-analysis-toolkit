@@ -341,7 +341,7 @@ build_overview_section <- function(run, genome, pre_steps = list(), extra_tools 
 
 # Downloads セクション。プロジェクトの全 csv/tsv をカテゴリ別 (折りたたみ) に列挙。
 # 各ファイルは HTML 埋め込み・クリックで DL。
-build_downloads_section <- function(tabs, run, genome, group_pal = NULL) {
+build_downloads_section <- function(tabs, run, genome, group_pal = NULL, geno_map = NULL) {
   proj <- getOption("pic.report.projdir")
   if (!is.null(proj)) {
     all <- list.files(proj, pattern = "\\.(csv|tsv)$", recursive = TRUE)
@@ -413,9 +413,14 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL) {
       body <- sprintf('<ul class="pic-ov-list">%s</ul>', paste(vapply(ids, file_li, character(1)), collapse = ""))
     }
     jump <- if (!is.null(tab) && nzchar(tab)) sprintf('<a class="pic-ov-jump" data-target="%s" tabindex="0">open tab &rarr;</a>', tab) else ""
+    # xenograft は画分名にゲノムを併記 (例 "Mapping — host (mm10)")
+    ct_disp <- ct
+    frac_of_ct <- if (grepl(" — graft$", ct)) "graft" else if (grepl(" — host$", ct)) "host" else ""
+    if (nzchar(frac_of_ct) && !is.null(geno_map) && frac_of_ct %in% names(geno_map) && nzchar(geno_map[[frac_of_ct]]))
+      ct_disp <- sprintf("%s (%s)", ct, geno_map[[frac_of_ct]])
     # GSEA/ORA 以外は展開、GSEA/ORA は畳む
     sec <- sprintf('<details class="pic-ov-sec"%s><summary><span class="pic-ov-cat">%s</span>%s</summary>%s</details>',
-                   if (open_this) " open" else "", html_escape(ct), jump, body)
+                   if (open_this) " open" else "", html_escape(ct_disp), jump, body)
     secs <- c(secs, sec); sec_cts <- c(sec_cts, ct)
   }
   fr <- vapply(sec_cts, ct_frac, integer(1))
@@ -606,27 +611,22 @@ pic_is_xenograft_out <- function(out_dir) {
 # 冒頭の intro のみ xenograft 用 (2 ゲノム + xengsort split + ゲノム切替の案内) に差し替える。
 build_overview_section_xeno <- function(run, fr_list) {
   base_genome <- if (length(fr_list) > 0) fr_list[[1]]$genome else ""
+  # index 名は hisat2 と同様に模式的に <graft>_on_<host> で示す
+  graft_g <- if (!is.null(fr_list[["graft"]])) fr_list[["graft"]]$genome else "graft"
+  host_g  <- if (!is.null(fr_list[["host"]]))  fr_list[["host"]]$genome  else "host"
+  idx_name <- sprintf("%s_on_%s", graft_g, host_g)
   # パイプライン先頭に xengsort によるゲノム振り分けステップを追加 (実コマンド)
   xengsort_step <- list(
-    name = "Genome split (xengsort)",
+    name = "Genome split",
     desc = 'Classify each demultiplexed read to the <b>graft</b> or <b>host</b> genome with <code>xengsort</code>; each fraction is then mapped to its own reference by the steps below (run per genome).',
-    code = paste0('<pre class="pic-code">xengsort classify --index &lt;index&gt; --fastq demux/${sample}.fastq.gz \\\n',
+    code = paste0('<pre class="pic-code">xengsort classify --index ', html_escape(idx_name), ' --fastq demux/${sample}.fastq.gz \\\n',
                   '    -o xengsort/${sample} --mode count\n',
                   '<span class="c"># writes xengsort/${sample}-{graft,host,both,neither,ambiguous}.fq.gz</span></pre>'))
   base <- build_overview_section(run, base_genome, pre_steps = list(xengsort_step),
                                  extra_tools = "xengsort|2.2.0")  # <section><h2>Overview</h2><intro><h3>Analysis Pipeline</h3>...
-  gl <- vapply(names(fr_list), function(fr) {
-    fa <- fr_list[[fr]]
-    sprintf('<b>%s</b>%s', html_escape(fr), if (nzchar(fa$genome)) sprintf(" (%s)", html_escape(fa$genome)) else "")
-  }, character(1))
-  genomes_txt <- paste(gl, collapse = " and ")
   xeno_intro <- sprintf(paste0('<p class="pic-ov-intro">This self-contained report presents the <b>PIC</b> ',
-    '(photo-isolation chemistry) 3&prime;-biased RNA-seq run <b>%s</b>, a <b>xenograft</b> library whose reads were ',
-    'split between two reference genomes (%s) with <b>xengsort</b>. The <b>Genome split</b> tab shows how reads divided ',
-    'between the genomes; every other tab shows the standard analysis for one genome at a time &mdash; use the ',
-    '<b>graft / host</b> switch at the top-right to change genome. The pipeline below runs independently per genome ',
-    '(after the xengsort split), shown here for <b>%s</b>.</p>'),
-    html_escape(run), genomes_txt, html_escape(base_genome))
+    '(photo-isolation chemistry) 3&prime;-biased RNA-seq run <b>%s</b>, a <b>xenograft</b> library.</p>'),
+    html_escape(run))
   # <h2>Overview</h2> と <h3 class="pic-flow-title"> の間 (= 元の intro) を差し替え
   marker <- '<h3 class="pic-flow-title">'
   segs <- strsplit(base, marker, fixed = TRUE)[[1]]
@@ -692,7 +692,7 @@ build_xenograft_report <- function(out_dir, asset_dir) {
 
   # Downloads (out_dir を再帰スキャンして graft/host 両方を収録)
   merged_tabs <- if (length(fr_list) > 0) fr_list[[1]]$data_tabs else list()
-  dl <- build_downloads_section(merged_tabs, run, if (length(fr_list) > 0) fr_list[[1]]$genome else "", NULL)
+  dl <- build_downloads_section(merged_tabs, run, if (length(fr_list) > 0) fr_list[[1]]$genome else "", NULL, geno_map)
   tabs <- c(tabs, list(list(target = "downloads", label = "Downloads", prebuilt = TRUE,
                             html = pic_tab_panel(dl, active = FALSE))))
 
