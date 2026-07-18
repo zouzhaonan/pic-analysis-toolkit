@@ -8,13 +8,13 @@ main{max-width:1180px;margin:0 auto;padding:8px 28px 60px;font-size:15px}
 section{background:#fff;border:1px solid var(--line);border-radius:10px;padding:20px 24px;margin:22px 0;box-shadow:0 1px 2px rgba(0,0,0,.03);scroll-margin-top:58px}
 
 /* ===== ナビバー (左端=レポート名 / 右側=タブを両端揃え) ===== */
-.pic-tabs{position:sticky;top:0;z-index:50;background:linear-gradient(90deg,#1b3a5b,#2166ac);border-bottom:1px solid #163049;padding:0 max(18px, calc((100vw - 1380px) / 2));display:flex;align-items:stretch;gap:0}
-.pic-brand{flex:none;color:#fff;font-weight:700;font-size:16px;white-space:nowrap;display:flex;align-items:center;padding:10px 18px 10px 0;border-right:1px solid rgba(255,255,255,.28)}
+/* フラットデザイン: 単色ベタ、影・グラデーション・枠線なし */
+.pic-tabs{position:sticky;top:0;z-index:50;background:#2166ac;padding:0 max(18px, calc((100vw - 1380px) / 2));display:flex;align-items:stretch;gap:0}
+.pic-brand{flex:none;color:#fff;font-weight:700;font-size:16px;white-space:nowrap;display:flex;align-items:center;padding:11px 18px 11px 0;border-right:1px solid rgba(255,255,255,.3)}
 .pic-tabbtns{flex:1;display:flex;gap:0}
-.pic-tabbtn{flex:1 1 0;appearance:none;border:none;border-right:1px solid rgba(255,255,255,.14);border-bottom:3px solid transparent;background:transparent;color:#d6e4f4;font-size:14.5px;font-weight:600;padding:12px 8px;cursor:pointer;text-align:center;white-space:nowrap}
-.pic-tabbtn:last-child{border-right:none}
-.pic-tabbtn:hover{color:#fff;background:rgba(255,255,255,.10)}
-.pic-tabbtn.active{color:#fff;background:rgba(255,255,255,.16);border-bottom-color:#cfe3f7}
+.pic-tabbtn{flex:1 1 0;appearance:none;border:none;background:transparent;color:#d6e4f4;font-size:14.5px;font-weight:600;padding:12px 8px;cursor:pointer;text-align:center;white-space:nowrap}
+.pic-tabbtn:hover{color:#fff;background:#1c5698}
+.pic-tabbtn.active{color:#fff;background:#17518f}
 main.pic-main{max-width:1400px}
 section.pic-tab{display:none}
 section.pic-tab.active{display:block}
@@ -225,16 +225,10 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-tool{font-size:11.5px;font-weight:600;color:#164a7a;background:#e7f0fa;border:1px solid #c4dbef;border-radius:4px;padding:1px 8px;white-space:nowrap}
 .pic-tool-v{font-weight:500;color:#5c7fa3}
 .pic-flow-step>p{margin:2px 0 8px;font-size:13.5px;color:var(--muted);line-height:1.55}
-.pic-flow-in{background:#f3f7fc;border:1px solid #dbe7f3;border-radius:8px;padding:8px 12px;margin:8px 0}
-.pic-flow-in-lbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-.pic-flow-in ul{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
-.pic-flow-in li{font-size:13px;color:var(--fg);line-height:1.5}
-.pic-flow-in code{background:#e4edf7;color:#164a7a;font-size:12px}
 .pic-flow-arrow{align-self:center;color:var(--accent);font-size:18px;line-height:1;margin:2px 0}
 .pic-code{margin:6px 0 0;background:#1f2933;color:#e6edf3;border-radius:8px;padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;overflow-x:auto;white-space:pre}
 .pic-code .c{color:#8b98a5}
 .pic-code .v{color:#ffd54a}
-.pic-methods-note{font-size:13px;color:var(--muted);margin:16px 0 0;max-width:900px}
 
 /* Downloads (全 csv/tsv を HTML 埋め込み・折りたたみ・クリックで DL) */
 .pic-ov-intro{font-size:15px;color:var(--fg);margin:6px 0 22px}
