@@ -132,7 +132,8 @@ run_pipeline_subcommand() {
       --out-dir "$deseq2_out"
 
     stats_csv="${deseq2_out}/stats_${project}.csv"
-    deg_clusters="${deseq2_out}/DEG/DEGCluster/DEGCluster_gene_for_ora_${project}.csv"
+    # 平坦化後の DEG サブフォルダは suffix 付き (DEG_<proj>/DEGCluster_<proj>/)。
+    deg_clusters="${deseq2_out}/DEG_${project}/DEGCluster_${project}/DEGCluster_gene_for_ora_${project}.csv"
     enrich_out="${OUTPUT_DIR}/enrich"
 
     log_info "pic all: [4/5] enrich を実行します (genome=${g})"
@@ -141,12 +142,14 @@ run_pipeline_subcommand() {
         --stats "$stats_csv" \
         --genome "$g" \
         --out-dir "$enrich_out" \
+        --threads "$THREADS" \
         --deg-clusters "$deg_clusters"
     else
       Rscript "${PIC_R_DIR}/cmd_run_enrich.R" \
         --stats "$stats_csv" \
         --genome "$g" \
-        --out-dir "$enrich_out"
+        --out-dir "$enrich_out" \
+        --threads "$THREADS"
     fi
   done
 
