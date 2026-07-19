@@ -5,7 +5,7 @@
 #   sample ごとの集計結果を1行ずつ作る。
 # 入力:
 #   stdin から受け取る total_reads table。
-#   変数: job_queue, tmp_dir, count_dir。
+#   変数: job_queue, log_dir, count_dir。
 # 出力:
 #   mapping と UMI の指標をまとめたタブ区切りの集計行。
 
@@ -30,8 +30,8 @@ BEGIN {
 
     # simulation では sample_point、通常モードでは sample を使う。
     stem = (point == "all") ? sample : sample "_" point
-    mapping_log = tmp_dir "/" stem ".mapping.log"
-    feature_sum = tmp_dir "/" stem ".feature.tsv.summary"
+    mapping_log = log_dir "/" stem ".mapping.log"
+    feature_sum = log_dir "/" stem ".feature.tsv.summary"
     umi_count = count_dir "/" stem ".txt"
     umis = genes = 0
 

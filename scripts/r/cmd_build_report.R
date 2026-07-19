@@ -52,7 +52,7 @@ main <- function() {
 
   # mapping_sum (共有)
   msum <- NULL
-  msum_files <- list.files(out_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = TRUE)
+  msum_files <- pic_list_summary(out_dir, "^mapping_sum__.*\\.tsv$")
   if (length(msum_files) > 0) {
     msum <- read_mapping_sum(msum_files[[1]])
   }

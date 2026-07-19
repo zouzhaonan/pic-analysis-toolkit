@@ -5,22 +5,23 @@
 # 入力:
 #   --sample-sheet / --raw-fastq-dir / --run-name / --out-dir の 4 オプションのみ。
 # 出力:
-#   <out-dir>/            : mapping 成果物 (deftable, counts, bam, bw ...)
-#   <out-dir>/deseq2/<g>/ : genome ごとの DESeq2 結果
-#   <out-dir>/enrich/<g>/ : genome ごとの ORA/GSEA 結果
+#   <out-dir>/            : mapping 成果物 (counts, bam, bw ...) と report_*.html / sample_sheet.tsv
+#   <out-dir>/summary/    : 集計/中間テーブル (mapping_sum, deftable, aggregate_profile)
+#   <out-dir>/deseq2/      : DESeq2 結果 (ファイル名 suffix <run>_<genome> で genome 識別)
+#   <out-dir>/enrich/      : ORA/GSEA 結果 (同上)
 # 注記:
 #   細かい調整 (--fdr / --methods 等) が必要な場合は deseq2 / enrich を
 #   個別に実行する。pic all はシンプル実行専用なので余計なオプションは持たない。
 
 # サンプルシートに含まれる全 genome について生成された deftable を列挙し、
-# ファイル名 (deftable_<genome>_<run_name>.tsv) から genome 名を取り出す。
+# ファイル名 (deftable_<run_name>_<genome>.tsv) から genome 名を取り出す。
 pipeline_list_genomes() {
   local f base genome
-  for f in "${DEFTABLE_DIR}"/deftable_*_"${RUN_NAME}".tsv; do
+  for f in "${DEFTABLE_DIR}"/deftable_"${RUN_NAME}"_*.tsv; do
     [[ -e "$f" ]] || continue
     base="$(basename "$f")"
-    base="${base#deftable_}"
-    genome="${base%_"${RUN_NAME}".tsv}"
+    base="${base%.tsv}"
+    genome="${base#deftable_"${RUN_NAME}"_}"
     printf "%s\n" "$genome"
   done
 }
@@ -119,9 +120,9 @@ run_pipeline_subcommand() {
   # --- Step 3/4: genome ごとに deseq2 -> enrich ---
   local project deftable deseq2_out stats_csv enrich_out deg_clusters
   for g in "${genomes[@]}"; do
-    project="${g}_${RUN_NAME}"
+    project="${RUN_NAME}_${g}"
     deftable="${DEFTABLE_DIR}/deftable_${project}.tsv"
-    deseq2_out="${OUTPUT_DIR}/deseq2/${g}"
+    deseq2_out="${OUTPUT_DIR}/deseq2"
 
     log_info "pic all: [3/5] deseq2 を実行します (genome=${g})"
     Rscript "${PIC_R_DIR}/cmd_run_deseq2.R" \
@@ -131,8 +132,9 @@ run_pipeline_subcommand() {
       --out-dir "$deseq2_out"
 
     stats_csv="${deseq2_out}/stats_${project}.csv"
-    deg_clusters="${deseq2_out}/DEG/DEGCluster/DEGCluster_gene_for_ora_${project}.csv"
-    enrich_out="${OUTPUT_DIR}/enrich/${g}"
+    # 平坦化後の DEG サブフォルダは suffix 付き (DEG_<proj>/DEGCluster_<proj>/)。
+    deg_clusters="${deseq2_out}/DEG_${project}/DEGCluster_${project}/DEGCluster_gene_for_ora_${project}.csv"
+    enrich_out="${OUTPUT_DIR}/enrich"
 
     log_info "pic all: [4/5] enrich を実行します (genome=${g})"
     if [[ -f "$deg_clusters" ]]; then
@@ -140,12 +142,14 @@ run_pipeline_subcommand() {
         --stats "$stats_csv" \
         --genome "$g" \
         --out-dir "$enrich_out" \
+        --threads "$THREADS" \
         --deg-clusters "$deg_clusters"
     else
       Rscript "${PIC_R_DIR}/cmd_run_enrich.R" \
         --stats "$stats_csv" \
         --genome "$g" \
-        --out-dir "$enrich_out"
+        --out-dir "$enrich_out" \
+        --threads "$THREADS"
     fi
   done
 

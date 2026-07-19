@@ -1,56 +1,208 @@
 :root{
   --fg:#1f2933; --muted:#647280; --line:#e2e8f0; --bg:#ffffff; --accent:#2166ac;
+  --ctrl-w:300px;
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Noto Sans JP",Meiryo,sans-serif;color:var(--fg);background:#f7f9fc;line-height:1.6}
-.pic-header{background:linear-gradient(90deg,#1b3a5b,#2166ac);color:#fff;padding:22px 28px}
-.pic-header h1{margin:0;font-size:22px}
-.pic-sub{opacity:.9;font-size:14px;margin-top:4px}
-.pic-nav{position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid var(--line);padding:8px 28px;display:flex;gap:18px}
-.pic-nav a{color:var(--accent);text-decoration:none;font-size:14px;font-weight:600}
-.pic-nav a:hover{text-decoration:underline}
-.pic-nav{flex-wrap:wrap;align-items:baseline;gap:6px 14px}
-.pic-nav-group{font-weight:700;color:var(--fg);font-size:14px;margin-left:6px}
-.pic-nav-group::after{content:"·";margin-left:8px;color:var(--muted)}
-main{max-width:1180px;margin:0 auto;padding:8px 28px 60px}
-section{background:#fff;border:1px solid var(--line);border-radius:10px;padding:20px 24px;margin:22px 0;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-h2{margin-top:0;font-size:19px;border-bottom:2px solid var(--accent);padding-bottom:6px}
-h3{font-size:16px;margin:22px 0 10px}
-h4{font-size:13px;margin:6px 0;color:var(--muted)}
-.pic-note,.pic-contrast-meta{color:var(--muted);font-size:13px;margin:4px 0}
+main{max-width:1180px;margin:0 auto;padding:8px 28px 60px;font-size:15px}
+section{background:#fff;border:1px solid var(--line);border-radius:10px;padding:20px 24px;margin:22px 0;box-shadow:0 1px 2px rgba(0,0,0,.03);scroll-margin-top:58px}
+
+/* ===== ナビバー (左端=レポート名 / 右側=タブを両端揃え) ===== */
+/* フラットデザイン: 単色ベタ、影・グラデーション・枠線なし */
+.pic-tabs{position:sticky;top:0;z-index:50;background:#2166ac;padding:0 max(18px, calc((100vw - 1380px) / 2));display:flex;align-items:stretch;gap:0}
+.pic-brand{flex:none;color:#fff;font-weight:700;font-size:16px;white-space:nowrap;display:flex;align-items:center;padding:11px 18px 11px 0;border-right:1px solid rgba(255,255,255,.3)}
+.pic-tabbtns{flex:1;display:flex;gap:0}
+.pic-tabbtn{flex:1 1 0;appearance:none;border:none;background:transparent;color:#d6e4f4;font-size:14.5px;font-weight:600;padding:12px 8px;cursor:pointer;text-align:center;white-space:nowrap}
+.pic-tabbtn:hover{color:#fff;background:#1c5698}
+.pic-tabbtn.active{color:#fff;background:#17518f}
+/* xenograft: グローバルゲノム切替 (navbar 右端のセグメント) */
+.pic-genoswitch{flex:none;display:flex;align-items:center;gap:0;margin-left:12px;align-self:center;border:1px solid rgba(255,255,255,.45);border-radius:6px;overflow:hidden}
+.pic-genobtn{appearance:none;border:none;background:transparent;color:#d6e4f4;font-size:13px;font-weight:600;padding:6px 12px;cursor:pointer;white-space:nowrap}
+.pic-genobtn:hover{color:#fff;background:#1c5698}
+.pic-genobtn.active{color:#17518f;background:#fff}
+main.pic-main{max-width:1400px}
+section.pic-tab{display:none}
+section.pic-tab.active{display:block}
+.pic-tab-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:2px solid var(--accent);padding-bottom:6px;margin-bottom:14px}
+.pic-tab-head h2{border:none;padding:0;margin:0}
+/* セクション内サブタブ */
+/* サブタブは左コントロール内 (View 見出し + 縦並びボタン) で選択 */
+.pic-subbody{min-width:0}
+.pic-subtabs{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.pic-subtabbtn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--muted);font-size:13px;font-weight:600;padding:7px 16px;cursor:pointer;border-radius:6px;text-align:left;white-space:nowrap}
+.pic-subtabbtn:hover{background:#eef3fb;color:var(--accent)}
+.pic-subtabbtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.pic-subpanel{display:none}
+.pic-subpanel.active{display:block}
+/* 左コントロール内の見出し (View / Groups / Comparison / Method / Genes) を統一 */
+.pic-ctrl h4,.pic-subtabs h4,.pic-hmsel-ctrl h4,.pic-degsel-ctrl h4,.pic-selgrid-ctrl h4,.pic-matrix-sel h4,.pic-expr-side h4{margin:2px 0 8px;color:var(--fg);font-size:13px;font-weight:700;text-transform:none;letter-spacing:normal;font-family:inherit}
+@media(max-width:900px){.pic-subtabs{flex-direction:row;flex-wrap:wrap}}
+/* info (丸 i) + hover 吹き出し */
+.pic-info{position:relative;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--accent);color:var(--accent);font-size:12px;font-weight:700;font-style:italic;font-family:Georgia,serif;cursor:help;flex:none}
+.pic-info-pop{display:none;position:absolute;left:26px;top:-4px;z-index:80;width:min(520px,70vw);max-height:min(80vh,560px);overflow-y:auto;background:#1f2933;color:#fff;font-weight:400;font-style:normal;font-size:13px;line-height:1.5;padding:10px 13px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.pic-info-pop::before{content:"";position:absolute;left:-6px;top:12px;border:6px solid transparent;border-right-color:#1f2933}
+.pic-info:hover .pic-info-pop,.pic-info:focus .pic-info-pop{display:block}
+.pic-info-pop b{color:#ffd54a}
+.pic-info-pop .pic-pop-sub{color:#7fb0e0;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin:12px 0 2px}
+.pic-info-pop .pic-pop-sub:first-child{margin-top:0}
+/* 2 ペイン (左=コントロール / 右=プロット) */
+.pic-2pane{display:grid;grid-template-columns:var(--ctrl-w) minmax(0,1fr);gap:18px;align-items:start}
+.pic-2pane.pic-1pane{grid-template-columns:minmax(0,1fr)}
+.pic-ctrl{position:sticky;top:60px;align-self:start;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:13px;max-height:calc(100vh - 80px);overflow:auto}
+.pic-ctrl h4{margin:2px 0 8px;color:var(--fg);font-size:13px}
+.pic-view{min-width:0}
+/* ドラッグでリサイズできる左右分割の仕切り (全タブ共通 --ctrl-w を更新) */
+.pic-2pane,.pic-matrix,.pic-degsel,.pic-selgrid,.pic-expr,.pic-hmsel{position:relative}
+.pic-splitter{position:absolute;top:0;bottom:0;left:var(--ctrl-w);width:18px;cursor:col-resize;z-index:6;touch-action:none}
+.pic-splitter::after{content:"";position:absolute;left:8px;top:0;bottom:0;width:2px;border-radius:2px;background:transparent;transition:background .12s}
+.pic-splitter:hover::after,.pic-splitter.pic-drag::after{background:var(--accent)}
+body.pic-resizing{cursor:col-resize;user-select:none}
+@media(max-width:900px){.pic-splitter{display:none}}
+/* サブタブ内タイトル行 (右端に PNG ボタン等) */
+.pic-sub-hd{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:22px 0 10px}
+.pic-sub-hd h3{margin:0}
+/* 表示/非表示トグル (サンプル・group) */
+.pic-tgl-list{display:flex;flex-direction:column;gap:3px}
+.pic-tgl{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;white-space:nowrap}
+.pic-tgl input{cursor:pointer;flex:none}
+@media(max-width:900px){.pic-2pane{grid-template-columns:1fr}.pic-ctrl{position:static;max-height:none}}
+h2{margin-top:0;font-size:21px;border-bottom:2px solid var(--accent);padding-bottom:6px}
+h3{font-size:18px;margin:22px 0 10px}
+h4{font-size:14px;margin:6px 0;color:var(--muted)}
+.pic-note,.pic-contrast-meta{font-size:15px;margin:4px 0;font-weight:600}
+/* source: 「Download CSV」ダウンロードボタン (パスは表示しない) */
+.pic-src{font-size:12px;display:inline-flex;align-items:center}
+/* Download ボタン群 (CSV/TSV/PNG) はすべて同一の見た目 */
+.pic-dlcsv,.pic-png-btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;background:var(--accent);color:#fff;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;font-family:inherit;line-height:1.4;text-decoration:none;cursor:pointer;white-space:nowrap;border:1px solid var(--accent)}
+.pic-dlcsv:hover,.pic-png-btn:hover{background:#17518f}
+.pic-src-dl{font-weight:700}
+.pic-sub-hd-actions{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pic-head-right{margin-left:auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+/* 「ここで選択」案内バッジ */
+.pic-pick{display:flex;align-items:center;gap:8px;background:#eaf3fc;border:1px solid #a9cbe9;border-left:4px solid var(--accent);color:#164a7a;font-weight:700;font-size:14px;padding:8px 14px;border-radius:8px;margin:10px 0 6px}
+.pic-pick-ic{font-size:16px;line-height:1}
+.pic-pick b{color:#0f3c66}
 
 /* plotly grid */
 .pic-plot-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
 .pic-plot-cell{border:1px solid var(--line);border-radius:8px;padding:8px}
 .pic-plot{width:100%;height:420px}
+.pic-pca-scree-row .pic-plot{height:180px}
+.pic-pca-scree-row .pic-plot-cell{padding:4px 8px}
+.pic-pca-scree-row h4{margin:2px 0 2px}
 
-/* contrast details */
-details.pic-contrast,details.pic-enrich-method{border:1px solid var(--line);border-radius:8px;margin:10px 0;padding:4px 12px;background:#fcfdff}
-details.pic-contrast summary,details.pic-enrich-method summary{cursor:pointer;font-weight:600;padding:6px 0}
 details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 
 /* mapping QC bars */
 .pic-bars{margin:10px 0}
-.pic-bar-ruler{display:flex;justify-content:space-between;margin-left:150px;color:var(--muted);font-size:11px;border-bottom:1px dashed var(--line);padding-bottom:2px}
+.pic-bar-ruler{display:flex;justify-content:space-between;margin-left:150px;color:var(--muted);font-size:12px;border-bottom:1px dashed var(--line);padding-bottom:2px}
 .pic-bar-row{display:flex;align-items:center;margin:2px 0}
-.pic-bar-label{width:150px;flex:none;font-size:12px;padding-right:8px;text-align:right;color:var(--fg)}
+.pic-bar-row.pic-grp-start{margin-top:11px}
+.pic-table tr.pic-grp-start td,.pic-table tr.pic-grp-start th{border-top:2px solid #aebccb}
+.pic-bar-label{width:150px;flex:none;font-size:13px;padding-right:8px;text-align:right;color:var(--fg)}
 .pic-bar-track{flex:1;display:flex;height:18px;background:#f0f3f7;border-radius:2px;overflow:hidden;background-image:repeating-linear-gradient(90deg,transparent,transparent 19.9%,rgba(0,0,0,.06) 20%,transparent 20.1%)}
 .pic-seg{height:100%}
-.pic-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;margin-left:150px;font-size:12px}
+.pic-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;margin-left:150px;font-size:13px}
 .pic-legend-item{display:flex;align-items:center;gap:5px}
 .pic-swatch{width:13px;height:13px;border-radius:2px;display:inline-block}
 
 /* tables */
-.pic-table{border-collapse:collapse;width:100%;font-size:13px;margin-top:8px}
-.pic-table th,.pic-table td{border:1px solid var(--line);padding:4px 8px;text-align:right}
-.pic-table th{background:#eef3f9;text-align:right}
-.pic-td-sample{text-align:left;font-weight:600}
-.pic-databar-table td.pic-td-bar{position:relative;min-width:140px;padding:3px 8px;text-align:left}
-.pic-databar{position:absolute;left:3px;right:3px;top:3px;bottom:3px;border-radius:2px;z-index:1}
+.pic-table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
+.pic-table th,.pic-table td{border:1px solid var(--line);padding:5px 9px;text-align:right}
+.pic-table th{background:#eef3f9;text-align:center;font-size:14px}
+.pic-table td.pic-td-sample{text-align:left;font-weight:600}
+.pic-databar-table td,.pic-databar-table th{padding-top:1px;padding-bottom:1px;line-height:1.25}
+.pic-databar-table td.pic-td-bar{position:relative;min-width:140px;padding-left:8px;padding-right:8px;text-align:right}
+.pic-databar{position:absolute;left:3px;right:3px;top:1px;bottom:1px;border-radius:2px;z-index:1}
 .pic-databar-val{position:relative;z-index:2;font-variant-numeric:tabular-nums}
 .pic-td-num{font-variant-numeric:tabular-nums}
 
-/* MA + volcano を横一列 */
+/* 遺伝子発現 (左=タグ入力 / 右=box+beeswarm) */
+.pic-expr{display:grid;grid-template-columns:var(--ctrl-w) minmax(0,1fr);gap:18px;align-items:start}
+.pic-expr-side{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px}
+.pic-expr-side h4{margin:0 0 8px;font-size:13px;color:var(--fg)}
+@media(max-width:900px){.pic-expr{grid-template-columns:1fr}.pic-expr-side{position:static}}
+.pic-expr-typeahead{position:relative;margin:0}
+.pic-expr-tagbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:#fff;min-height:42px}
+.pic-expr-tagbox:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px rgba(33,102,172,.12)}
+.pic-expr-chip{display:inline-flex;align-items:center;gap:6px;background:#e7f0fb;color:#1b3a5b;border:1px solid #bcd3ea;border-radius:14px;padding:3px 6px 3px 11px;font-size:13px;font-weight:600}
+.pic-expr-chip button{border:none;background:#c2d6ec;color:#1b3a5b;width:17px;height:17px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0}
+.pic-expr-chip button:hover{background:#d7301f;color:#fff}
+.pic-expr-input{flex:1;min-width:130px;border:none;outline:none;font-size:14px;padding:4px 2px;background:transparent}
+.pic-expr-ac{display:none;position:absolute;z-index:60;left:0;right:0;top:calc(100% + 2px);max-height:280px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.pic-expr-ac-item{padding:6px 10px;font-size:13px;cursor:pointer;white-space:nowrap}
+.pic-expr-ac-item:hover{background:#eef3f9}
+.pic-expr-tip{position:fixed;z-index:200;pointer-events:none;background:#1f2933;color:#fff;border-radius:6px;padding:6px 8px;font-size:12px;max-width:320px;max-height:calc(100vh - 12px);overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.pic-expr-tip-h{font-weight:700;margin-bottom:4px}
+.pic-expr-tip table{border-collapse:collapse}
+.pic-expr-tip th,.pic-expr-tip td{text-align:left;padding:1px 8px 1px 0;font-variant-numeric:tabular-nums}
+.pic-expr-tip th{color:#9aa4af;font-weight:600}
+.pic-expr-tip-none{color:#cdd7e2}
+.pic-expr-msg{color:#b45309;font-size:13px;min-height:1em;margin:2px 0}
+.pic-expr-plots{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+
+/* 複数ブロックをチェックボックスで表示選択 */
+.pic-select-bar{display:flex;flex-wrap:wrap;gap:6px 16px;margin:10px 0;padding:8px 12px;background:#f3f7fc;border:1px solid var(--line);border-radius:8px}
+.pic-select-chk{font-size:14px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap}
+.pic-select-chk input{cursor:pointer}
+.pic-select-item[hidden]{display:none}
+.pic-select-lbl{font-size:13px;font-weight:700;color:var(--muted);margin-right:4px;align-self:center}
+.pic-matrix .pic-select-bar{margin-bottom:6px}
+
+/* ウィジェット内 2ペイン (左=選択 / 右=プロット)。左幅は全タブ共通 (--ctrl-w) */
+.pic-matrix{display:grid;grid-template-columns:var(--ctrl-w) minmax(0,1fr);gap:18px;align-items:start}
+.pic-matrix-sel{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;max-height:calc(100vh - 80px)}
+.pic-degsel{display:grid;grid-template-columns:var(--ctrl-w) minmax(0,1fr);gap:18px;align-items:start}
+.pic-degsel-ctrl{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;max-height:calc(100vh - 80px)}
+.pic-degsel-ctrl h4{margin:0 0 8px;font-size:13px}
+.pic-selgrid{display:grid;grid-template-columns:var(--ctrl-w) minmax(0,1fr);gap:18px;align-items:start}
+.pic-selgrid-ctrl{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px}
+.pic-selgrid-ctrl h4{margin:0 0 8px;font-size:13px}
+.pic-selgrid-ctrl .pic-select-bar,.pic-matrix-sel .pic-select-bar{flex-direction:column;align-items:flex-start;gap:5px;background:transparent;border:none;padding:0;margin:0 0 4px}
+/* DEG heatmap: 左=group 切替 / 右=ヒートマップ本体 */
+.pic-hmsel{display:grid;grid-template-columns:var(--ctrl-w) minmax(0,1fr);gap:18px;align-items:start}
+.pic-hmsel-ctrl{position:sticky;top:60px;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:13px}
+.pic-hmsel-ctrl h4{margin:2px 0 8px;font-size:13px}
+.pic-hmsel-view{min-width:0}
+@media(max-width:900px){.pic-matrix,.pic-degsel,.pic-selgrid,.pic-hmsel{grid-template-columns:1fr}.pic-matrix-sel,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-hmsel-ctrl{position:static}}
+
+/* contrast を group×group 行列で選択 */
+.pic-cmx-wrap{overflow-x:auto;margin:8px 0 12px}
+table.pic-cmatrix{border-collapse:collapse;font-size:13px}
+.pic-cmatrix th,.pic-cmatrix td{border:1px solid var(--line);padding:4px 9px;white-space:nowrap}
+.pic-cmatrix .pic-cmx-corner{background:transparent;border-top:none;border-left:none}
+.pic-cmatrix .pic-cmx-h,.pic-cmatrix .pic-cmx-rh{background:#eef3f9;font-weight:700}
+.pic-cmatrix .pic-cmx-h{text-align:center;vertical-align:bottom;padding:4px 3px}
+.pic-cmatrix .pic-cmx-h span{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;display:inline-block}
+.pic-cmatrix .pic-cmx-rh{text-align:left}
+.pic-cmx-cell{background:#fff;text-align:right}
+.pic-cmx-cell label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;justify-content:flex-end}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell{text-align:center}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell label{justify-content:center}
+.pic-cmx-cell:hover{background:#f3f7fc}
+.pic-cmx-n{font-variant-numeric:tabular-nums;font-weight:600}
+.pic-cmx-empty{background:#fafbfc}
+/* 合わせているセルの行・列を強調 */
+.pic-cmatrix .pic-cmx-rowhl,.pic-cmatrix .pic-cmx-colhl{background:#e8f1fb}
+.pic-cmatrix th.pic-cmx-hl{background:#cfe2f6}
+.pic-cmatrix td.pic-cmx-cell.pic-cmx-hit{background:#bcd8f5}
+/* heatmap 着色セルでも選択位置が分かるよう内側リングで示す */
+.pic-cmx-cell.pic-cmx-heat.pic-cmx-hit{box-shadow:inset 0 0 0 2px #17518f}
+.pic-cmx-cell.pic-cmx-heat:hover{box-shadow:inset 0 0 0 2px rgba(23,81,143,.5)}
+
+/* サンプル相関ヒートマップ (HTML テーブル) */
+.pic-cor-wrap{overflow:auto;max-width:100%;margin:6px 0 4px}
+table.pic-cor{border-collapse:collapse;font-size:12px}
+.pic-cor th,.pic-cor td{border:1px solid #fff;padding:3px 7px;text-align:center;white-space:nowrap}
+.pic-cor .pic-cor-corner{background:#fff;border:none;position:sticky;left:0;z-index:3}
+.pic-cor thead th{position:sticky;top:0;background:#fff;z-index:2;font-weight:700;vertical-align:bottom}
+.pic-cor thead th.pic-cor-ch span{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;display:inline-block}
+.pic-cor tbody th.pic-cor-rh{position:sticky;left:0;background:#fff;z-index:1;font-weight:700;text-align:left}
+.pic-cor td.val{font-variant-numeric:tabular-nums;font-weight:600}
+.pic-cor .gsep-l{border-left:2px solid #1f2933}
+.pic-cor .gsep-t{border-top:2px solid #1f2933}
+
+/* M-A + Volcano を横一列 */
 .pic-ma-vol{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media(max-width:860px){.pic-ma-vol{grid-template-columns:1fr}}
 
@@ -64,11 +216,9 @@ table.pic-hm{border-collapse:separate;border-spacing:0}
 .pic-hm tbody th.g{position:sticky;left:0;z-index:2;background:#fff;text-align:right;font-weight:400;font-size:9px;padding:0 6px;white-space:nowrap}
 .pic-hm tbody td{width:20px;height:13px;border-right:1px solid #fff}
 .pic-hm tbody tr{height:13px}
+.pic-hm thead th.s.gsep,.pic-hm tbody td.gsep{border-left:2px solid #6b7885}
 
 /* enrich */
-details.pic-enrich-group{border:1px solid var(--line);border-radius:8px;margin:12px 0;padding:6px 14px;background:#fff}
-details.pic-enrich-group>summary{cursor:pointer;font-weight:700;font-size:15px;padding:6px 0;color:var(--accent)}
-details.pic-enrich-group[open]>summary{border-bottom:1px solid var(--line);margin-bottom:10px}
 .pic-enrich-item{margin:14px 0}
 .pic-enrich-item img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:6px}
 
@@ -76,3 +226,51 @@ details.pic-enrich-group[open]>summary{border-bottom:1px solid var(--line);margi
 .pic-notes{background:#f3f7fc;border-left:4px solid var(--accent);padding:10px 16px;border-radius:0 8px 8px 0;margin-bottom:14px}
 .pic-notes h3{margin-top:8px}
 code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
+
+/* Overview: 全体説明 + Analysis Pipeline フローチャート */
+.pic-flow-title{font-size:18px;margin:26px 0 2px;color:var(--fg);border-bottom:1px solid var(--line);padding-bottom:6px}
+.pic-flow-sub{font-size:14px;color:var(--muted);margin:0 0 16px}
+.pic-flow{display:flex;flex-direction:column;align-items:stretch;gap:0;max-width:900px}
+.pic-flow-step{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;background:#fcfdff;padding:14px 18px}
+.pic-flow-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.pic-flow-n{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:700}
+.pic-flow-head h3{margin:0;font-size:16px;color:var(--fg)}
+.pic-flow-tools{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:2px 0 18px}
+.pic-flow-tools-lbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-right:2px}
+.pic-tool{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;font-weight:600;color:#164a7a;background:#e7f0fa;border:1px solid #c4dbef;border-radius:4px;padding:1px 8px;white-space:nowrap}
+.pic-flow-step>p{margin:2px 0 8px;font-size:13.5px;color:var(--muted);line-height:1.55}
+.pic-flow-arrow{align-self:center;color:var(--accent);font-size:18px;line-height:1;margin:2px 0}
+.pic-code{margin:6px 0 0;background:#1f2933;color:#e6edf3;border-radius:8px;padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;overflow-x:auto;white-space:pre}
+.pic-code .c{color:#8b98a5}
+.pic-code .v{color:#ffd54a}
+
+/* Downloads (全 csv/tsv を HTML 埋め込み・折りたたみ・クリックで DL) */
+.pic-ov-intro{font-size:15px;color:var(--fg);margin:6px 0 22px}
+.pic-ov-groups{columns:2;column-gap:14px}
+.pic-ov-groups.pic-ov-2col{columns:auto;display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;margin-top:2px}
+@media(max-width:820px){.pic-ov-groups,.pic-ov-groups.pic-ov-2col{columns:1;grid-template-columns:1fr}}
+/* xenograft Downloads: 上部の Genome split (全幅) */
+.pic-dl-top{margin-bottom:14px}
+.pic-dl-top .pic-ov-sec{break-inside:avoid}
+.pic-ov-sec{border:1px solid var(--line);border-radius:10px;background:#fcfdff;padding:2px 16px;break-inside:avoid;margin-bottom:12px}
+.pic-ov-2col .pic-ov-sec{margin-bottom:0}
+.pic-ov-sec>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:12px;padding:12px 0;font-weight:700}
+.pic-ov-sec>summary::-webkit-details-marker{display:none}
+.pic-ov-sec>summary::before{content:"\25B8";color:var(--muted);font-size:12px;transition:transform .12s}
+.pic-ov-sec[open]>summary::before{transform:rotate(90deg)}
+.pic-ov-cat{font-size:15px;font-weight:700;color:var(--fg)}
+.pic-ov-jump{margin-left:auto;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer;text-decoration:none}
+.pic-ov-jump:hover{text-decoration:underline}
+.pic-ov-sub{border-top:1px solid var(--line);margin:0}
+.pic-ov-sub>summary{cursor:pointer;list-style:none;padding:8px 0;font-weight:600;font-size:13.5px;color:var(--accent)}
+.pic-ov-sub>summary::-webkit-details-marker{display:none}
+.pic-ov-sub>summary::before{content:"\25B8 ";color:var(--muted);font-size:11px}
+.pic-ov-sub[open]>summary::before{content:"\25BE "}
+.pic-ov-n{color:var(--muted);font-weight:400}
+.pic-ov-list{list-style:none;margin:4px 0 12px;padding:0 0 0 6px;display:flex;flex-direction:column;gap:6px}
+.pic-ov-list li{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.pic-ov-dl{flex:none}
+.pic-ov-fname{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;color:var(--fg)}
+.pic-ov-desc{color:var(--muted);font-size:13px;min-width:0}
+/* プロット内の右寄せ DL 行 (GSEA セル等) */
+.pic-dl-row{display:flex;justify-content:flex-end;margin:0 0 6px}

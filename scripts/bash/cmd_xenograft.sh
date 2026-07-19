@@ -397,6 +397,8 @@ run_xenograft_subcommand() {
   log_info "xenograft: ${#fastqs[@]} 個の FASTQ を分類します (index=${index_name})"
 
   local sample base
+  # 画分ごとのリード数を保持し、後で各画分の total_reads (pic all --demux-fastq-dir が要求) を書く。
+  declare -A frac_reads
   for f in "${fastqs[@]}"; do
     base="$(basename "$f")"
     sample="${base%.fastq.gz}"
@@ -418,6 +420,8 @@ run_xenograft_subcommand() {
     c_total=$((c_host + c_graft + c_both + c_neither + c_ambi))
     printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
       "$sample" "$c_host" "$c_graft" "$c_both" "$c_neither" "$c_ambi" "$c_total" >> "$summary"
+    frac_reads["${sample}|graft"]="$c_graft"
+    frac_reads["${sample}|host"]="$c_host"
   done
 
   # 画分ごとに、マッピングへ渡す FASTQ を配置する。
@@ -432,6 +436,8 @@ run_xenograft_subcommand() {
   for fr in "${fractions[@]}"; do
     local fr_dir="${out_dir}/classified/${fr}"
     mkdir -p "$fr_dir"
+    # pic all --demux-fastq-dir が要求する total_reads (sample<TAB>画分リード数) を書き出す。
+    : > "${fr_dir}/total_reads"
     for f in "${fastqs[@]}"; do
       base="$(basename "$f")"
       sample="${base%.fastq.gz}"
@@ -439,6 +445,7 @@ run_xenograft_subcommand() {
       local src="${xg_dir}/${sample}-${fr}.fq.gz"
       [[ -f "$src" ]] || continue
       cp -f "$src" "${fr_dir}/${sample}.fastq.gz"
+      printf "%s\t%s\n" "$sample" "${frac_reads["${sample}|${fr}"]:-0}" >> "${fr_dir}/total_reads"
     done
     if [[ "$fr" == "graft" ]]; then genome_for="$graft_genome"; else genome_for="$host_genome"; fi
     log_info "xenograft: ${fr} 画分を配置しました -> ${fr_dir}  (genome=${genome_for})"

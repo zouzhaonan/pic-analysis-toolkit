@@ -3,7 +3,9 @@ Usage:
   pic enrich --prepare-libs --genome <name> [--categories <csv>]
 
 Overview:
-  Run ORA/GSEA enrichment analysis from DESeq2 stats.
+  Run ORA/GSEA enrichment analysis from DESeq2 stats. Result tables (CSV) only;
+  dot plots are drawn interactively by `pic report`. Outputs are written to
+  <out-dir>/GSEA/<method>/*.csv and <out-dir>/ORA/<method>/*.csv.
 
 Required options:
   --stats <path>           DESeq2 stats CSV

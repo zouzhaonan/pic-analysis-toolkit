@@ -15,15 +15,27 @@ pic report — 解析結果から自己完結型 HTML レポートを生成す�
 出力:
   <out-dir>/report_<project>.html   (project = <genome>_<run>)
 
-内容 (セクション構成):
-  1. Mapping QC: mapping sum
-  2. PCA
-  3. DEG
-     - ヒートマップ
-     - contrast ごとの MA / volcano
-  4. Enrichment
-     - GSEA (contrast ごとに GO_BP/KEGG/… をまとめる)
-     - ORA
+内容 (タブ構成):
+  Overview & downloads  レポート概要 + プロジェクトの全 csv/tsv ファイル一覧
+                        (各ファイルは HTML に埋め込み、クリックでダウンロード)
+  1. Mapping QC        リード分布・シーケンス深度 (mapping sum)
+  2. Aggregation       遺伝子ボディ (TSS→TES) メタジーン
+  3. Sample correlation  サンプル間相関 (correlation_*.csv)
+  4. PCA
+  5. Differential expression (DESeq2)
+     - ヒートマップ / contrast ごとの M-A / Volcano (group×group 行列で選択)
+  6. Gene expression   入力遺伝子の正規化カウント (box + beeswarm)
+  7. Enrichment
+     - GSEA (contrast × method を行列で選択)
+     - ORA / cluster プロファイル
+
+  すべての図は CSV から動的生成 (plotly / HTML)。各図には元データの Download
+  ボタン、HTML テーブル (QC・heatmap・correlation) には Download PNG もあり。
+
+自己完結:
+  プロジェクト内の全 csv/tsv を gzip+base64 で HTML に埋め込む。ダウンロード時に
+  ブラウザ (DecompressionStream) で展開するため、fastq(demux) と html だけ渡せば
+  すべての source データを html から取得できる (別途データファイル不要)。
 
 備考:
   pic all の最終ステップでも自動実行される。

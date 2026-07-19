@@ -57,16 +57,20 @@ init_config() {
   declare -gr OUTPUT_DIR="$output_dir"
   declare -gr RUN_NAME="$run_name"
   declare -gr BAM_DIR="$output_dir/bam"
-  declare -gr UMI_BAM_DIR="$output_dir/umi_bam"
+  # umi_bam は bw 生成後は不要なので専用フォルダを作らず tmp 扱い (finalize で破棄)。
+  declare -gr UMI_BAM_DIR="$output_dir/tmp/umi_bam"
   declare -gr BIGWIG_DIR="$output_dir/bw"
   declare -gr TMP_DIR="$output_dir/tmp"
   declare -gr COUNTS_DIR="$output_dir/counts"
   declare -gr LOG_DIR="$output_dir/log"
+  # 集計/中間テーブル (mapping_sum, deftable, aggregate_profile) の集約先。
+  # root 直下の散らばりを避けるため summary/ にまとめる。
+  declare -gr SUMMARY_DIR="$output_dir/summary"
 
   declare -gr SAMPLE_SHEET="$sample_sheet"
   declare -gr RAW_FASTQ_DIR="$raw_fastq_dir"
-  declare -gr MAP_SUMMARY="${OUTPUT_DIR}/mapping_sum__${run_name}.tsv"
-  declare -gr DEFTABLE_DIR="${OUTPUT_DIR}"
+  declare -gr MAP_SUMMARY="${SUMMARY_DIR}/mapping_sum__${run_name}.tsv"
+  declare -gr DEFTABLE_DIR="${SUMMARY_DIR}"
   declare -gr META_FOR_CHUNK="${TMP_DIR}/meta_for_chunk"
   declare -gr FORMATTED_SAMPLE_SHEET="${TMP_DIR}/formatted_sample"
   declare -gr JOB_QUEUE="${TMP_DIR}/job_queue"

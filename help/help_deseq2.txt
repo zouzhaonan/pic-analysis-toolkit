@@ -2,8 +2,15 @@ Usage:
   pic deseq2 --deftable <path> --count-dir <dir> --genome <name> --out-dir <dir> [options]
 
 Overview:
-  Run DESeq2 statistical analysis.
-  Correlation, PCA, M-A, and volcano plots are generated together.
+  Run DESeq2 statistical analysis and write result tables (CSV) only.
+  Figures (correlation, PCA, MA, volcano, heatmap, DEG clusters) are drawn
+  interactively by `pic report` from these tables; no static images are written.
+
+Outputs (all CSV):
+  stats_*.csv, normalizedCountTable_*.csv, correlation_*.csv,
+  PCA/PCA_RegLog_*.csv, PCA/PCA_Variance_*.csv,
+  DEG/DEG_count_*.csv, DEG/DEG_normalizedCountTable_*.csv,
+  DEG/DEGCluster/*.csv, DEG/DEGList/*.txt
 
 Prerequisite:
   Target genome must be registered with:

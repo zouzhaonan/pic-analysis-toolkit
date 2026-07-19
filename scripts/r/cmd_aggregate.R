@@ -6,13 +6,13 @@
 #   分割したビンに対して UCSC bigWigAverageOverBed で平均取得し、全遺伝子で
 #   平均してサンプルごとのプロファイルにする (deepTools 非依存で高速・省メモリ)。
 # 入力:
-#   --out-dir <dir>   pic mapping/all の出力 (bw/ と deftable_<genome>_<run>.tsv)
-#   --run-name <name> 省略時は mapping_sum__<run>.tsv から推定
+#   --out-dir <dir>   pic mapping/all の出力 (bw/ と summary/deftable_<run>_<genome>.tsv)
+#   --run-name <name> 省略時は summary/mapping_sum__<run>.tsv から推定
 #   --genome <g>      特定 genome のみ (省略時は全 genome)
-#   --threads <int>   (現状 R 側では未使用。将来用)
+#   --threads <int>   サンプルごとの bigWigAverageOverBed を mclapply で並列実行
 #   --bins <int>      遺伝子本体の分割数 (default: 100)
 # 出力:
-#   <out>/aggregate/<genome>/aggregate_profile.csv / .png
+#   <out>/summary/aggregate_profile_<run>_<genome>.csv (PNG は生成しない)
 
 suppressPackageStartupMessages({
   library(data.table)
@@ -153,7 +153,7 @@ sample_profile <- function(bwaob, bw, bed, nbins, tmp_dir) {
   prof[.(seq_len(nbins))]$value
 }
 
-aggregate_one_genome <- function(out_dir, genome, deftable, bwaob, nbins, flank, fbins, tmp_dir, group_pat = NULL) {
+aggregate_one_genome <- function(out_dir, genome, project, deftable, bwaob, nbins, flank, fbins, tmp_dir, threads = 1L, group_pat = NULL) {
   def <- fread(deftable, sep = "\t", header = TRUE, showProgress = FALSE)
   # 期待列: count_prefix, barcode, sample, group
   setnames(def, tolower(names(def)))
@@ -180,18 +180,21 @@ aggregate_one_genome <- function(out_dir, genome, deftable, bwaob, nbins, flank,
   message(sprintf("[INFO] aggregate: %d 遺伝子 × %d bins (body %d + flank %d×2, ±%dbp)", n_used, total, nbins, fbins, flank))
 
   bw_dir <- file.path(out_dir, "bw")
-  rows <- list()
-  for (i in seq_len(nrow(def))) {
+  # サンプルは互いに独立 (各自の bigwig を read-only の bed に対して集計) なので、
+  # bigWigAverageOverBed 呼び出しを mclapply で並列化する (bwaob 自体は 1 スレッド)。
+  ncore <- max(1L, min(threads, nrow(def)))
+  results <- parallel::mclapply(seq_len(nrow(def)), function(i) {
     cp <- as.character(def$count_prefix[i]); sample <- as.character(def$sample[i]); group <- as.character(def$group[i])
     bw <- file.path(bw_dir, paste0(cp, "_umi.cpm.bw"))
     if (!file.exists(bw)) bw <- file.path(bw_dir, paste0(sample, "_umi.cpm.bw"))
-    if (!file.exists(bw)) { message(sprintf("[WARN] aggregate: bigwig なし (skip): %s", sample)); next }
+    if (!file.exists(bw)) { message(sprintf("[WARN] aggregate: bigwig なし (skip): %s", sample)); return(NULL) }
     v <- sample_profile(bwaob, bw, bed, total, tmp_dir)
-    if (is.null(v)) { message(sprintf("[WARN] aggregate: プロファイル取得失敗 (skip): %s", sample)); next }
+    if (is.null(v)) { message(sprintf("[WARN] aggregate: プロファイル取得失敗 (skip): %s", sample)); return(NULL) }
     v[!is.finite(v)] <- 0
-    rows[[length(rows) + 1]] <- data.table(sample = sample, group = group, globalpos = seq_len(total), value = v)
     message(sprintf("[INFO] aggregate: %s 完了", sample))
-  }
+    data.table(sample = sample, group = group, globalpos = seq_len(total), value = v)
+  }, mc.cores = ncore)
+  rows <- results[vapply(results, data.table::is.data.table, logical(1))]
   unlink(bed)
   if (length(rows) == 0) { message("[WARN] aggregate: 出力なし"); return(invisible(NULL)) }
 
@@ -200,19 +203,20 @@ aggregate_one_genome <- function(out_dir, genome, deftable, bwaob, nbins, flank,
   d[, flank_bp := flank]
   setnames(d, "globalpos", "binpos")
   setorder(d, sample, binpos)
-  agg_dir <- file.path(out_dir, "aggregate", genome)
-  dir.create(agg_dir, recursive = TRUE, showWarnings = FALSE)
-  fwrite(d[, .(sample, group, binpos, region, pos, value, flank_bp)], file.path(agg_dir, "aggregate_profile.csv"))
+  # PNG は不要 (図はレポートが CSV から plotly で動的生成)。CSV は集計テーブルとして
+  # summary/ に出力 (mapping_sum/deftable と同じ集約先)。
+  summary_dir <- file.path(out_dir, "summary")
+  dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
+  out_csv <- file.path(summary_dir, sprintf("aggregate_profile_%s.csv", project))
+  fwrite(d[, .(sample, group, binpos, region, pos, value, flank_bp)], out_csv)
+  message(sprintf("[INFO] aggregate: 出力 -> %s", out_csv))
+}
 
-  p <- ggplot2::ggplot(d, ggplot2::aes(x = pos, y = value, color = group, group = sample)) +
-    ggplot2::geom_vline(xintercept = c(0, 100), linetype = "dashed", color = "#888888") +
-    ggplot2::geom_line(linewidth = 0.6, alpha = 0.9) +
-    ggplot2::scale_x_continuous(breaks = c(0, 100), labels = c("TSS", "TES")) +
-    ggplot2::labs(x = NULL, y = "mean CPM",
-                  title = sprintf("%s: gene-body aggregation", genome), color = "group") +
-    ggplot2::theme_bw()
-  ggplot2::ggsave(file.path(agg_dir, "aggregate_profile.png"), p, width = 8, height = 5, dpi = 120)
-  message(sprintf("[INFO] aggregate: 出力 -> %s", agg_dir))
+# summary/ を優先し、無ければ out_dir 直下も探す (旧レイアウト互換)。
+list_from_summary <- function(out_dir, pattern) {
+  hits <- list.files(file.path(out_dir, "summary"), pattern = pattern, full.names = TRUE)
+  if (length(hits) == 0) hits <- list.files(out_dir, pattern = pattern, full.names = TRUE)
+  hits
 }
 
 main <- function() {
@@ -224,22 +228,23 @@ main <- function() {
 
   run_name <- args$run_name
   if (is.null(run_name)) {
-    ms <- list.files(out_dir, pattern = "^mapping_sum__.*\\.tsv$", full.names = FALSE)
-    if (length(ms) > 0) run_name <- sub("\\.tsv$", "", sub("^mapping_sum__", "", ms[[1]]))
+    ms <- list_from_summary(out_dir, "^mapping_sum__.*\\.tsv$")
+    if (length(ms) > 0) run_name <- sub("\\.tsv$", "", sub("^mapping_sum__", "", basename(ms[[1]])))
   }
   if (is.null(run_name) || !nzchar(run_name)) stop("run-name を特定できません。--run-name を指定してください。", call. = FALSE)
 
-  deftables <- list.files(out_dir, pattern = sprintf("^deftable_.*_%s\\.tsv$", run_name), full.names = TRUE)
-  if (length(deftables) == 0) stop(sprintf("deftable が見つかりません: %s/deftable_*_%s.tsv", out_dir, run_name), call. = FALSE)
+  deftables <- list_from_summary(out_dir, sprintf("^deftable_%s_.*\\.tsv$", run_name))
+  if (length(deftables) == 0) stop(sprintf("deftable が見つかりません: %s/summary/deftable_%s_*.tsv", out_dir, run_name), call. = FALSE)
 
   tmp_dir <- file.path(out_dir, "tmp", "aggregate")
   dir.create(tmp_dir, recursive = TRUE, showWarnings = FALSE)
 
   for (df in deftables) {
-    genome <- sub(sprintf("_%s$", run_name), "", sub("^deftable_", "", sub("\\.tsv$", "", basename(df))))
+    genome <- sub(sprintf("^deftable_%s_", run_name), "", sub("\\.tsv$", "", basename(df)))
     if (!is.null(args$genome) && genome != args$genome) next
     message(sprintf("[INFO] aggregate: genome=%s", genome))
-    aggregate_one_genome(out_dir, genome, df, bwaob, args$bins, args$flank, args$flank_bins, tmp_dir, args$group)
+    project <- sprintf("%s_%s", run_name, genome)
+    aggregate_one_genome(out_dir, genome, project, df, bwaob, args$bins, args$flank, args$flank_bins, tmp_dir, args$threads, args$group)
   }
   unlink(tmp_dir, recursive = TRUE)
   message(sprintf("[INFO] aggregate: 完了 (out-dir=%s)", out_dir))

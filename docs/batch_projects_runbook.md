@@ -96,9 +96,10 @@ pic all \
 
 出力:
 
-- `<out-dir-base>/<P>/` … mapping 成果物 (deftable, counts, bam, bw …)
-- `<out-dir-base>/<P>/deseq2/<genome>/` … DESeq2 結果
-- `<out-dir-base>/<P>/enrich/<genome>/` … ORA/GSEA 結果
+- `<out-dir-base>/<P>/` … mapping 成果物 (counts, bam, bw …) と `report_*.html` / `sample_sheet.tsv`
+- `<out-dir-base>/<P>/summary/` … 集計/中間テーブル (`mapping_sum__<run>.tsv`, `deftable_<run>_<genome>.tsv`, `aggregate_profile_<run>_<genome>.csv`)
+- `<out-dir-base>/<P>/deseq2/` … DESeq2 結果 (ファイル名 suffix `<run>_<genome>` で genome 識別)
+- `<out-dir-base>/<P>/enrich/` … ORA/GSEA 結果 (同上)
 
 `pic all` は `set -euo pipefail` で動くため、どこかで失敗すればそのプロジェクトは
 そこで停止する。失敗したら原因(多くは genome 未整備)を確認して整備し直す。

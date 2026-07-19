@@ -27,7 +27,9 @@ main <- function() {
   message("[INFO] Loading required packages")
   load_required_packages()
   dir.create(args$out_dir, recursive = TRUE, showWarnings = FALSE)
-  deg_dir <- file.path(args$out_dir, "DEG")
+  # 平坦化 (deseq2/<genome>/ 廃止) に伴い、サブフォルダ名にも <run>_<genome>
+  # suffix を付けて複数 genome 混在時の衝突を防ぐ。
+  deg_dir <- file.path(args$out_dir, sprintf("DEG_%s", args$project_name))
   dir.create(deg_dir, recursive = TRUE, showWarnings = FALSE)
 
   message("[INFO] Reading deftable and preparing contrasts")
@@ -54,19 +56,18 @@ main <- function() {
     fdr = args$fdr
   )
 
-  readr::write_tsv(def, file.path(args$out_dir, sprintf("deftable_%s.tsv", args$project_name)))
+  # 注: deftable のコピー / Num_UMIs_genes は下流・レポートのいずれからも参照されないため書き出さない
+  #     (ルートの deftable と mapping_sum で代替される)。
   readr::write_csv(mat, file.path(args$out_dir, sprintf("UMI_count_%s.csv", args$project_name)))
   readr::write_csv(stats_tables$stats, file.path(args$out_dir, sprintf("stats_%s.csv", args$project_name)))
   readr::write_csv(normcount, file.path(args$out_dir, sprintf("normalizedCountTable_%s.csv", args$project_name)))
-  readr::write_csv(num_umi_gene, file.path(args$out_dir, sprintf("Num_UMIs_genes_%s.csv", args$project_name)))
 
   if (nrow(deg_count_summary) > 0) {
     readr::write_csv(deg_count_summary, file.path(deg_dir, sprintf("DEG_count_%s.csv", args$project_name)))
-    save_deg_count_plot(deg_count_summary, deg_dir, args$project_name)
   }
 
   if (nrow(degpattern$cluster_gene) > 0) {
-    degpattern_dir <- file.path(deg_dir, "DEGCluster")
+    degpattern_dir <- file.path(deg_dir, sprintf("DEGCluster_%s", args$project_name))
     dir.create(degpattern_dir, recursive = TRUE, showWarnings = FALSE)
     readr::write_csv(
       degpattern$cluster_gene,
@@ -80,20 +81,7 @@ main <- function() {
       degpattern$cluster_profile,
       file.path(degpattern_dir, sprintf("DEGCluster_profile_%s.csv", args$project_name))
     )
-    if (!is.null(degpattern$merge_map) && nrow(degpattern$merge_map) > 0) {
-      readr::write_csv(
-        degpattern$merge_map,
-        file.path(degpattern_dir, sprintf("DEGCluster_merge_map_%s.csv", args$project_name))
-      )
-    }
-    if (!is.null(degpattern$plot)) {
-      ggplot2::ggsave(
-        file.path(degpattern_dir, sprintf("DEGCluster_profile_%s.pdf", args$project_name)),
-        plot = degpattern$plot,
-        width = 12,
-        height = 8
-      )
-    }
+    # 注: DEGCluster_merge_map はどこからも参照されないため書き出さない
   } else {
     message("[INFO] DEG clustering returned no cluster assignments")
   }

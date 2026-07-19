@@ -143,9 +143,9 @@ build_cluster_ora_plot <- function(ora_df) {
     vapply(cluster_levels, function(cl) {
       den <- cluster_den$den[cluster_den$cluster == cl]
       if (length(den) == 0 || !is.finite(den[[1]])) {
-        sprintf("%s (N=NA)", cl)
+        sprintf("%s (n=NA)", cl)
       } else {
-        sprintf("%s (N=%s)", cl, format(den[[1]], scientific = FALSE, trim = TRUE))
+        sprintf("%s (n=%s)", cl, format(den[[1]], scientific = FALSE, trim = TRUE))
       }
     }, character(1)),
     cluster_levels
@@ -187,6 +187,249 @@ build_cluster_ora_plot <- function(ora_df) {
 
   attr(p, "pic_n_y_labels") <- length(unique(as.character(plot_df$term_label)))
   p
+}
+
+# ---------------------------------------------------------------------------
+# plotly 用 dot plot spec (report のインタラクティブ描画)
+# ---------------------------------------------------------------------------
+
+# 連続値を plotly マーカーの px サイズに線形写像する。
+plotly_marker_size <- function(v, min_px = 8, max_px = 24) {
+  v <- suppressWarnings(as.numeric(v))
+  fin <- v[is.finite(v)]
+  if (length(fin) == 0) return(rep((min_px + max_px) / 2, length(v)))
+  lo <- min(fin); hi <- max(fin)
+  if (!is.finite(lo) || !is.finite(hi) || hi == lo) return(rep((min_px + max_px) / 2, length(v)))
+  out <- min_px + (v - lo) / (hi - lo) * (max_px - min_px)
+  out[!is.finite(out)] <- min_px
+  out
+}
+
+# p.adjust を色 (小さい=有意=赤 -> 大きい=青) に写像する colorscale。
+enrich_colorscale <- function() {
+  ecfg <- pic_plot_spec()$plot$enrichment
+  list(list(0, ecfg$gradient_low), list(1, ecfg$gradient_high))
+}
+
+# GSEA を plotly の dot plot spec (list(data, layout, n_terms)) に変換する。
+# 元の facet_grid(. ~ direction, scales="free_x") と同様に、direction ごとに
+# 独立した x 軸 (free_x) のパネルを左右に並べ、y (term ラベル) は共有して左端に揃える。
+# color=p.adjust, size=setSize。
+build_gsea_plotly <- function(gsea_df, numerator, denominator, group_pal = NULL) {
+  ecfg <- pic_plot_spec()$plot$enrichment
+  required_cols <- c("Description", "NES", "setSize", "p.adjust", "direction")
+  if (nrow(gsea_df) == 0 || !all(required_cols %in% colnames(gsea_df))) return(NULL)
+  # group 名 → その group 色 (大文字小文字は無視)。無ければ既定色。
+  grp_color <- function(g) {
+    if (is.null(group_pal)) return("#1f2933")
+    idx <- match(tolower(g), tolower(names(group_pal)))
+    if (!is.na(idx)) unname(group_pal[[idx]]) else "#1f2933"
+  }
+  # 表示名は deftable どおりの casing に揃える (enrichment データは小文字化されている)
+  grp_label <- function(g) {
+    if (is.null(group_pal)) return(g)
+    idx <- match(tolower(g), tolower(names(group_pal)))
+    if (!is.na(idx)) names(group_pal)[[idx]] else g
+  }
+
+  direction_levels <- c(denominator, numerator,
+    setdiff(unique(as.character(gsea_df$direction)), c(denominator, numerator)))
+
+  plot_df <- gsea_df |>
+    dplyr::filter(!is.na(.data$Description), .data$Description != "",
+                  is.finite(.data$NES), is.finite(.data$setSize), is.finite(.data$p.adjust)) |>
+    dplyr::mutate(direction = factor(.data$direction, levels = unique(direction_levels))) |>
+    dplyr::group_by(.data$direction) |>
+    dplyr::slice_max(order_by = abs(.data$NES), n = ecfg$top_n_per_direction, with_ties = FALSE) |>
+    dplyr::ungroup() |>
+    dplyr::mutate(term_id = paste0("term_", dplyr::row_number()))
+  if (nrow(plot_df) == 0) return(NULL)
+
+  # y 順 (下→上): direction level ごとに NES 昇順
+  term_levels <- unlist(lapply(levels(plot_df$direction), function(dir_i) {
+    x <- plot_df |> dplyr::filter(.data$direction == dir_i) |> dplyr::arrange(.data$NES)
+    x$term_id
+  }))
+  plot_df <- plot_df[match(term_levels, plot_df$term_id), , drop = FALSE]
+
+  desc_full <- as.character(plot_df$Description)
+  ylab <- substr(sanitize_plot_label(plot_df$Description), 1, ecfg$term_label_max_chars)
+  ypos_all <- seq_len(nrow(plot_df))
+  padj_all <- as.numeric(plot_df$p.adjust)
+  size_all <- plotly_marker_size(as.numeric(plot_df$setSize))
+  cmin <- min(padj_all); cmax <- max(padj_all)
+
+  ht <- paste0("<b>%{customdata[0]}</b><br>enriched in: %{customdata[3]}<br>",
+               "NES: %{x:.2f}<br>setSize: %{customdata[1]}<br>p.adjust: %{customdata[2]:.3g}<extra></extra>")
+
+  dirs <- levels(plot_df$direction)
+  dirs <- dirs[dirs %in% unique(as.character(plot_df$direction))]
+  ndir <- length(dirs)
+  gap <- 0.07
+  panelw <- (1 - gap * (ndir - 1)) / ndir
+
+  traces <- list()
+  annotations <- list()
+  shapes <- list()
+  layout <- list(
+    margin = list(l = 10, r = 10, t = 56, b = 46), hovermode = "closest",
+    showlegend = FALSE,
+    yaxis = list(tickmode = "array", tickvals = as.list(ypos_all), ticktext = as.list(ylab),
+                 automargin = TRUE, range = list(0.5, nrow(plot_df) + 0.5),
+                 domain = list(0, 1), anchor = "x", showline = TRUE, mirror = TRUE,
+                 linecolor = "#cdd7e2")
+  )
+  for (i in seq_len(ndir)) {
+    d <- dirs[[i]]
+    idx <- which(as.character(plot_df$direction) == d)
+    x0 <- (i - 1) * (panelw + gap); x1 <- x0 + panelw
+    axref <- if (i == 1) "x" else paste0("x", i)
+    axname <- if (i == 1) "xaxis" else paste0("xaxis", i)
+    layout[[axname]] <- list(title = list(text = "NES"), domain = list(x0, x1),
+                             anchor = "y", zeroline = FALSE, automargin = TRUE,
+                             showline = TRUE, mirror = TRUE, linecolor = "#cdd7e2")
+    showscale <- (i == ndir)
+    mk <- list(size = as.list(size_all[idx]), color = as.list(padj_all[idx]),
+               colorscale = enrich_colorscale(), cmin = cmin, cmax = cmax,
+               showscale = showscale, line = list(width = 0.5, color = "rgba(0,0,0,.35)"),
+               opacity = ecfg$point_alpha)
+    if (showscale) mk$colorbar <- list(title = list(text = "p.adjust", side = "right"),
+                                        thickness = 12, len = 0.6)
+    traces[[length(traces) + 1L]] <- list(
+      x = as.list(as.numeric(plot_df$NES[idx])), y = as.list(ypos_all[idx]),
+      xaxis = axref, yaxis = "y", showlegend = FALSE,
+      customdata = lapply(idx, function(j) list(desc_full[j], as.numeric(plot_df$setSize[j]), padj_all[j], d)),
+      mode = "markers", type = "scatter", marker = mk, hovertemplate = ht
+    )
+    # パネルを囲む枠 (左右が別の x 軸であることを明示)
+    shapes[[length(shapes) + 1L]] <- list(
+      type = "rect", xref = "paper", yref = "paper", layer = "below",
+      x0 = x0, x1 = x1, y0 = 0, y1 = 1,
+      line = list(color = "#cdd7e2", width = 1), fillcolor = "rgba(0,0,0,0)"
+    )
+    # facet strip: パネル上部に direction (enriched group) 名 (group 色・枠なし)
+    annotations[[length(annotations) + 1L]] <- list(
+      text = html_escape(grp_label(d)), xref = "paper", yref = "paper",
+      x = (x0 + x1) / 2, y = 1.0, xanchor = "center", yanchor = "bottom",
+      showarrow = FALSE, font = list(size = 13, color = grp_color(d))
+    )
+  }
+  layout$annotations <- annotations
+  layout$shapes <- shapes
+  list(data = traces, layout = layout, n_terms = nrow(plot_df),
+       config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = TRUE))
+}
+
+# ORA (cluster) を plotly の dot plot spec に変換する。
+# x=cluster, y=term, color=p.adjust, size=GeneRatio。
+build_ora_plotly <- function(ora_df) {
+  ecfg <- pic_plot_spec()$plot$enrichment
+  required_cols <- c("cluster", "Description", "GeneRatio")
+  if (nrow(ora_df) == 0 || !all(required_cols %in% colnames(ora_df))) return(NULL)
+
+  parse_ratio_num <- function(x) {
+    parts <- strsplit(as.character(x), "/", fixed = TRUE)
+    vapply(parts, function(p) {
+      if (length(p) != 2) return(NA_real_)
+      n <- suppressWarnings(as.numeric(p[[1]])); d <- suppressWarnings(as.numeric(p[[2]]))
+      if (!is.finite(n) || !is.finite(d) || d == 0) return(NA_real_)
+      n / d
+    }, numeric(1))
+  }
+  parse_ratio_den <- function(x) {
+    parts <- strsplit(as.character(x), "/", fixed = TRUE)
+    vapply(parts, function(p) if (length(p) != 2) NA_real_ else suppressWarnings(as.numeric(p[[2]])), numeric(1))
+  }
+
+  plot_df <- ora_df |>
+    dplyr::mutate(
+      cluster = as.character(.data$cluster),
+      GeneRatio_num = parse_ratio_num(.data$GeneRatio),
+      GeneRatio_den = parse_ratio_den(.data$GeneRatio),
+      p_adj_plot = dplyr::coalesce(suppressWarnings(as.numeric(.data$p.adjust)),
+                                   suppressWarnings(as.numeric(.data$pvalue)))
+    ) |>
+    dplyr::filter(!is.na(.data$cluster), .data$cluster != "",
+                  !is.na(.data$Description), .data$Description != "",
+                  is.finite(.data$GeneRatio_num), is.finite(.data$p_adj_plot)) |>
+    dplyr::group_by(.data$cluster, .data$Description) |>
+    dplyr::slice_min(.data$p_adj_plot, n = 1, with_ties = FALSE) |>
+    dplyr::ungroup() |>
+    dplyr::group_by(.data$cluster) |>
+    dplyr::slice_min(.data$p_adj_plot, n = 10, with_ties = FALSE) |>
+    dplyr::ungroup()
+  if (nrow(plot_df) == 0) return(NULL)
+
+  cluster_den <- plot_df |>
+    dplyr::group_by(.data$cluster) |>
+    dplyr::summarise(den = {
+      vals <- unique(.data$GeneRatio_den[is.finite(.data$GeneRatio_den)])
+      if (length(vals) == 0) NA_real_ else vals[[1]]
+    }, .groups = "drop")
+
+  cluster_levels <- unique(plot_df$cluster)
+  cluster_labels <- stats::setNames(
+    vapply(cluster_levels, function(cl) {
+      den <- cluster_den$den[cluster_den$cluster == cl]
+      if (length(den) == 0 || !is.finite(den[[1]])) sprintf("%s (n=NA)", cl)
+      else sprintf("%s (n=%s)", cl, format(den[[1]], scientific = FALSE, trim = TRUE))
+    }, character(1)), cluster_levels)
+
+  plot_df <- plot_df |>
+    dplyr::mutate(cluster_label = factor(cluster_labels[.data$cluster], levels = cluster_labels[cluster_levels]),
+                  Description_plot = sanitize_plot_label(.data$Description))
+
+  term_levels <- plot_df |>
+    dplyr::group_by(.data$Description_plot) |>
+    dplyr::summarise(best_padj = min(.data$p_adj_plot, na.rm = TRUE), .groups = "drop") |>
+    dplyr::arrange(.data$best_padj, .data$Description_plot) |>
+    dplyr::pull(.data$Description_plot)
+
+  plot_df <- plot_df |>
+    dplyr::mutate(term_label = factor(.data$Description_plot, levels = rev(term_levels)))
+
+  ylab_levels <- substr(levels(plot_df$term_label), 1, ecfg$term_label_max_chars)
+  yy <- as.integer(plot_df$term_label)
+  xx <- as.character(plot_df$cluster_label)
+  gr <- as.numeric(plot_df$GeneRatio_num)
+  padj <- as.numeric(plot_df$p_adj_plot)
+
+  cd <- lapply(seq_len(nrow(plot_df)), function(i)
+    list(as.character(plot_df$Description_plot[i]), gr[i], padj[i], xx[i]))
+  ht <- paste0("<b>%{customdata[0]}</b><br>cluster: %{customdata[3]}<br>",
+               "GeneRatio: %{customdata[1]:.3g}<br>p.adjust: %{customdata[2]:.3g}<extra></extra>")
+
+  trace <- list(
+    x = as.list(xx), y = as.list(yy), customdata = cd,
+    mode = "markers", type = "scatter",
+    marker = list(
+      size = as.list(plotly_marker_size(gr)),
+      color = as.list(padj), colorscale = enrich_colorscale(),
+      colorbar = list(title = list(text = "p.adjust", side = "right"), thickness = 12, len = 0.6),
+      showscale = TRUE, line = list(width = 0.5, color = "rgba(0,0,0,.35)"),
+      opacity = ecfg$point_alpha
+    ),
+    hovertemplate = ht
+  )
+  layout <- list(
+    showlegend = FALSE,
+    xaxis = list(type = "category", categoryorder = "array",
+                 categoryarray = as.list(levels(plot_df$cluster_label)),
+                 tickangle = -40, automargin = TRUE, showline = TRUE, mirror = TRUE,
+                 linecolor = "#cdd7e2"),
+    yaxis = list(tickmode = "array", tickvals = as.list(seq_along(ylab_levels)),
+                 ticktext = as.list(ylab_levels), automargin = TRUE,
+                 range = list(0.5, length(ylab_levels) + 0.5), showline = TRUE, mirror = TRUE,
+                 linecolor = "#cdd7e2"),
+    margin = list(l = 10, r = 10, t = 44, b = 80), hovermode = "closest"
+  )
+  list(data = list(trace), layout = layout, n_terms = length(ylab_levels),
+       config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = TRUE))
+}
+
+# dot plot の term 数からプロット高さ (px) を決める。
+enrich_plot_height <- function(n_terms) {
+  as.integer(max(300, min(1500, 110 + n_terms * 20)))
 }
 
 save_plot <- function(plot_obj, out_dir, out_name) {

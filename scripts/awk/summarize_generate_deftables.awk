@@ -7,7 +7,7 @@ BEGIN {
   }
   genome = $2
   gsub(/[^[:alnum:]_.-]+/, "_", genome)
-  outfile = deftable_dir "/deftable_" genome "_" run_name ".tsv"
+  outfile = deftable_dir "/deftable_" run_name "_" genome ".tsv"
   if (!(outfile in header_written)) {
     print header > outfile
     header_written[outfile] = 1

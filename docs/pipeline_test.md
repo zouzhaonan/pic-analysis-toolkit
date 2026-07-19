@@ -68,7 +68,7 @@ pic enrich \
   --deg-clusters "$wd/deseq2/DEG/DEGCluster/DEGCluster_gene_for_ora_mm10_test.csv"
 ```
 
-If `plots/` and `csv/` are generated under `$wd/enrich`, the run succeeded.
+If `GSEA/<method>/*.csv` and `ORA/<method>/*.csv` are generated under `$wd/enrich/`, the run succeeded (figures are drawn from the CSVs by `pic report`).
 
 ## 5. Run ChIP-Atlas analysis
 
