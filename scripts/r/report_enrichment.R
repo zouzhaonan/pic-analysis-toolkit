@@ -148,6 +148,27 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
              'Dot color is significance (p.adjust), size the gene ratio. Pick a method on the left to view it.</p>%s</div>'),
       build_select_group(ora_items, prefix = prefix_html, ctrl_title = "Method", view_header = "")
     ))
+  } else {
+    # ORA が無い場合は無言でスキップせず、理由を明記する。
+    # 判定材料: DEG クラスタ (ORA の入力) が生成されているか。
+    degc <- if (!is.null(deseq2_dir))
+      file.path(degcluster_dir_of(deseq2_dir, project), sprintf("DEGCluster_gene_for_ora_%s.csv", project)) else ""
+    has_clusters <- nzchar(degc) && file.exists(degc)
+    reason <- if (!has_clusters) {
+      paste0("No DEG clusters were produced for this dataset &mdash; there were too few differentially expressed genes to form clusters. ",
+             "ORA runs on clusters of DEGs, so it was not performed here.")
+    } else if (!dir.exists(ora_root)) {
+      paste0("DEG clusters were produced, but no ORA results are present. ",
+             "ORA was not run for this dataset (it needs the DEG clusters passed to <code>pic enrich --deg-clusters</code>).")
+    } else {
+      "DEG clusters were produced, but ORA found no over-represented terms at the current significance threshold."
+    }
+    parts <- c(parts, sprintf(
+      paste0('<div class="pic-enrich-ora">%s',
+             '<p class="pic-note">ORA (over-representation analysis) asks which biological terms are enriched among the differentially expressed genes in each cluster. ',
+             '%s</p></div>'),
+      sub_head("ORA", ""), reason
+    ))
   }
 
   paste(parts, collapse = "\n")
