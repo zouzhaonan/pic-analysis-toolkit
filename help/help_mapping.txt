@@ -31,10 +31,14 @@ Optional options:
                              are almost pure polyT and pile up at A/T-rich loci,
                              creating barcode-specific phantom genes.
                              About 1% of reads in a typical run. (default: off)
-  --hisat2-score-min <spec>  Set hisat2 --score-min only (e.g. L,0,-1)
-                             Recommended over --hisat2-very-sensitive:
-                             nearly identical yield at ~1/4 the runtime and
-                             about half the multi-mapping reads.
+  --hisat2-score-min <spec>  hisat2 --score-min (default: L,0,-1)
+                             pic defaults to L,0,-1 because PIC Read2 starts with
+                             the RT primer's random hexamer (non-templated by
+                             design); hisat2's own default L,0,-0.2 cannot afford
+                             to soft-clip it. Measured: unmapped 38-45% -> 1.3-1.7%,
+                             UMI 2.4-2.8x. Pass L,0,-0.2 to restore hisat2's default.
+                             Preferred over --hisat2-very-sensitive: same yield at
+                             ~1/4 the runtime and half the multi-mapping reads.
 
 Examples:
   pic mapping \

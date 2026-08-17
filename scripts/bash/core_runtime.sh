@@ -8,8 +8,13 @@ declare -gr PIC_DEFAULT_THREADS=8
 declare -gr PIC_DEFAULT_SKIP_DEMUX=0
 declare -gr PIC_DEFAULT_SIMULATION_MODE=0
 declare -gr PIC_DEFAULT_HISAT2_VERY_SENSITIVE=0
-# hisat2 の --score-min。空なら hisat2 の既定 (L,0,-0.2) を使う。
-declare -gr PIC_DEFAULT_HISAT2_SCORE_MIN=""
+# hisat2 の --score-min。
+# PIC の Read2 は先頭 6 塩基が RT プライマーのランダムヘキサマー由来で構造的に
+# 非鋳型のため、hisat2 の既定 L,0,-0.2 (81bp で予算 -16.2) では soft clip だけで
+# 予算を使い切り、ミスマッチ 1 個で脱落する。実測で unmapped 38-45% -> 1.3-1.7%、
+# UMI 2.4-2.8 倍。よって L,0,-1 を pic の既定とする。
+# hisat2 本来の既定に戻す場合は --hisat2-score-min L,0,-0.2 を明示する。
+declare -gr PIC_DEFAULT_HISAT2_SCORE_MIN="L,0,-1"
 # RT プライマー由来リード (自バーコード + polyT) の除去。既定は off。
 declare -gr PIC_DEFAULT_FILTER_PRIMER_READS=0
 declare -gr PIC_DEFAULT_OUTPUT_DIR=""
