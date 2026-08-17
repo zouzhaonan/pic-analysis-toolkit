@@ -34,7 +34,7 @@ run_pipeline_subcommand() {
 
   local sample_sheet="" raw_fastq_dir="" run_name="" out_dir="" demux_fastq_dir=""
   local run_name_set=0 no_report=0
-  local hisat2_very_sensitive=0 hisat2_score_min=""
+  local hisat2_very_sensitive=0 hisat2_score_min="" filter_primer_reads=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -71,6 +71,10 @@ run_pipeline_subcommand() {
       hisat2_score_min="${2:-}"
       shift 2
       ;;
+    --filter-primer-reads)
+      filter_primer_reads=1
+      shift
+      ;;
     --help)
       show_help_for_subcommand all
       return 0
@@ -103,6 +107,9 @@ run_pipeline_subcommand() {
   fi
   if [[ -n "$hisat2_score_min" ]]; then
     mapping_args+=(--hisat2-score-min "$hisat2_score_min")
+  fi
+  if [[ "$filter_primer_reads" = 1 ]]; then
+    mapping_args+=(--filter-primer-reads)
   fi
 
   parse_pic_common_long_options "mapping" "${mapping_args[@]}"

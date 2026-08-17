@@ -27,6 +27,7 @@ parse_pic_common_long_options() {
   PIC_SIMULATION_MODE="$PIC_DEFAULT_SIMULATION_MODE"
   PIC_HISAT2_VERY_SENSITIVE="$PIC_DEFAULT_HISAT2_VERY_SENSITIVE"
   PIC_HISAT2_SCORE_MIN="$PIC_DEFAULT_HISAT2_SCORE_MIN"
+  PIC_FILTER_PRIMER_READS="$PIC_DEFAULT_FILTER_PRIMER_READS"
   PIC_DEMUX_FASTQ_DIR="$PIC_DEFAULT_DEMUX_FASTQ_DIR"
   PIC_RAW_FASTQ_DIR="$PIC_DEFAULT_RAW_FASTQ_DIR"
   PIC_DEMUX_LAYOUT=""
@@ -96,6 +97,14 @@ parse_pic_common_long_options() {
       PIC_HISAT2_SCORE_MIN="${2:-}"
       shift 2
       ;;
+    --filter-primer-reads)
+      if [[ "$allow_hisat2_very_sensitive" != 1 ]]; then
+        handle_error "--filter-primer-reads is not supported for ${subcommand}."
+        exit 1
+      fi
+      PIC_FILTER_PRIMER_READS=1
+      shift
+      ;;
     --help)
       PIC_WANT_HELP=1
       return 0
@@ -127,7 +136,8 @@ parse_pic_common_long_options() {
     "$PIC_HISAT2_VERY_SENSITIVE" \
     "$PIC_RAW_FASTQ_DIR" \
     "$PIC_DEMUX_LAYOUT" \
-    "$PIC_HISAT2_SCORE_MIN"
+    "$PIC_HISAT2_SCORE_MIN" \
+    "$PIC_FILTER_PRIMER_READS"
 }
 
 run_primary_family_subcommand() {

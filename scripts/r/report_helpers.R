@@ -139,6 +139,8 @@ file_desc <- function(rel) {
 file_excluded <- function(rel) {
   b <- basename(rel)
   grepl("^sample_sheet", b) || grepl("^Num_UMIs_genes", b) ||
+    # 実行時パラメータの記録 (Materials & Methods の表示用メタデータ)
+    grepl("^analysis_params", b) ||
     grepl("^DEG_count", b) || grepl("^DEG_normalizedCountTable", b) ||
     grepl("^DEGCluster_summary", b) || grepl("^DEGCluster_gene_for_ora", b) ||
     grepl("^DEGCluster_merge_map", b) ||
