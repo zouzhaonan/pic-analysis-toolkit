@@ -26,11 +26,6 @@ Optional options:
   --simulation               Run in simulation mode (default: off)
   --hisat2-very-sensitive    Add --very-sensitive to hisat2 (default: off)
                              (= --bowtie2-dp 2 -k 50 --score-min L,0,-1)
-  --filter-primer-reads      Drop RT-primer-derived reads (own barcode followed
-                             by polyT). These are primer dimers read as R2; they
-                             are almost pure polyT and pile up at A/T-rich loci,
-                             creating barcode-specific phantom genes.
-                             About 1% of reads in a typical run. (default: off)
   --hisat2-score-min <spec>  hisat2 --score-min (default: L,0,-1)
                              pic defaults to L,0,-1 because PIC Read2 starts with
                              the RT primer's random hexamer (non-templated by

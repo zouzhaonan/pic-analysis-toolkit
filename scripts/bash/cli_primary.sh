@@ -97,14 +97,6 @@ parse_pic_common_long_options() {
       PIC_HISAT2_SCORE_MIN="${2:-}"
       shift 2
       ;;
-    --filter-primer-reads)
-      if [[ "$allow_hisat2_very_sensitive" != 1 ]]; then
-        handle_error "--filter-primer-reads is not supported for ${subcommand}."
-        exit 1
-      fi
-      PIC_FILTER_PRIMER_READS=1
-      shift
-      ;;
     --help)
       PIC_WANT_HELP=1
       return 0

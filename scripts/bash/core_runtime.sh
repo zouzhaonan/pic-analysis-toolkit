@@ -15,8 +15,11 @@ declare -gr PIC_DEFAULT_HISAT2_VERY_SENSITIVE=0
 # UMI 2.4-2.8 倍。よって L,0,-1 を pic の既定とする。
 # hisat2 本来の既定に戻す場合は --hisat2-score-min L,0,-0.2 を明示する。
 declare -gr PIC_DEFAULT_HISAT2_SCORE_MIN="L,0,-1"
-# RT プライマー由来リード (自バーコード + polyT) の除去。既定は off。
-declare -gr PIC_DEFAULT_FILTER_PRIMER_READS=0
+# RT プライマー由来リード (自バーコード + polyT) の除去。常時実行。
+# インサートを持たない空のライブラリ分子で、中身がほぼ polyT のため A/T リッチ座位に
+# 偽陽性で貼りつき、バーコード特異的な偽遺伝子を生む。誤除去の危険は無視できる
+# (生物学的配列が [自バーコード 6 塩基][T x8] になる確率は 81bp 全体で約 3e-7)。
+declare -gr PIC_DEFAULT_FILTER_PRIMER_READS=1
 declare -gr PIC_DEFAULT_OUTPUT_DIR=""
 declare -gr PIC_DEFAULT_SAMPLE_SHEET=""
 declare -gr PIC_DEFAULT_DEMUX_FASTQ_DIR=""
