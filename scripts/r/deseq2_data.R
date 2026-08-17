@@ -142,6 +142,73 @@ format_contrast_label <- function(numerator, denominator) {
   paste0(format_group_label(numerator), " / ", format_group_label(denominator))
 }
 
+# サイズ因子を推定して dds に設定する。
+#
+# 既定は poscounts (ゼロが多いカウントに対する DESeq2 の推奨)。ただし UMI カウントが
+# 極端に疎な場合 (大半の遺伝子が 1-2 カウント) に破綻する。深いライブラリは
+# 「遺伝子あたりのカウントが増える」のではなく「検出遺伝子数が増える」形で深くなるため、
+# 「正の値を持つ遺伝子における比の中央値」が全サンプルで 1 になり、深度差を検出できない。
+# その状態では normalizedCountTable が生カウントと同一になり、深いサンプルほど
+# 高発現に見えるという系統的なバイアスが全遺伝子に入る。
+# ここでは退化を検知し、ライブラリサイズ正規化にフォールバックする。
+pic_set_size_factors <- function(dds) {
+  lib <- colSums(DESeq2::counts(dds))
+  lib <- pmax(lib, 1)
+
+  sf <- tryCatch(
+    DESeq2::sizeFactors(DESeq2::estimateSizeFactors(dds, type = "poscounts")),
+    error = function(err) NULL
+  )
+
+  degenerate <- is.null(sf) || any(!is.finite(sf)) || any(sf <= 0)
+  if (!degenerate && length(sf) > 2) {
+    # サイズ因子が深度差をどれだけ追随できているかで判定する。
+    # 正常なら log(sizeFactor) は log(ライブラリサイズ) と同程度にばらつく。
+    # 退化していると、深度が何倍違ってもサイズ因子はほぼ動かない。
+    # (異常サンプル 1 本だけが外れる場合に単純な最大/最小比では検知できないため、
+    #  ばらつきの比で判定する。)
+    sd_sf <- stats::sd(log(sf))
+    sd_lib <- stats::sd(log(lib))
+    degenerate <- is.finite(sd_lib) && sd_lib > 0.1 && sd_sf < 0.2 * sd_lib
+  }
+
+  if (degenerate) {
+    sf_ratio <- if (is.null(sf)) NA_real_ else max(sf) / min(sf)
+    message(
+      "[WARN] poscounts のサイズ因子がライブラリ深度を反映していません ",
+      sprintf("(sizeFactor 比 %.2f / ライブラリサイズ比 %.2f)。",
+              sf_ratio, max(lib) / min(lib)),
+      "ライブラリサイズ正規化にフォールバックします。"
+    )
+    sf <- lib / exp(mean(log(lib)))
+  }
+
+  # 実際に採用した方法を記録する (HTML レポートの Materials & Methods が参照する)。
+  assign("pic_size_factor_method",
+         if (degenerate) "libsize" else "poscounts",
+         envir = globalenv())
+
+  DESeq2::sizeFactors(dds) <- sf
+  dds
+}
+
+# summary/analysis_params.tsv に key<TAB>value を追記/更新する。
+pic_write_analysis_param <- function(out_dir, key, value) {
+  f <- file.path(dirname(normalizePath(out_dir, mustWork = FALSE)),
+                 "summary", "analysis_params.tsv")
+  dir.create(dirname(f), recursive = TRUE, showWarnings = FALSE)
+  rows <- if (file.exists(f)) {
+    tryCatch(utils::read.delim(f, stringsAsFactors = FALSE), error = function(e) NULL)
+  } else NULL
+  if (is.null(rows) || !all(c("key", "value") %in% names(rows))) {
+    rows <- data.frame(key = character(0), value = character(0), stringsAsFactors = FALSE)
+  }
+  rows <- rows[rows$key != key, , drop = FALSE]
+  rows <- rbind(rows, data.frame(key = key, value = as.character(value),
+                                 stringsAsFactors = FALSE))
+  utils::write.table(rows, f, sep = "\t", quote = FALSE, row.names = FALSE)
+}
+
 run_deseq <- function(mat, def, contrasts) {
   mat_filtered <- mat |>
     dplyr::filter(.data$chr != "MT" | is.na(.data$chr)) |>
@@ -170,8 +237,12 @@ run_deseq <- function(mat, def, contrasts) {
     colData = label_df,
     design = ~group
   )
+  # サイズ因子を先に確定させる (退化時はライブラリサイズにフォールバック)。
+  # 設定済みなら DESeq() は再推定しないため sfType は渡さない。
+  dds <- pic_set_size_factors(dds)
+
   deseq_fit <- tryCatch(
-    DESeq2::DESeq(dds, sfType = "poscounts"),
+    DESeq2::DESeq(dds),
     error = function(err) err
   )
 
@@ -417,16 +488,23 @@ build_degpattern_outputs <- function(
     ))
   }
 
-  group_profile <- t(vapply(
-    unique(sample_meta$group),
+  group_names <- unique(sample_meta$group)
+  group_profile <- vapply(
+    group_names,
     function(grp) {
       cols <- rownames(sample_meta)[sample_meta$group == grp]
       rowMeans(mat[, cols, drop = FALSE], na.rm = TRUE)
     },
     numeric(nrow(mat))
-  ))
-  group_profile <- t(group_profile)
-  rownames(group_profile) <- rownames(mat)
+  )
+  # vapply は FUN.VALUE の長さが 1 (= DEG がちょうど 1 遺伝子) のとき matrix ではなく
+  # vector を返すため、そのままでは次元が 遺伝子 × 群 にならない。明示的に整形する。
+  group_profile <- matrix(
+    group_profile,
+    nrow = nrow(mat),
+    ncol = length(group_names),
+    dimnames = list(rownames(mat), group_names)
+  )
 
   if (nrow(group_profile) == 0 || ncol(group_profile) == 0) {
     return(list(
