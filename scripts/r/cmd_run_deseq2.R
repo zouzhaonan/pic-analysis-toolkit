@@ -42,6 +42,13 @@ main <- function() {
   mat <- build_count_matrix(umi, e2g)
   message("[INFO] Running DESeq2")
   deseq_result <- run_deseq(mat, def, contrasts)
+  # 採用したサイズ因子の方法をレポート用に記録する。
+  pic_write_analysis_param(
+    args$out_dir, "size_factor_method",
+    if (exists("pic_size_factor_method", envir = globalenv())) {
+      get("pic_size_factor_method", envir = globalenv())
+    } else "poscounts"
+  )
   message("[INFO] Building stats and summary tables")
   stats_tables <- build_stats_tables(deseq_result$stats, contrasts, e2g, args$fdr)
   normcount <- build_normalized_counts(deseq_result$dds, e2g)

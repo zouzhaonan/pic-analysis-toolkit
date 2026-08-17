@@ -201,6 +201,19 @@ cleanup_subsampled_fastq() {
   fi
 }
 
+# 実行時パラメータを summary/analysis_params.tsv に key<TAB>value で記録する。
+# HTML レポートがこれを読み、Materials & Methods に実際のコマンドを表示する。
+write_analysis_params() {
+  local f="${SUMMARY_DIR}/analysis_params.tsv"
+  {
+    printf "key\tvalue\n"
+    printf "hisat2_very_sensitive\t%s\n" "$HISAT2_VERY_SENSITIVE"
+    printf "hisat2_score_min\t%s\n" "${HISAT2_SCORE_MIN:-}"
+    printf "trim_adapter\t%s\n" "GATCGTCGGACT"
+    printf "featurecounts_strand\t%s\n" "1"
+  } >"$f"
+}
+
 run_hisat2_alignment() {
   local genome_name="$1"
   local hisat2_args=()
@@ -210,6 +223,12 @@ run_hisat2_alignment() {
 
   if [[ "$HISAT2_VERY_SENSITIVE" = 1 ]]; then
     hisat2_args+=(--very-sensitive)
+  fi
+
+  # --score-min のみを緩める運用 (--very-sensitive より高速で効果は同等)。
+  # --very-sensitive と併用された場合は、後から渡すこちらが優先される。
+  if [[ -n "${HISAT2_SCORE_MIN:-}" ]]; then
+    hisat2_args+=(--score-min "$HISAT2_SCORE_MIN")
   fi
 
   {
@@ -507,6 +526,9 @@ run_primary_command() {
   validate_sample_sheet_genome_registration
   log_info "Preparing workspace"
   prepare_workspace_for_run
+  # 実行時パラメータを記録する。HTML レポートの Materials & Methods は
+  # このファイルを読んで、実際に使ったコマンドを表示する。
+  write_analysis_params
   # scratch の tmp/ は関数終了時 (成功・失敗どちらでも) に掃除する。診断ログは
   # log/ に直接書かれるため、失敗しても log/ は残る。
   trap 'safe_rm_rf "$TMP_DIR"' RETURN

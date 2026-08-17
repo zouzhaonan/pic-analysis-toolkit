@@ -8,6 +8,8 @@ declare -gr PIC_DEFAULT_THREADS=8
 declare -gr PIC_DEFAULT_SKIP_DEMUX=0
 declare -gr PIC_DEFAULT_SIMULATION_MODE=0
 declare -gr PIC_DEFAULT_HISAT2_VERY_SENSITIVE=0
+# hisat2 の --score-min。空なら hisat2 の既定 (L,0,-0.2) を使う。
+declare -gr PIC_DEFAULT_HISAT2_SCORE_MIN=""
 declare -gr PIC_DEFAULT_OUTPUT_DIR=""
 declare -gr PIC_DEFAULT_SAMPLE_SHEET=""
 declare -gr PIC_DEFAULT_DEMUX_FASTQ_DIR=""
@@ -46,10 +48,12 @@ init_config() {
   local hisat2_very_sensitive="$8"
   local raw_fastq_dir="${9:-}"
   local demux_layout="${10:-nested}"
+  local hisat2_score_min="${11:-}"
 
   declare -gr SKIP_DEMUX="$skip_demux"
   declare -gr SIMULATION_MODE="$simulation_mode"
   declare -gr HISAT2_VERY_SENSITIVE="$hisat2_very_sensitive"
+  declare -gr HISAT2_SCORE_MIN="$hisat2_score_min"
   declare -gr LIB_DIR="$(pic_resolve_lib_dir)"
   declare -gr PIC_GENOME_MAP_FILE="${LIB_DIR}/register/genome_map.tsv"
 

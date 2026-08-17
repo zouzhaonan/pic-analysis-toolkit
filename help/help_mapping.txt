@@ -25,6 +25,11 @@ Optional options:
   --demux-fastq-dir <dir>    Directory containing already-demultiplexed FASTQ files
   --simulation               Run in simulation mode (default: off)
   --hisat2-very-sensitive    Add --very-sensitive to hisat2 (default: off)
+                             (= --bowtie2-dp 2 -k 50 --score-min L,0,-1)
+  --hisat2-score-min <spec>  Set hisat2 --score-min only (e.g. L,0,-1)
+                             Recommended over --hisat2-very-sensitive:
+                             nearly identical yield at ~1/4 the runtime and
+                             about half the multi-mapping reads.
 
 Examples:
   pic mapping \
