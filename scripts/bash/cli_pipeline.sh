@@ -77,7 +77,7 @@ run_pipeline_subcommand() {
       ;;
     *)
       handle_error "Unknown option: $1"
-      handle_error "pic all のオプション: --sample-sheet / --raw-fastq-dir / --demux-fastq-dir / --run-name / --out-dir / --no-report"
+      handle_error "pic all のオプション: --sample-sheet / --raw-fastq-dir / --demux-fastq-dir / --run-name / --out-dir / --no-report / --hisat2-score-min / --hisat2-very-sensitive"
       handle_error "詳細な調整が必要な場合は deseq2 / enrich を個別に実行してください。"
       exit 1
       ;;

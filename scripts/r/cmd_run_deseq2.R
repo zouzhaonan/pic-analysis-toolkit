@@ -43,8 +43,10 @@ main <- function() {
   message("[INFO] Running DESeq2")
   deseq_result <- run_deseq(mat, def, contrasts)
   # 採用したサイズ因子の方法をレポート用に記録する。
+  # サンプルシートに複数 genome があると本関数は genome ごとに呼ばれるため、
+  # キーに genome を含めないと後の genome が前の記録を上書きしてしまう。
   pic_write_analysis_param(
-    args$out_dir, "size_factor_method",
+    args$out_dir, paste0("size_factor_method__", args$genome),
     if (exists("pic_size_factor_method", envir = globalenv())) {
       get("pic_size_factor_method", envir = globalenv())
     } else "poscounts"

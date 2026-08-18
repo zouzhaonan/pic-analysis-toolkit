@@ -3,7 +3,13 @@ Usage:
 
 Overview:
   Run the full primary RNA workflow:
-  demux -> map -> count-umi -> summarize-map -> generate-bigwig
+  demux -> filter primer-derived reads -> map -> count-umi -> summarize-map
+  -> generate-bigwig
+
+  Reads whose cDNA part is the RT primer itself (<barcode> followed by a poly-T
+  stretch, i.e. primer dimers) are always removed before mapping. They otherwise
+  pile up as a handful of barcode-specific phantom genes. Typically ~1% of reads;
+  assigned counts, UMIs and detected genes are unaffected.
 
 Required options:
   --out-dir <dir>            Output directory

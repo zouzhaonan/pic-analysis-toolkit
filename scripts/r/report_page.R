@@ -324,7 +324,9 @@ build_overview_section <- function(run, genome, pre_steps = list(), extra_tools 
 
   # 実際に採用したサイズ因子の方法を反映する。UMI カウントが極端に疎な場合、
   # poscounts は深度差を検出できないためライブラリサイズ正規化にフォールバックする。
-  sf_method <- pic_param(params, "size_factor_method", "poscounts")
+  # genome 別キーを優先し、旧出力 (genome 非依存キー) にはフォールバックする。
+  sf_method <- pic_param(params, paste0("size_factor_method__", genome),
+                         pic_param(params, "size_factor_method", "poscounts"))
   if (identical(sf_method, "libsize")) {
     sf_label <- "library-size"
     sf_code <- paste0(
