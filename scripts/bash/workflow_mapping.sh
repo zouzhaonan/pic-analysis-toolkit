@@ -188,6 +188,46 @@ prepare_mapping_input_fastq() {
   fi
 }
 
+# RT プライマー由来リードを除去する。
+#
+# RT プライマーは [Read1部位][UMI 6][バーコード 6][tt][dT 22][V] という構造で、
+# プライマーダイマー等が R2 として読まれると
+#   [UMI 6][自分のバーコード][polyT...]
+# という配列になる。中身がほぼ polyT なのでゲノムの A/T リッチ座位に貼りつき、
+# 同一バーコードのリードが同一座位に集中するため、バーコード特異的な偽遺伝子を生む。
+# trim_galore の -a (3' アダプタ) では捕捉できないので、ここで明示的に落とす。
+# 実測では全リードの約 1% がこれに該当する。
+filter_primer_derived_reads() {
+  local sample_name="$1"
+  local barcode filtered
+
+  [[ "${FILTER_PRIMER_READS:-0}" = 1 ]] || return 0
+  barcode="$(awk -F'\t' -v s="$sample_name" 'NR>1 && $4==s {print $3; exit}' "$FORMATTED_SAMPLE_SHEET")"
+  if [[ -z "$barcode" ]]; then
+    printf "[WARN] barcode not found for %s; skip primer-read filter\n" "$sample_name" >>"$MAPPING_JOB_LOG"
+    return 0
+  fi
+
+  # trim_galore は入力ファイル名から出力名 (<base>_trimmed.fq.gz) を決めるため、
+  # フィルタ後のファイルは ${MAPPING_JOB_PREFIX}.fastq.gz に揃える必要がある。
+  # 入力が既に同じパス (simulation の subsample 済み) の場合に備えて一時ファイル経由で置き換える。
+  filtered="${MAPPING_JOB_PREFIX}.fastq.gz"
+  # 注: awk の変数名に log は使えない (GNU awk の組み込み関数と衝突する)。
+  #     集計値は stderr に出し、bash 側でログへ追記する。
+  gzip -cd "$INPUT_FASTQ" |
+    awk -v pat="${barcode}TTTTTTTT" '
+      { h = $0; getline s; getline p; getline q
+        total++
+        if (index(s, pat) > 0) { removed++; next }
+        print h; print s; print p; print q }
+      END { printf("[INFO] primer-derived reads removed: %d / %d (%.2f%%)\n",
+                   removed, total, total ? 100 * removed / total : 0) > "/dev/stderr" }
+    ' 2>>"$MAPPING_JOB_LOG" | pigz -p "$THREADS" >"${filtered}.tmp"
+  mv "${filtered}.tmp" "$filtered"
+
+  INPUT_FASTQ="$filtered"
+}
+
 run_trim_galore() {
   trim_galore -j "$THREADS" -o "$TMP_DIR" -a "GATCGTCGGACT" \
     --no_report_file --suppress_warn "$INPUT_FASTQ" >>"$MAPPING_JOB_LOG" 2>&1
@@ -201,6 +241,20 @@ cleanup_subsampled_fastq() {
   fi
 }
 
+# 実行時パラメータを summary/analysis_params.tsv に key<TAB>value で記録する。
+# HTML レポートがこれを読み、Materials & Methods に実際のコマンドを表示する。
+write_analysis_params() {
+  local f="${SUMMARY_DIR}/analysis_params.tsv"
+  {
+    printf "key\tvalue\n"
+    printf "hisat2_very_sensitive\t%s\n" "$HISAT2_VERY_SENSITIVE"
+    printf "hisat2_score_min\t%s\n" "${HISAT2_SCORE_MIN:-}"
+    printf "filter_primer_reads\t%s\n" "${FILTER_PRIMER_READS:-0}"
+    printf "trim_adapter\t%s\n" "GATCGTCGGACT"
+    printf "featurecounts_strand\t%s\n" "1"
+  } >"$f"
+}
+
 run_hisat2_alignment() {
   local genome_name="$1"
   local hisat2_args=()
@@ -210,6 +264,12 @@ run_hisat2_alignment() {
 
   if [[ "$HISAT2_VERY_SENSITIVE" = 1 ]]; then
     hisat2_args+=(--very-sensitive)
+  fi
+
+  # --score-min のみを緩める運用 (--very-sensitive より高速で効果は同等)。
+  # --very-sensitive と併用された場合は、後から渡すこちらが優先される。
+  if [[ -n "${HISAT2_SCORE_MIN:-}" ]]; then
+    hisat2_args+=(--score-min "$HISAT2_SCORE_MIN")
   fi
 
   {
@@ -244,7 +304,7 @@ finalize_mapping_bam() {
 }
 
 cleanup_mapping_job_files() {
-  rm -f "${MAPPING_JOB_PREFIX}"{_trimmed.fq.gz,.bam.featureCounts.bam,.bam,.feature.tsv}
+  rm -f "${MAPPING_JOB_PREFIX}"{.fastq.gz,.fastq.gz.tmp,_trimmed.fq.gz,.bam.featureCounts.bam,.bam,.feature.tsv}
 }
 
 run_single_mapping_job() {
@@ -266,6 +326,8 @@ run_single_mapping_job() {
     show_mapping_job_log_tail "$sample_name" "$read_limit"
     return 1
   }
+
+  filter_primer_derived_reads "$sample_name"
 
   run_trim_galore || {
     cleanup_subsampled_fastq "$read_limit"
@@ -507,6 +569,9 @@ run_primary_command() {
   validate_sample_sheet_genome_registration
   log_info "Preparing workspace"
   prepare_workspace_for_run
+  # 実行時パラメータを記録する。HTML レポートの Materials & Methods は
+  # このファイルを読んで、実際に使ったコマンドを表示する。
+  write_analysis_params
   # scratch の tmp/ は関数終了時 (成功・失敗どちらでも) に掃除する。診断ログは
   # log/ に直接書かれるため、失敗しても log/ は残る。
   trap 'safe_rm_rf "$TMP_DIR"' RETURN

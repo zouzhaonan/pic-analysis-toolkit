@@ -26,6 +26,8 @@ parse_pic_common_long_options() {
   PIC_SKIP_DEMUX="$PIC_DEFAULT_SKIP_DEMUX"
   PIC_SIMULATION_MODE="$PIC_DEFAULT_SIMULATION_MODE"
   PIC_HISAT2_VERY_SENSITIVE="$PIC_DEFAULT_HISAT2_VERY_SENSITIVE"
+  PIC_HISAT2_SCORE_MIN="$PIC_DEFAULT_HISAT2_SCORE_MIN"
+  PIC_FILTER_PRIMER_READS="$PIC_DEFAULT_FILTER_PRIMER_READS"
   PIC_DEMUX_FASTQ_DIR="$PIC_DEFAULT_DEMUX_FASTQ_DIR"
   PIC_RAW_FASTQ_DIR="$PIC_DEFAULT_RAW_FASTQ_DIR"
   PIC_DEMUX_LAYOUT=""
@@ -87,6 +89,14 @@ parse_pic_common_long_options() {
       PIC_HISAT2_VERY_SENSITIVE=1
       shift
       ;;
+    --hisat2-score-min)
+      if [[ "$allow_hisat2_very_sensitive" != 1 ]]; then
+        handle_error "--hisat2-score-min is not supported for ${subcommand}."
+        exit 1
+      fi
+      PIC_HISAT2_SCORE_MIN="${2:-}"
+      shift 2
+      ;;
     --help)
       PIC_WANT_HELP=1
       return 0
@@ -117,7 +127,9 @@ parse_pic_common_long_options() {
     "$PIC_DEMUX_FASTQ_DIR" \
     "$PIC_HISAT2_VERY_SENSITIVE" \
     "$PIC_RAW_FASTQ_DIR" \
-    "$PIC_DEMUX_LAYOUT"
+    "$PIC_DEMUX_LAYOUT" \
+    "$PIC_HISAT2_SCORE_MIN" \
+    "$PIC_FILTER_PRIMER_READS"
 }
 
 run_primary_family_subcommand() {

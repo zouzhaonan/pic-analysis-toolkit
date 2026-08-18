@@ -8,6 +8,18 @@ declare -gr PIC_DEFAULT_THREADS=8
 declare -gr PIC_DEFAULT_SKIP_DEMUX=0
 declare -gr PIC_DEFAULT_SIMULATION_MODE=0
 declare -gr PIC_DEFAULT_HISAT2_VERY_SENSITIVE=0
+# hisat2 の --score-min。
+# PIC の Read2 は先頭 6 塩基が RT プライマーのランダムヘキサマー由来で構造的に
+# 非鋳型のため、hisat2 の既定 L,0,-0.2 (81bp で予算 -16.2) では soft clip だけで
+# 予算を使い切り、ミスマッチ 1 個で脱落する。実測で unmapped 38-45% -> 1.3-1.7%、
+# UMI 2.4-2.8 倍。よって L,0,-1 を pic の既定とする。
+# hisat2 本来の既定に戻す場合は --hisat2-score-min L,0,-0.2 を明示する。
+declare -gr PIC_DEFAULT_HISAT2_SCORE_MIN="L,0,-1"
+# RT プライマー由来リード (自バーコード + polyT) の除去。常時実行。
+# インサートを持たない空のライブラリ分子で、中身がほぼ polyT のため A/T リッチ座位に
+# 偽陽性で貼りつき、バーコード特異的な偽遺伝子を生む。誤除去の危険は無視できる
+# (生物学的配列が [自バーコード 6 塩基][T x8] になる確率は 81bp 全体で約 3e-7)。
+declare -gr PIC_DEFAULT_FILTER_PRIMER_READS=1
 declare -gr PIC_DEFAULT_OUTPUT_DIR=""
 declare -gr PIC_DEFAULT_SAMPLE_SHEET=""
 declare -gr PIC_DEFAULT_DEMUX_FASTQ_DIR=""
@@ -46,10 +58,14 @@ init_config() {
   local hisat2_very_sensitive="$8"
   local raw_fastq_dir="${9:-}"
   local demux_layout="${10:-nested}"
+  local hisat2_score_min="${11:-}"
+  local filter_primer_reads="${12:-0}"
 
   declare -gr SKIP_DEMUX="$skip_demux"
   declare -gr SIMULATION_MODE="$simulation_mode"
   declare -gr HISAT2_VERY_SENSITIVE="$hisat2_very_sensitive"
+  declare -gr HISAT2_SCORE_MIN="$hisat2_score_min"
+  declare -gr FILTER_PRIMER_READS="$filter_primer_reads"
   declare -gr LIB_DIR="$(pic_resolve_lib_dir)"
   declare -gr PIC_GENOME_MAP_FILE="${LIB_DIR}/register/genome_map.tsv"
 

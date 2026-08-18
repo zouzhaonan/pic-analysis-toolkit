@@ -137,7 +137,7 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   data_tabs <- build_analysis_data_tabs(reg, desc, out_dir, out_dir, "", fdr,
                                         msum, group_map, group_pal, sample_order, group_order,
                                         stats, deg_counts, tmp_dir)
-  overview_sec  <- build_overview_section(run, genome)
+  overview_sec  <- build_overview_section(run, genome, params = pic_read_analysis_params(out_dir))
   downloads_sec <- build_downloads_section(data_tabs, run, genome, group_pal)
   tb <- build_tabs(c(list(list(html = overview_sec, label = "Overview")),
                      data_tabs,
@@ -274,7 +274,24 @@ pic_tab_src_paths <- function(tab_html) {
 
 # Overview セクション。解析パイプラインを Materials & Methods 風のフローチャート
 # (各ステップの使用ツール + パラメータ + 再現用コード) で提示する。
-build_overview_section <- function(run, genome, pre_steps = list(), extra_tools = character(0)) {
+# summary/analysis_params.tsv (mapping / deseq2 が書く) を key -> value の list で返す。
+# 無い場合 (旧バージョンの出力) は空 list を返し、従来の既定表記にフォールバックする。
+pic_read_analysis_params <- function(out_dir) {
+  f <- file.path(out_dir, "summary", "analysis_params.tsv")
+  if (!file.exists(f)) return(list())
+  tbl <- tryCatch(utils::read.delim(f, stringsAsFactors = FALSE, colClasses = "character"),
+                  error = function(e) NULL)
+  if (is.null(tbl) || !all(c("key", "value") %in% names(tbl))) return(list())
+  stats::setNames(as.list(tbl$value), tbl$key)
+}
+
+pic_param <- function(params, key, default = "") {
+  v <- params[[key]]
+  if (is.null(v) || is.na(v)) default else as.character(v)
+}
+
+build_overview_section <- function(run, genome, pre_steps = list(), extra_tools = character(0),
+                                   params = list()) {
   code_block <- function(txt) sprintf('<pre class="pic-code">%s</pre>', txt)
   # ツールバッジ: name|version を 1 つの monospace バッジ "name version" にまとめる。
   tools_html <- function(ts) paste(vapply(ts, function(t) {
@@ -292,14 +309,44 @@ build_overview_section <- function(run, genome, pre_steps = list(), extra_tools 
     tools_html(c(extra_tools, "Trim Galore|0.6.10", "HISAT2|2.2.1", "samtools|1.23.1", "featureCounts|2.1.1",
                  "UMI-tools|1.1.4", "DESeq2|1.46.0", "R|4.4.3")))
 
+  # 実際に使った hisat2 オプションを再現する (未記録の旧出力では既定設定として表示)。
+  hisat2_opts <- ""
+  if (identical(pic_param(params, "hisat2_very_sensitive"), "1")) {
+    hisat2_opts <- paste0(hisat2_opts, " --very-sensitive")
+  }
+  score_min <- pic_param(params, "hisat2_score_min")
+  if (nzchar(score_min)) hisat2_opts <- paste0(hisat2_opts, " --score-min ", score_min)
+  align_note <- if (nzchar(hisat2_opts)) {
+    sprintf(' Alignment sensitivity was raised with <code>%s</code>.', html_escape(trimws(hisat2_opts)))
+  } else {
+    ' HISAT2 defaults (<code>--score-min L,0,-0.2</code>) were used.'
+  }
+
+  # 実際に採用したサイズ因子の方法を反映する。UMI カウントが極端に疎な場合、
+  # poscounts は深度差を検出できないためライブラリサイズ正規化にフォールバックする。
+  # genome 別キーを優先し、旧出力 (genome 非依存キー) にはフォールバックする。
+  sf_method <- pic_param(params, paste0("size_factor_method__", genome),
+                         pic_param(params, "size_factor_method", "poscounts"))
+  if (identical(sf_method, "libsize")) {
+    sf_label <- "library-size"
+    sf_code <- paste0(
+'lib &lt;- colSums(counts(dds))\n',
+'sizeFactors(dds) &lt;- lib / exp(mean(log(lib)))\n',
+'dds &lt;- DESeq(dds)\n')
+  } else {
+    sf_label <- "poscounts"
+    sf_code <- 'dds &lt;- DESeq(dds, sfType = "poscounts")\n'
+  }
+
   step_defs <- c(pre_steps, list(
     list(name = "Adapter Trimming &amp; Alignment",
-      desc = 'Trim the 3&#39; PIC adapter (<code>Trim Galore</code>), then align single-end to the <code>HISAT2</code> index.',
+      desc = paste0('Trim the 3&#39; PIC adapter (<code>Trim Galore</code>), then align single-end to the ',
+                    '<code>HISAT2</code> index.', align_note),
       code = code_block(sprintf(paste0(
 'trim_galore -a GATCGTCGGACT -o trim/ demux/${sample}.fastq.gz\n',
-'hisat2 -x hisat2_index/%s -U trim/${sample}_trimmed.fq.gz -S map/${sample}.sam\n',
+'hisat2 -x hisat2_index/%s%s -U trim/${sample}_trimmed.fq.gz -S map/${sample}.sam\n',
 'samtools sort -o map/${sample}.bam map/${sample}.sam\n',
-'samtools index map/${sample}.bam'), html_escape(genome)))),
+'samtools index map/${sample}.bam'), html_escape(genome), html_escape(hisat2_opts)))),
 
     list(name = "Read-to-Gene Assignment",
       desc = '<code>featureCounts</code> on the forward/sense strand (<code>-s 1</code>); the gene id is stored in each read&#39;s <code>XT</code> tag.',
@@ -316,13 +363,15 @@ build_overview_section <- function(run, genome, pre_steps = list(), extra_tools 
 '    -I map/${sample}.assigned.bam -S count/${sample}.umi.tsv'))),
 
     list(name = "Differential Expression",
-      desc = 'Join the per-sample UMI counts into a genes&times;samples matrix and run <code>DESeq2</code>: <code>~group</code> design, <b>poscounts</b> size factors, all pairwise group contrasts, DEGs at <code>padj&nbsp;&lt;&nbsp;0.1</code>.',
+      desc = paste0('Join the per-sample UMI counts into a genes&times;samples matrix and run <code>DESeq2</code>: ',
+                    '<code>~group</code> design, <b>', sf_label, '</b> size factors, all pairwise group contrasts, ',
+                    'DEGs at <code>padj&nbsp;&lt;&nbsp;0.1</code>.'),
       code = code_block(paste0(
 '<span class="c"># R</span>\n',
 'grp &lt;- c("Cntl_Nega","Cntl_Nega","Cntl_Nega", "Cntl_Posi","Cntl_Posi","Cntl_Posi", ...)  <span class="c"># one per sample</span>\n',
 'coldata &lt;- data.frame(group = factor(grp), row.names = colnames(umi_counts))\n',
 'dds &lt;- DESeqDataSetFromMatrix(umi_counts, coldata, design = ~ group)\n',
-'dds &lt;- DESeq(dds, sfType = "poscounts")\n',
+sf_code,
 '<span class="c"># for each pairwise group contrast (A vs B):</span>\n',
 'res &lt;- results(dds, contrast = c("group", "A", "B"),\n',
 '               independentFiltering = FALSE, cooksCutoff = FALSE)'))))
@@ -610,7 +659,7 @@ pic_is_xenograft_out <- function(out_dir) {
 
 # xenograft レポート用の Overview。通常 Overview (Analysis Pipeline 含む) を再利用し、
 # 冒頭の intro のみ xenograft 用 (2 ゲノム + xengsort split + ゲノム切替の案内) に差し替える。
-build_overview_section_xeno <- function(run, fr_list) {
+build_overview_section_xeno <- function(run, fr_list, params = list()) {
   base_genome <- if (length(fr_list) > 0) fr_list[[1]]$genome else ""
   # index 名は hisat2 と同様に模式的に <graft>_on_<host> で示す
   graft_g <- if (!is.null(fr_list[["graft"]])) fr_list[["graft"]]$genome else "graft"
@@ -624,7 +673,7 @@ build_overview_section_xeno <- function(run, fr_list) {
                   '    -o xengsort/${sample} --mode count\n',
                   '<span class="c"># writes xengsort/${sample}-{graft,host,both,neither,ambiguous}.fq.gz</span></pre>'))
   base <- build_overview_section(run, base_genome, pre_steps = list(xengsort_step),
-                                 extra_tools = "xengsort|2.2.0")  # <section><h2>Overview</h2><intro><h3>Analysis Pipeline</h3>...
+                                 extra_tools = "xengsort|2.2.0", params = params)  # <section><h2>Overview</h2><intro><h3>Analysis Pipeline</h3>...
   xeno_intro <- sprintf(paste0('<p class="pic-ov-intro">This self-contained report presents the <b>PIC</b> ',
     '(photo-isolation chemistry) 3&prime;-biased RNA-seq run <b>%s</b>, a <b>xenograft</b> library.</p>'),
     html_escape(run))
@@ -664,7 +713,7 @@ build_xenograft_report <- function(out_dir, asset_dir) {
   # 各 tab は prebuilt (pic_tab_panel 済み) + target (論理キー) で 1 ボタンに対応。
   # 解析タブは graft/host の 2 セクションを 1 タブに束ね、JS のゲノム切替で出し分ける。
   tabs <- list(list(target = "overview", label = "Overview", active = TRUE, prebuilt = TRUE,
-                    html = pic_tab_panel(build_overview_section_xeno(run, fr_list), active = TRUE)))
+                    html = pic_tab_panel(build_overview_section_xeno(run, fr_list, pic_read_analysis_params(out_dir)), active = TRUE)))
 
   # Genome split (Read distribution と同じ 2 ペイン: 左に group トグル)
   gsplit_pal <- if (length(fr_list) > 0) fr_list[[1]]$group_pal else NULL

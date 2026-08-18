@@ -34,6 +34,7 @@ run_pipeline_subcommand() {
 
   local sample_sheet="" raw_fastq_dir="" run_name="" out_dir="" demux_fastq_dir=""
   local run_name_set=0 no_report=0
+  local hisat2_very_sensitive=0 hisat2_score_min=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -62,13 +63,21 @@ run_pipeline_subcommand() {
       no_report=1
       shift
       ;;
+    --hisat2-very-sensitive)
+      hisat2_very_sensitive=1
+      shift
+      ;;
+    --hisat2-score-min)
+      hisat2_score_min="${2:-}"
+      shift 2
+      ;;
     --help)
       show_help_for_subcommand all
       return 0
       ;;
     *)
       handle_error "Unknown option: $1"
-      handle_error "pic all のオプション: --sample-sheet / --raw-fastq-dir / --demux-fastq-dir / --run-name / --out-dir / --no-report"
+      handle_error "pic all のオプション: --sample-sheet / --raw-fastq-dir / --demux-fastq-dir / --run-name / --out-dir / --no-report / --hisat2-score-min / --hisat2-very-sensitive"
       handle_error "詳細な調整が必要な場合は deseq2 / enrich を個別に実行してください。"
       exit 1
       ;;
@@ -88,6 +97,12 @@ run_pipeline_subcommand() {
   fi
   if [[ "$run_name_set" = 1 ]]; then
     mapping_args+=(--run-name "$run_name")
+  fi
+  if [[ "$hisat2_very_sensitive" = 1 ]]; then
+    mapping_args+=(--hisat2-very-sensitive)
+  fi
+  if [[ -n "$hisat2_score_min" ]]; then
+    mapping_args+=(--hisat2-score-min "$hisat2_score_min")
   fi
 
   parse_pic_common_long_options "mapping" "${mapping_args[@]}"

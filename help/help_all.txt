@@ -7,7 +7,7 @@ Overview:
 
   For each genome found in the sample sheet, deseq2 and enrich are run
   automatically. This subcommand is intentionally simple and takes only the
-  four options below. If you need to tune parameters (e.g. --fdr, --methods),
+  options below. If you need to tune parameters (e.g. --fdr, --methods),
   run `pic deseq2` / `pic enrich` individually instead.
 
 Required options:
@@ -29,12 +29,23 @@ Optional options:
   --demux-fastq-dir <dir>    Use already-demultiplexed/classified FASTQ (skips demux).
                              Each sample is read from <dir>/<sample>.fastq.gz
   --no-report                Skip the final HTML report step
+  --hisat2-score-min <spec>  hisat2 --score-min (default: L,0,-1)
+                             pic defaults to L,0,-1 because PIC Read2 starts with
+                             the RT primer's random hexamer (non-templated by
+                             design); hisat2's own default L,0,-0.2 cannot afford
+                             to soft-clip it. Pass L,0,-0.2 to restore it.
+  --hisat2-very-sensitive    Add --very-sensitive to hisat2 (default: off)
+                             Not recommended: same yield as the default
+                             --score-min at ~4x the runtime.
 
 Output layout:
-  <out-dir>/                 mapping artifacts (deftable, counts, bam, bw ...)
-  <out-dir>/deseq2/<genome>/ DESeq2 results per genome
-  <out-dir>/enrich/<genome>/ ORA/GSEA results per genome
-  <out-dir>/report_<project>.html  interactive HTML report per genome
+  <out-dir>/                 mapping artifacts (counts, bam, bw ...)
+  <out-dir>/summary/         summary tables (mapping_sum, deftable,
+                             aggregate_profile, analysis_params)
+  <out-dir>/deseq2/          DESeq2 results (genome encoded in the file names as
+                             <run>_<genome>, not in subdirectories)
+  <out-dir>/enrich/          ORA/GSEA results (same naming)
+  <out-dir>/report_<run>_<genome>.html  interactive HTML report per genome
 
 Examples:
   pic all \
