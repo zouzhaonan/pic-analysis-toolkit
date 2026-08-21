@@ -125,6 +125,9 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
 
   # sample_sheet の順を正順とする (なければ mapping_sum の順)。
   sheet <- pic_read_sample_sheet(out_dir)
+  # sample_sheet に batch 列があれば、ラベル / マーカーの batch 表現を有効にする。
+  pic_set_batch_info(if (!is.null(sheet)) sheet$batch else NULL,
+                     if (!is.null(sheet)) sheet$batch_levels else NULL)
   sample_order <- if (!is.null(sheet)) sheet$samples else NULL
   group_order  <- if (!is.null(sheet) && length(sheet$groups) > 0) sheet$groups else NULL
   if (!is.null(msum)) msum <- pic_reorder_rows(msum, "sample", sample_order)

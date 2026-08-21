@@ -274,3 +274,5 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-ov-desc{color:var(--muted);font-size:13px;min-width:0}
 /* プロット内の右寄せ DL 行 (GSEA セル等) */
 .pic-dl-row{display:flex;justify-content:flex-end;margin:0 0 6px}
+
+.pic-bbadge{display:inline-block;margin-right:.28em;font-size:.82em;line-height:1;vertical-align:baseline}
