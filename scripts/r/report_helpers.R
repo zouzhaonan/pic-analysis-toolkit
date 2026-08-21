@@ -72,8 +72,8 @@ sample_toggle_panel <- function(samples, group_map = NULL, group_pal = NULL) {
   if (length(samples) == 0) return("")
   scol <- function(s) sample_color(s, group_map, group_pal)
   items <- vapply(samples, function(s) sprintf(
-    '<label class="pic-tgl"><input type="checkbox" class="pic-stoggle" data-sample="%s" checked><span style="color:%s;font-weight:600">%s</span></label>',
-    html_escape(s), scol(s), html_escape(s)), character(1))
+    '<label class="pic-tgl"><input type="checkbox" class="pic-stoggle" data-sample="%s" checked><span style="color:%s;font-weight:600">%s%s</span></label>',
+    html_escape(s), scol(s), pic_batch_badge(s), html_escape(s)), character(1))
   paste0('<h4>Samples</h4><div class="pic-tgl-list">', paste(items, collapse = ""), '</div>')
 }
 
@@ -237,10 +237,84 @@ group_name_of <- function(g, group_pal) {
   if (!is.na(idx)) names(group_pal)[[idx]] else g
 }
 
+# --- batch (sample_sheet の batch 列) の表現 --------------------------------
+# group の「色相」はそのままに、batch を「濃淡」と「塗り / 白抜き」で区別する。
+# batch 情報が無いレポートでは全ての関数が従来どおりの見た目を返す。
+PIC_BATCH <- new.env(parent = emptyenv())
+
+pic_set_batch_info <- function(map = NULL, levels = NULL) {
+  assign("map", map, envir = PIC_BATCH)
+  assign("levels", levels, envir = PIC_BATCH)
+}
+pic_batch_map <- function() if (exists("map", envir = PIC_BATCH)) get("map", envir = PIC_BATCH) else NULL
+pic_batch_levels <- function() if (exists("levels", envir = PIC_BATCH)) get("levels", envir = PIC_BATCH) else NULL
+pic_has_batch <- function() {
+  m <- pic_batch_map()
+  !is.null(m) && length(m) > 0 && length(unique(as.character(m))) > 1
+}
+pic_batch_of <- function(s) {
+  m <- pic_batch_map()
+  if (is.null(m) || !(s %in% names(m))) NA_character_ else unname(as.character(m[[s]]))
+}
+pic_batch_index <- function(s) {
+  b <- pic_batch_of(s); lv <- pic_batch_levels()
+  if (is.na(b) || is.null(lv)) return(NA_integer_)
+  i <- match(b, lv)
+  if (is.na(i)) NA_integer_ else i
+}
+
+# batch ごとの濃淡 (正=白方向 / 負=黒方向)、ラベル用グリフ、plotly マーカー記号。
+PIC_BATCH_SHADE  <- c(0, 0.40, -0.35, 0.62, -0.55, 0.22)
+PIC_BATCH_GLYPH  <- c("\u25CF", "\u25CB", "\u25C6", "\u25C7", "\u25A0", "\u25A1")
+PIC_BATCH_SYMBOL <- c("circle", "circle-open", "diamond", "diamond-open", "square", "square-open")
+pic_batch_pick <- function(v, i) v[[((i - 1L) %% length(v)) + 1L]]
+
+# hex 色を白 (f>0) / 黒 (f<0) 方向に |f| の割合だけ寄せる。
+pic_shade <- function(hex, f) {
+  if (is.null(hex) || is.na(hex) || !nzchar(hex) || substr(hex, 1, 1) != "#") return(hex)
+  if (identical(f, 0)) return(hex)
+  v <- grDevices::col2rgb(hex)[, 1]
+  target <- if (f >= 0) 255 else 0
+  o <- v + (target - v) * abs(f)
+  grDevices::rgb(o[[1]], o[[2]], o[[3]], maxColorValue = 255)
+}
+
+# group 色を、そのサンプルの batch に応じた濃淡へ変換する。
+pic_batch_shade_color <- function(col, s) {
+  if (!pic_has_batch()) return(col)
+  i <- pic_batch_index(s)
+  if (is.na(i)) return(col)
+  pic_shade(col, pic_batch_pick(PIC_BATCH_SHADE, i))
+}
+
+# サンプル名の前に付ける batch バッジ (塗り丸 / 白丸 / 菱形 ...)。
+pic_batch_badge <- function(s, col = NULL) {
+  if (!pic_has_batch()) return("")
+  i <- pic_batch_index(s)
+  if (is.na(i)) return("")
+  sprintf('<span class="pic-bbadge" style="color:%s" title="batch: %s">%s</span>',
+          if (is.null(col)) "currentColor" else col,
+          html_escape(pic_batch_of(s)), pic_batch_pick(PIC_BATCH_GLYPH, i))
+}
+
+# batch の凡例 (バッジ + batch 名)。batch が無ければ "".
+pic_batch_legend <- function() {
+  if (!pic_has_batch()) return("")
+  lv <- pic_batch_levels()
+  items <- vapply(seq_along(lv), function(i) sprintf(
+    '<span class="pic-legend-item">%s%s</span>',
+    sprintf('<span class="pic-bbadge">%s</span>', pic_batch_pick(PIC_BATCH_GLYPH, i)),
+    html_escape(lv[[i]])), character(1))
+  sprintf('<div class="pic-legend" style="margin-left:0;margin-bottom:6px"><span class="pic-legend-item" style="color:var(--muted)">batch:</span>%s</div>',
+          paste(items, collapse = ""))
+}
+
 # sample -> その group 色 (group_map 経由)。見つからなければ default。
+# batch があれば、その batch に応じた濃淡へ変換して返す。
 sample_color <- function(s, group_map, group_pal, default = "#333333") {
   g <- if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
-  if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else default
+  col <- if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else default
+  pic_batch_shade_color(col, s)
 }
 
 # group_pal が無ければ groups から生成し、欠けている group を補完したパレットを返す。

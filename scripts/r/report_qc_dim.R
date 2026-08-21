@@ -123,7 +123,8 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
       }
       rows <- c(rows, sprintf(
         '<div class="pic-bar-row%s" data-group="%s"><div class="pic-bar-label" style="color:%s;font-weight:600">%s</div><div class="pic-bar-track">%s</div></div>',
-        sep_cls, html_escape(if (is.na(g_cur)) sample else g_cur), scol(sample), html_escape(sample), paste(segs, collapse = "")
+        sep_cls, html_escape(if (is.na(g_cur)) sample else g_cur), scol(sample),
+        paste0(pic_batch_badge(sample), html_escape(sample)), paste(segs, collapse = "")
       ))
     }
     legend_items <- vapply(fate_cols, function(cc) sprintf(
@@ -132,6 +133,7 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
     ), character(1))
     parts <- c(parts,
       sprintf('<div class="pic-legend" style="margin-left:0;margin-bottom:6px">%s</div>', paste(legend_items, collapse = "")),
+      pic_batch_legend(),
       '<div class="pic-bars">',
       ruler,
       paste(rows, collapse = "\n"),
@@ -251,9 +253,14 @@ pic_read_sample_sheet <- function(out_dir, frac_key = NULL) {
                  error = function(e) NULL)
   if (is.null(df) || !("sample" %in% colnames(df))) return(NULL)
   df <- as.data.frame(df, check.names = FALSE)
+  batch <- if ("batch" %in% colnames(df)) {
+    stats::setNames(as.character(df$batch), as.character(df$sample))
+  } else NULL
   list(samples = as.character(df$sample),
        groups = if ("group" %in% colnames(df)) unique(as.character(df$group)) else character(0),
-       genome = if ("genome" %in% colnames(df) && nrow(df) > 0) as.character(df$genome[[1]]) else NA_character_)
+       genome = if ("genome" %in% colnames(df) && nrow(df) > 0) as.character(df$genome[[1]]) else NA_character_,
+       batch = batch,
+       batch_levels = if (!is.null(batch)) unique(unname(batch)) else NULL)
 }
 
 # base_dir の mapping_sum__<run>.tsv から run 名を取り出す (無ければ "")。
@@ -350,15 +357,16 @@ build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, g
 
   # ヘッダ (列ラベル: 上部・縦書き・group 配色)。data-gcol で group 列を識別。
   ths <- vapply(seq_len(n), function(j)
-    sprintf('<th class="pic-cor-ch%s" data-gcol="%s"><span style="color:%s">%s</span></th>',
-            if (gstart[[j]]) " gsep-l" else "", html_escape(grpof(samples[[j]])), gcol(samples[[j]]), html_escape(samples[[j]])),
+    sprintf('<th class="pic-cor-ch%s" data-gcol="%s"><span style="color:%s">%s%s</span></th>',
+            if (gstart[[j]]) " gsep-l" else "", html_escape(grpof(samples[[j]])), gcol(samples[[j]]),
+            pic_batch_badge(samples[[j]]), html_escape(samples[[j]])),
     character(1))
   header <- sprintf('<tr><th class="pic-cor-corner"></th>%s</tr>', paste(ths, collapse = ""))
 
   rows <- vapply(seq_len(n), function(i) {
     rowsep <- if (gstart[[i]]) " gsep-t" else ""
-    rh <- sprintf('<th class="pic-cor-rh%s"><span style="color:%s">%s</span></th>',
-                  rowsep, gcol(samples[[i]]), html_escape(samples[[i]]))
+    rh <- sprintf('<th class="pic-cor-rh%s"><span style="color:%s">%s%s</span></th>',
+                  rowsep, gcol(samples[[i]]), pic_batch_badge(samples[[i]]), html_escape(samples[[i]]))
     tds <- vapply(seq_len(n), function(j) {
       v <- m[i, j]
       bg <- if (is.finite(v)) cor_color(v, zmin) else "#ffffff"
@@ -416,17 +424,37 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
     if (!all(c(xc, yc) %in% colnames(d))) next
     traces <- list()
     for (g in groups_ord) {
-      sub <- d[d$group == g, , drop = FALSE]
-      traces[[length(traces) + 1]] <- list(
-        x = as.list(as.numeric(sub[[xc]])),
-        y = as.list(as.numeric(sub[[yc]])),
-        text = as.list(as.character(sub$sample)),
-        name = group_span(g, pal),
-        mode = "markers",
-        type = "scatter",
-        marker = list(size = 11, color = unname(pal[[g]]), line = list(width = 1, color = "#ffffff")),
-        hovertemplate = paste0("%{text}<br>", xc, ": %{x:.2f}<br>", yc, ": %{y:.2f}<extra>", html_escape(g), "</extra>")
-      )
+      sub_g <- d[d$group == g, , drop = FALSE]
+      # batch があれば group を batch で分割し、同系色の「塗り / 白抜き」で描き分ける。
+      bvec <- vapply(as.character(sub_g$sample), pic_batch_of, character(1))
+      blist <- if (pic_has_batch()) pic_reorder_vec(unique(bvec[!is.na(bvec)]), pic_batch_levels()) else NA_character_
+      if (length(blist) == 0) blist <- NA_character_
+      for (b in blist) {
+        sub <- if (is.na(b)) sub_g else sub_g[!is.na(bvec) & bvec == b, , drop = FALSE]
+        if (nrow(sub) == 0) next
+        bi <- if (is.na(b)) 1L else match(b, pic_batch_levels())
+        if (is.na(bi)) bi <- 1L
+        sym <- pic_batch_pick(PIC_BATCH_SYMBOL, bi)
+        base_col <- unname(pal[[g]])
+        marker <- if (grepl("-open$", sym)) {
+          list(size = 12, symbol = sym, color = base_col, line = list(width = 2.4, color = base_col))
+        } else {
+          list(size = 11, symbol = sym, color = base_col, line = list(width = 1, color = "#ffffff"))
+        }
+        nm <- if (is.na(b)) group_span(g, pal) else
+          sprintf('%s <span style="color:#8a8f98">%s</span>', group_span(g, pal), html_escape(b))
+        tip <- if (is.na(b)) g else paste0(g, " / ", b)
+        traces[[length(traces) + 1]] <- list(
+          x = as.list(as.numeric(sub[[xc]])),
+          y = as.list(as.numeric(sub[[yc]])),
+          text = as.list(as.character(sub$sample)),
+          name = nm,
+          mode = "markers",
+          type = "scatter",
+          marker = marker,
+          hovertemplate = paste0("%{text}<br>", xc, ": %{x:.2f}<br>", yc, ": %{y:.2f}<extra>", html_escape(tip), "</extra>")
+        )
+      }
     }
     xlab <- if (!is.null(varpct) && xc %in% names(varpct)) sprintf("%s (%.1f%%)", xc, varpct[[xc]]) else xc
     ylab <- if (!is.null(varpct) && yc %in% names(varpct)) sprintf("%s (%.1f%%)", yc, varpct[[yc]]) else yc
@@ -447,6 +475,12 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
     src_note(report_rel_path(f, proj_dir)),
     '<p class="pic-note">PCA summarizes each sample&rsquo;s overall expression into a few axes so you can see how samples relate. ',
     'Samples close together are similar; replicates of the same group should cluster. The scree plot shows how much variance each axis captures.</p>',
+    if (pic_has_batch()) paste0(
+      '<p class="pic-note">Color = group. <b>Batch</b> is shown by the marker style within the same hue &mdash; ',
+      paste(vapply(seq_along(pic_batch_levels()), function(i) sprintf(
+        '%s <b>%s</b>', if (i == 1L) "filled" else if (i == 2L) "open" else "other",
+        html_escape(pic_batch_levels()[[i]])), character(1)), collapse = " / "),
+      '. Sample labels elsewhere use the same badge and a lighter/darker shade of the group color.</p>') else "",
     if (!is.null(varpct)) sprintf('<div class="pic-plot-grid pic-pca-scree-row">%s</div>', scree_block) else "",
     if (length(pair_blocks) > 0) sprintf('<div class="pic-plot-grid pic-pca-pair-row">%s</div>', paste(pair_blocks, collapse = "")) else ""
   )
@@ -463,6 +497,19 @@ zcolor_vec <- function(v, zmax) {
 }
 
 # DEG ヒートマップを、サンプル行ヘッダ固定・縦スクロール可能な HTML 表として生成する。
+# 同一 group のサンプルが隣り合うように並べ替える。
+# group の順序は group_pal (= sample_sheet の group 出現順) を優先し、
+# group 内のサンプル順は入力順 (sample_sheet 順) を保つ。
+pic_group_contiguous <- function(samples, group_map, group_pal = NULL) {
+  if (is.null(group_map) || length(samples) == 0) return(samples)
+  g <- vapply(samples, function(s) {
+    if (s %in% names(group_map)) as.character(group_map[[s]]) else s
+  }, character(1))
+  glev <- if (!is.null(group_pal) && length(names(group_pal)) > 0) names(group_pal) else unique(g)
+  glev <- c(glev[glev %in% g], setdiff(unique(g), glev))
+  samples[order(match(g, glev), seq_along(samples))]
+}
+
 build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal = NULL, proj_dir = NULL, sample_order = NULL, id_prefix = "") {
   f <- file.path(deg_dir_of(deseq2_dir, project), sprintf("DEG_normalizedCountTable_%s.csv", project))
   if (!file.exists(f)) return(NULL)
@@ -471,8 +518,10 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
   ann <- c("ens_gene", "ext_gene", "biotype", "chr")
   sample_cols <- setdiff(colnames(d), ann)
   if (length(sample_cols) < 2 || nrow(d) < 2) return(NULL)
-  # 列 (サンプル) を sample_sheet の順に並べる
+  # 列 (サンプル) を sample_sheet の順に並べたうえで、
+  # 同一 group が隣り合うようにグループ単位でまとめる。
   sample_cols <- pic_reorder_vec(sample_cols, sample_order)
+  sample_cols <- pic_group_contiguous(sample_cols, group_map, group_pal)
 
   labels <- if ("ext_gene" %in% colnames(d)) {
     lab <- as.character(d$ext_gene)
@@ -504,8 +553,9 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
     s <- scols[[j]]
     g <- if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
     col <- if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else "#333333"
-    sprintf('<th class="s%s" data-gcol="%s"><span style="color:%s">%s</span></th>',
-            if (gstart[[j]]) " gsep" else "", html_escape(g), col, html_escape(s))
+    col <- pic_batch_shade_color(col, s)
+    sprintf('<th class="s%s" data-gcol="%s"><span style="color:%s">%s%s</span></th>',
+            if (gstart[[j]]) " gsep" else "", html_escape(g), col, pic_batch_badge(s), html_escape(s))
   }, character(1))
   header <- sprintf('<tr><th class="corner"></th>%s</tr>', paste(ths, collapse = ""))
 

@@ -23,7 +23,8 @@ pic report — 解析結果から自己完結型 HTML レポートを生成す�
   3. Sample correlation  サンプル間相関 (correlation_*.csv)
   4. PCA
   5. Differential expression (DESeq2)
-     - ヒートマップ / contrast ごとの M-A / Volcano (group×group 行列で選択)
+     - ヒートマップ (同一 group のサンプルが隣り合うように列を並べ替える)
+     - contrast ごとの M-A / Volcano (group×group 行列で選択)
   6. Gene expression   入力遺伝子の正規化カウント (box + beeswarm)
   7. Enrichment
      - GSEA (contrast × method を行列で選択)
@@ -31,6 +32,20 @@ pic report — 解析結果から自己完結型 HTML レポートを生成す�
 
   すべての図は CSV から動的生成 (plotly / HTML)。各図には元データの Download
   ボタン、HTML テーブル (QC・heatmap・correlation) には Download PNG もあり。
+
+バッチ表示 (任意):
+  <out-dir>/sample_sheet.tsv に任意列 `batch` があると、レポート全体でバッチを
+  見た目で区別する (列が無ければ従来どおりの表示)。
+    - group の「色相」はそのまま。バッチは同系色の「濃淡」で表す。
+    - PCA のマーカー: 1 番目のバッチ = 塗りつぶし丸 / 2 番目 = 白抜き丸
+      (3 番目以降は菱形・四角)。凡例と hover にバッチ名が出る。
+    - サンプル名の前にバッジ (● / ○ / ◆ ...) を付ける
+      (Mapping QC / correlation / expression heatmap / サンプル選択)。
+  例:
+    fastq_prefix  genome  barcode  sample    group   batch
+    posi          mm10    AGGATC   A_posi_1  A_posi  pic159
+    WG5_23_nega   mm10    TCCTTC   A_posi_4  A_posi  pic155
+  注: バッチ表示はあくまで可視化。DESeq2 の design には影響しない。
 
 自己完結:
   プロジェクト内の全 csv/tsv を gzip+base64 で HTML に埋め込む。ダウンロード時に

@@ -125,6 +125,9 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
 
   # sample_sheet の順を正順とする (なければ mapping_sum の順)。
   sheet <- pic_read_sample_sheet(out_dir)
+  # sample_sheet に batch 列があれば、ラベル / マーカーの batch 表現を有効にする。
+  pic_set_batch_info(if (!is.null(sheet)) sheet$batch else NULL,
+                     if (!is.null(sheet)) sheet$batch_levels else NULL)
   sample_order <- if (!is.null(sheet)) sheet$samples else NULL
   group_order  <- if (!is.null(sheet) && length(sheet$groups) > 0) sheet$groups else NULL
   if (!is.null(msum)) msum <- pic_reorder_rows(msum, "sample", sample_order)
@@ -338,6 +341,35 @@ build_overview_section <- function(run, genome, pre_steps = list(), extra_tools 
     sf_code <- 'dds &lt;- DESeq(dds, sfType = "poscounts")\n'
   }
 
+  # DESeq2 の design / batch 補正を analysis_params から反映する
+  # (deseq2 が記録していない旧出力では従来どおり ~group として表示)。
+  ds_design <- pic_param(params, paste0("deseq2_design__", genome),
+                         pic_param(params, "deseq2_design", "~group"))
+  ds_batch <- pic_param(params, paste0("deseq2_batch_levels__", genome),
+                        pic_param(params, "deseq2_batch_levels", ""))
+  ds_bcorr <- pic_param(params, paste0("deseq2_batch_removal__", genome),
+                        pic_param(params, "deseq2_batch_removal", ""))
+  has_batch_design <- nzchar(ds_batch)
+  batch_desc <- if (has_batch_design) {
+    sprintf(' Batch (<b>%s</b>) is included as a covariate, so group effects are estimated adjusted for it.',
+            html_escape(ds_batch))
+  } else ""
+  batch_vis <- if (nzchar(ds_bcorr)) {
+    sprintf(paste0(' For the PCA / sample-correlation / DEG-cluster views the batch component is additionally',
+                   ' removed from the rlog matrix with <code>%s</code> (group differences are preserved by',
+                   ' passing the group design); the statistics above are unaffected by this step.'),
+            html_escape(ds_bcorr))
+  } else ""
+  coldata_code <- if (has_batch_design) {
+    lv <- trimws(strsplit(ds_batch, ",", fixed = TRUE)[[1]])
+    paste0(
+      sprintf('bat &lt;- c(%s, ...)  <span class="c"># one per sample</span>\n',
+              paste(sprintf('"%s"', vapply(lv, html_escape, character(1))), collapse = ", ")),
+      'coldata &lt;- data.frame(group = factor(grp), batch = factor(bat), row.names = colnames(umi_counts))\n')
+  } else {
+    'coldata &lt;- data.frame(group = factor(grp), row.names = colnames(umi_counts))\n'
+  }
+
   step_defs <- c(pre_steps, list(
     list(name = "Adapter Trimming &amp; Alignment",
       desc = paste0('Trim the 3&#39; PIC adapter (<code>Trim Galore</code>), then align single-end to the ',
@@ -364,13 +396,14 @@ build_overview_section <- function(run, genome, pre_steps = list(), extra_tools 
 
     list(name = "Differential Expression",
       desc = paste0('Join the per-sample UMI counts into a genes&times;samples matrix and run <code>DESeq2</code>: ',
-                    '<code>~group</code> design, <b>', sf_label, '</b> size factors, all pairwise group contrasts, ',
-                    'DEGs at <code>padj&nbsp;&lt;&nbsp;0.1</code>.'),
+                    '<code>', html_escape(ds_design), '</code> design, <b>', sf_label, '</b> size factors, ',
+                    'all pairwise group contrasts, DEGs at <code>padj&nbsp;&lt;&nbsp;0.1</code>.',
+                    batch_desc, batch_vis),
       code = code_block(paste0(
 '<span class="c"># R</span>\n',
 'grp &lt;- c("Cntl_Nega","Cntl_Nega","Cntl_Nega", "Cntl_Posi","Cntl_Posi","Cntl_Posi", ...)  <span class="c"># one per sample</span>\n',
-'coldata &lt;- data.frame(group = factor(grp), row.names = colnames(umi_counts))\n',
-'dds &lt;- DESeqDataSetFromMatrix(umi_counts, coldata, design = ~ group)\n',
+coldata_code,
+sprintf('dds &lt;- DESeqDataSetFromMatrix(umi_counts, coldata, design = %s)\n', html_escape(ds_design)),
 sf_code,
 '<span class="c"># for each pairwise group contrast (A vs B):</span>\n',
 'res &lt;- results(dds, contrast = c("group", "A", "B"),\n',
