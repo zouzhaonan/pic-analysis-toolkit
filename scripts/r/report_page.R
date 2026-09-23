@@ -53,44 +53,68 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
   msum_file <- { mf <- pic_list_summary(base_dir, "^mapping_sum__.*\\.tsv$"); if (length(mf) > 0) mf[[1]] else "" }
   sec_qc <- if (!is.null(msum)) section_mapping_qc(msum, sid("qc"), "1. Mapping QC", report_rel_path(msum_file, out_dir), group_map, group_pal) else ""
 
-  # 2. Aggregation (TSS-TES)
+  # Aggregation (TSS-TES) は QC タブ内の 3 つ目のサブタブとして提示する。
+  # QC セクション末尾に sub_head 付きで差し込むと、pic_tab_panel の marker 分割が
+  # そのままサブタブ化してくれる (Read distribution / Sequencing depth と同じ扱い)。
+  # aggregate をスキップした genome では agg_html が空になり、サブタブも出ない。
   agg_html <- build_aggregate_html(reg, base_dir, id_prefix, out_dir, sample_order, group_pal)
-  sec_agg <- if (nzchar(agg_html)) paste0(sprintf('<section id="%s"><h2>2. Aggregation</h2>', sid("aggregate")), agg_html, '</section>') else ""
+  qc_subs <- list(
+    list(label = "Read distribution", id = sid("qc-readdist"), marker = ""),
+    list(label = "Sequencing depth",  id = sid("qc-depth"),    marker = '<div class="pic-sub-hd"><h3>Sequencing depth'))
+  sec_agg <- ""
+  if (nzchar(agg_html)) {
+    if (nzchar(sec_qc)) {
+      sec_qc <- sub('</section>[[:space:]]*$',
+                    paste0(sub_head("Aggregation"), agg_html, '</section>'), sec_qc)
+      qc_subs <- c(qc_subs, list(list(label = "Aggregation", id = sid("qc-aggregate"),
+                                      marker = '<div class="pic-sub-hd"><h3>Aggregation')))
+    } else {
+      # mapping_sum が無く QC セクションを作れない場合のみ、独立セクションとして残す。
+      sec_agg <- paste0(sprintf('<section id="%s"><h2>Aggregation</h2>', sid("aggregate")), agg_html, '</section>')
+    }
+  }
 
-  # 3. Sample correlation
+  # 2. Sample correlation
   cor_html <- build_correlation_html(reg, desc$deseq2_dir, project, group_map, group_pal, sample_order, id_prefix, out_dir)
-  sec_cor <- if (nzchar(cor_html)) paste0(sprintf('<section id="%s"><h2>3. Sample Correlation</h2>', sid("cor")), cor_html, '</section>') else ""
+  sec_cor <- if (nzchar(cor_html)) paste0(sprintf('<section id="%s"><h2>2. Sample Correlation</h2>', sid("cor")), cor_html, '</section>') else ""
 
-  # 4. PCA
+  # 3. PCA
   pca_html <- build_pca_plots(reg, desc$deseq2_dir, project, group_pal, id_prefix, out_dir)
-  sec_pca <- paste0(sprintf('<section id="%s"><h2>4. PCA</h2>', sid("pca")),
+  sec_pca <- paste0(sprintf('<section id="%s"><h2>3. PCA</h2>', sid("pca")),
                     if (!is.null(pca_html)) pca_html else "<p>No PCA data.</p>",
                     '</section>')
 
-  # 5. DEG (heatmap + MA/volcano)
-  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order, id_prefix)
+  # 4. DEG (heatmap + MA/volcano)
+  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order, id_prefix, deg_counts)
   contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir), group_order, group_pal)
-  sec_deg <- paste0(sprintf('<section id="%s"><h2>5. Differential Expression (FDR = %s)</h2>', sid("deg"), format(fdr, trim = TRUE)),
+  sec_deg <- paste0(sprintf('<section id="%s"><h2>4. Differential Expression (FDR = %s)</h2>', sid("deg"), format(fdr, trim = TRUE)),
                     if (!is.null(hm_html)) hm_html else "",
                     contrast_html,
                     '</section>')
 
-  # 6. Gene expression (normalized counts, interactive)
-  sec_expr <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats, sid("expr"), sid("expr"), "6. Gene Expression", out_dir, sample_order, group_order)
+  # 5. Gene expression (normalized counts, interactive)
+  sec_expr <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats, sid("expr"), sid("expr"), "5. Gene Expression", out_dir, sample_order, group_order)
 
-  # 7. Enrichment (section_enrichment は id="enrich" を埋め込むので prefix 付けは後処理)
-  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "7. Enrichment", out_dir, id_prefix, reg, group_order)
+  # 6. Enrichment (section_enrichment は id="enrich" を埋め込むので prefix 付けは後処理)
+  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "6. Enrichment", out_dir, id_prefix, reg, group_order)
   if (is.null(sec_enrich)) sec_enrich <- ""
   sec_enrich <- sub('<section id="enrich">', sprintf('<section id="%s">', sid("enrich")), sec_enrich, fixed = TRUE)
 
   grp_panel <- group_toggle_panel(group_pal)
+  # PCA は group / sample の階層で計算対象を選べるようにする
+  # (特定のサンプルを外れ値として除いたときの主成分を確かめられる)。
+  pca_pp <- reg$pca[[sid("pca")]]
+  pca_ctrl <- if (!is.null(pca_pp) && length(pca_pp$samples) > 0)
+    group_sample_tree_panel(unlist(pca_pp$samples), unlist(pca_pp$groups), group_pal, group_map)
+  else grp_panel
   list(
-    list(html = sec_qc, label = "QC", shared_controls = grp_panel, subs = list(
-      list(label = "Read distribution", id = sid("qc-readdist"), marker = ""),
-      list(label = "Sequencing depth",  id = sid("qc-depth"),    marker = '<div class="pic-sub-hd"><h3>Sequencing depth'))),
+    list(html = sec_qc, label = "QC", shared_controls = grp_panel, subs = qc_subs),
+    # Aggregation は通常 QC タブへ統合され sec_agg は "" になる (build_tabs が空タブを除外)。
+    # xenograft レポートが keys で添字参照するため、エントリ自体は残す。
     list(html = sec_agg,    label = "Aggregation", controls = grp_panel),
     list(html = sec_cor,    label = "Correlation", controls = grp_panel),
-    list(html = sec_pca,    label = "PCA",         controls = grp_panel),
+    # PCA のトグルは「表示の on/off」ではなく「PCA の計算対象」を選ぶ (report.js が再計算する)
+    list(html = sec_pca,    label = "PCA",         controls = pca_ctrl),
     list(html = sec_deg, label = "DEG", subs = list(
       list(label = "Heatmap",     id = sid("deg-heatmap"),   marker = ""),
       list(label = "M-A / Volcano", id = sid("deg-mavolcano"), marker = '<div class="pic-degsel'))),
@@ -128,8 +152,11 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   # sample_sheet に batch 列があれば、ラベル / マーカーの batch 表現を有効にする。
   pic_set_batch_info(if (!is.null(sheet)) sheet$batch else NULL,
                      if (!is.null(sheet)) sheet$batch_levels else NULL)
-  sample_order <- if (!is.null(sheet)) sheet$samples else NULL
-  group_order  <- if (!is.null(sheet) && length(sheet$groups) > 0) sheet$groups else NULL
+  # sample_sheet が無ければ deftable の行順を使う (mapping_sum はアルファベット順なので、
+  # そちらにフォールバックすると実験の並びが崩れる)。
+  ord <- if (!is.null(sheet)) sheet else pic_order_from_deftable(out_dir)
+  sample_order <- if (!is.null(ord)) ord$samples else NULL
+  group_order  <- if (!is.null(ord) && length(ord$groups) > 0) ord$groups else NULL
   if (!is.null(msum)) msum <- pic_reorder_rows(msum, "sample", sample_order)
 
   # サンプル -> グループの対応とグループ配色 (PCA / heatmap で共有)
@@ -567,6 +594,9 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
   plots_json <- jsonlite::toJSON(reg$plots, auto_unbox = TRUE, null = "null", na = "null", digits = 6)
   expr_json <- jsonlite::toJSON(if (length(reg$expr) > 0) reg$expr else stats::setNames(list(), character(0)),
                                 auto_unbox = TRUE, null = "null", na = "null", digits = 6)
+  # 部分集合 PCA 用の rlog 行列 (群を選び直して主成分を引き直すために使う)
+  pca_json <- jsonlite::toJSON(if (length(reg$pca) > 0) reg$pca else stats::setNames(list(), character(0)),
+                               auto_unbox = TRUE, null = "null", na = "null", digits = 4)
   # 埋め込みファイル (gzip+base64) — DL 用に {id:{n:name, gz:base64}} だけを出力
   files_min <- if (!is.null(reg$files)) lapply(reg$files, function(f) list(n = f$name, gz = f$gz)) else list()
   files_json <- jsonlite::toJSON(if (length(files_min) > 0) files_min else stats::setNames(list(), character(0)),
@@ -583,7 +613,7 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
     '<div class="pic-tabbtns">', nav_html, '</div>', extra_nav, '</nav>',
     '<main class="pic-main">', body_html, '</main>',
     '<script>', plotly_js, '</script>',
-    '<script>var PIC_PLOTS=', plots_json, ';var PIC_EXPR=', expr_json, ';var PIC_FILES=', files_json, ';</script>',
+    '<script>var PIC_PLOTS=', plots_json, ';var PIC_EXPR=', expr_json, ';var PIC_PCA=', pca_json, ';var PIC_FILES=', files_json, ';</script>',
     '<script>', report_runtime_js(), '</script>',
     '</body></html>'
   )
@@ -684,8 +714,10 @@ build_fraction_analysis <- function(reg, frac_key, out_dir, frac_dir, tmp_dir) {
   deg_counts <- resolve_deg_counts(desc, stats, fdr)
 
   sheet <- pic_read_sample_sheet(out_dir, frac_key)
-  sample_order <- if (!is.null(sheet)) sheet$samples else NULL
-  group_order  <- if (!is.null(sheet) && length(sheet$groups) > 0) sheet$groups else NULL
+  # 画分側も sample_sheet_<frac>.tsv が無ければ deftable の行順にフォールバックする。
+  ord <- if (!is.null(sheet)) sheet else pic_order_from_deftable(frac_dir)
+  sample_order <- if (!is.null(ord)) ord$samples else NULL
+  group_order  <- if (!is.null(ord) && length(ord$groups) > 0) ord$groups else NULL
 
   msum <- NULL; group_map <- NULL; group_pal <- NULL
   msum_files <- pic_list_summary(frac_dir, "^mapping_sum__.*\\.tsv$")

@@ -171,6 +171,18 @@ aggregate_one_genome <- function(out_dir, genome, project, deftable, bwaob, nbin
   message(sprintf("[INFO] aggregate: gene bodies を読み込みます (genome=%s)", genome))
   genes <- read_gene_bodies(gtf)
   if (nrow(genes) == 0) { message("[WARN] aggregate: 有効な遺伝子なし"); return(invisible(NULL)) }
+
+  # cDNA / 3'断片リファレンス (contig 全長 = 1 遺伝子) では TSS→TES メタジーンが
+  # 成立しない。遺伝子本体がフランク幅より短いため、プロファイルの大半が chrom 端で
+  # クリップされた「存在しない領域」になり解釈できない。ここで検出してスキップする。
+  # (通常のゲノムは遺伝子本体長の中央値が数 kb 以上なのでこの条件には掛からない)
+  med_len <- stats::median(genes$end - genes$start + 1)
+  if (is.finite(med_len) && med_len < flank) {
+    message(sprintf(paste0("[INFO] aggregate: skip genome=%s — 遺伝子本体長の中央値 %.0f bp < flank %d bp ",
+                           "(cDNA/3'断片リファレンスと判断。TSS→TES メタジーンは成立しません)"),
+                    genome, med_len, flank))
+    return(invisible(NULL))
+  }
   chrom_sizes <- read_chrom_sizes(genome)
   total <- 2L * fbins + nbins
   pmap <- position_map(nbins, fbins)

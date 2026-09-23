@@ -68,13 +68,62 @@ group_toggle_panel <- function(group_pal) {
 }
 
 # sample 表示切替パネル (HTML テーブル用: 行/列を隠す)。ラベルは group 配色。
+# data-sgroup にそのサンプルの group を持たせておくと、group を外したときに
+# 対応するサンプル行を無効化 (グレーアウト) できる (report.js が使う)。
 sample_toggle_panel <- function(samples, group_map = NULL, group_pal = NULL) {
   if (length(samples) == 0) return("")
   scol <- function(s) sample_color(s, group_map, group_pal)
+  grpof <- function(s) if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
   items <- vapply(samples, function(s) sprintf(
-    '<label class="pic-tgl"><input type="checkbox" class="pic-stoggle" data-sample="%s" checked><span style="color:%s;font-weight:600">%s%s</span></label>',
-    html_escape(s), scol(s), pic_batch_badge(s), html_escape(s)), character(1))
+    '<label class="pic-tgl" data-sgroup="%s"><input type="checkbox" class="pic-stoggle" data-sample="%s" checked><span style="color:%s;font-weight:600">%s%s</span></label>',
+    html_escape(grpof(s)), html_escape(s), scol(s), pic_batch_badge(s), html_escape(s)), character(1))
   paste0('<h4>Samples</h4><div class="pic-tgl-list">', paste(items, collapse = ""), '</div>')
+}
+
+# PCA の点に添える replicate 番号。sample 名の末尾 "_<数字>" をそのまま使い、
+# 数字で終わらない名前には与えられた順の連番を割り当てる。
+pic_replicate_labels <- function(samples) {
+  pos <- regexpr("[0-9]+$", samples)
+  out <- rep(NA_character_, length(samples))
+  out[pos > 0] <- regmatches(samples, pos)
+  miss <- is.na(out)
+  if (any(miss)) out[miss] <- as.character(seq_len(sum(miss)))
+  out
+}
+
+# PCA 用の group -> sample 階層パネル。group 行は折りたたみの見出しであり、
+# 同時に配下サンプルを一括 on/off するトグルでもある。実際の計算対象はサンプル側の
+# チェックだけで決まるので、group を外したあとに個別サンプルを選び直せる
+# (group のチェックは配下の状態から checked / indeterminate が自動で決まる)。
+group_sample_tree_panel <- function(samples, groups, group_pal = NULL, group_map = NULL) {
+  if (length(samples) == 0 || length(samples) != length(groups)) return("")
+  ug <- unique(groups)
+  if (!is.null(group_pal)) ug <- pic_reorder_vec(ug, names(group_pal))
+  blocks <- vapply(ug, function(g) {
+    idx <- which(groups == g)
+    sw <- if (!is.null(group_pal) && g %in% names(group_pal))
+      sprintf('<span class="pic-swatch" style="background:%s"></span>', unname(group_pal[[g]])) else ""
+    kids <- vapply(idx, function(i) {
+      s <- samples[[i]]
+      sprintf(paste0('<label class="pic-tgl"><input type="checkbox" class="pic-stoggle" ',
+                     'data-sample="%s" data-sgroup="%s" checked>',
+                     '<span style="color:%s;font-weight:600">%s%s</span></label>'),
+              html_escape(s), html_escape(g), sample_color(s, group_map, group_pal),
+              pic_batch_badge(s), html_escape(s))
+    }, character(1))
+    # summary 内は label で包まない: label だとチェックと折りたたみが同時に起きるため、
+    # チェックボックスは単独で置き (JS が click を stopPropagation)、名前部分の
+    # クリックだけが開閉に効くようにする。
+    # 既定は折りたたみ (open を付けない): group 一覧を一望でき、必要な群だけ開く。
+    sprintf(paste0('<details class="pic-tree-g"><summary>',
+                   '<span class="pic-tree-arrow"></span>',
+                   '<input type="checkbox" class="pic-gtoggle" data-group="%s" checked>',
+                   '%s<span class="pic-tree-name">%s</span>',
+                   '<span class="pic-tree-n">%d</span>',
+                   '</summary><div class="pic-tree-s">%s</div></details>'),
+            html_escape(g), sw, html_escape(g), length(idx), paste(kids, collapse = ""))
+  }, character(1))
+  paste0('<h4>Groups</h4><div class="pic-tree">', paste(blocks, collapse = ""), '</div>')
 }
 
 # 「ここで選択」を明示する目立つ案内バッジ。
@@ -141,6 +190,8 @@ file_excluded <- function(rel) {
   grepl("^sample_sheet", b) || grepl("^Num_UMIs_genes", b) ||
     # 実行時パラメータの記録 (Materials & Methods の表示用メタデータ)
     grepl("^analysis_params", b) ||
+    # 部分集合 PCA をブラウザで引き直すための rlog 行列 (レポートに直接埋め込む中間データ)
+    grepl("^PCA_rlogTop", b) ||
     grepl("^DEG_count", b) || grepl("^DEG_normalizedCountTable", b) ||
     grepl("^DEGCluster_summary", b) || grepl("^DEGCluster_gene_for_ora", b) ||
     grepl("^DEGCluster_merge_map", b) ||
@@ -160,7 +211,7 @@ file_category <- function(rel) {
   base <-
     if (grepl("enrich", rel, fixed = TRUE) && grepl("(^|/)GSEA/", rel)) list(key = "gsea", title = "Enrichment — GSEA", tab = "enrich")
     else if (grepl("enrich", rel, fixed = TRUE) && grepl("(^|/)ORA/", rel)) list(key = "ora", title = "Enrichment — ORA", tab = "enrich")
-    else if (grepl("^aggregate_profile", b)) list(key = "agg", title = "Aggregation", tab = "aggregate")
+    else if (grepl("^aggregate_profile", b)) list(key = "agg", title = "Aggregation", tab = "qc")
     else if (grepl("correlation", b)) list(key = "cor", title = "Sample Correlation", tab = "cor")
     else if (grepl("PCA", b)) list(key = "pca", title = "PCA", tab = "pca")
     else if (grepl("^stats|DEG", b)) list(key = "deg", title = "Differential Expression", tab = "deg")
@@ -499,6 +550,7 @@ pic_report_registry <- function() {
   reg <- new.env(parent = emptyenv())
   reg$plots <- list()
   reg$expr <- list()   # 遺伝子発現データ (id -> normalized counts など)
+  reg$pca <- list()    # 部分集合 PCA 用の rlog 行列 (id -> samples/groups/mat)
   reg
 }
 

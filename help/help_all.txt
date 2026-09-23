@@ -29,6 +29,15 @@ Optional options:
   --demux-fastq-dir <dir>    Use already-demultiplexed/classified FASTQ (skips demux).
                              Each sample is read from <dir>/<sample>.fastq.gz
   --no-report                Skip the final HTML report step
+  --no-aggregate             Skip the gene-body (TSS-TES) aggregation step.
+                             cDNA / 3'-fragment references are skipped
+                             automatically (gene bodies shorter than the flank),
+                             so this is only needed to disable it elsewhere.
+  --barcode-first            read1 layout is barcode(6) + UMI(6).
+                             Default assumes the PIC standard UMI(6) + barcode(6).
+                             Use only for libraries built with the two segments
+                             swapped; with the wrong setting demux matches almost
+                             nothing and samples come out near-empty.
   --hisat2-score-min <spec>  hisat2 --score-min (default: L,0,-1)
                              pic defaults to L,0,-1 because PIC Read2 starts with
                              the RT primer's random hexamer (non-templated by

@@ -40,7 +40,8 @@ chunk_single_fq() {
   mkdir -p "$chunk_tmp_dir"
 
   awk -v barcodes="$barcodes" -v samples="$samples" -v chunk="$chunk" \
-    -v tmp_dir="$chunk_tmp_dir" -f "$SPLIT_FASTQ_AWK" <(
+    -v tmp_dir="$chunk_tmp_dir" -v barcode_first="${PIC_BARCODE_FIRST:-0}" \
+    -f "$SPLIT_FASTQ_AWK" <(
       paste \
         <(seqkit range -r "$range" "${fq_files[0]}") \
         <(seqkit range -r "$range" "${fq_files[1]}")
@@ -428,7 +429,7 @@ mapping_sum() {
     awk -F"\t" -v OFS="\t" \
       -v log_dir="$LOG_DIR" -v count_dir="$COUNTS_DIR" \
       -v job_queue="$JOB_QUEUE" -f "$MAP_SUMMARY_AWK" \
-      "$TOTAL_READS" | sort -k1,1 -k4,4n
+      "$TOTAL_READS" | sort -k1,1n -k5,5n | cut -f2-
   } >"$MAP_SUMMARY"
   debug_kv "result.map_summary_rows" "$(wc -l <"$MAP_SUMMARY")"
 

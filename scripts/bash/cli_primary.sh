@@ -97,6 +97,12 @@ parse_pic_common_long_options() {
       PIC_HISAT2_SCORE_MIN="${2:-}"
       shift 2
       ;;
+    --barcode-first)
+      # read1 が barcode(6) + UMI(6) 並びのライブラリ用。
+      # 既定は PIC 標準の UMI(6) + barcode(6)。
+      PIC_BARCODE_FIRST=1
+      shift
+      ;;
     --help)
       PIC_WANT_HELP=1
       return 0

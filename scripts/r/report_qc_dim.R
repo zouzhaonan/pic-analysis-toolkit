@@ -263,6 +263,20 @@ pic_read_sample_sheet <- function(out_dir, frac_key = NULL) {
        batch_levels = if (!is.null(batch)) unique(unname(batch)) else NULL)
 }
 
+# sample_sheet が無い出力 (deseq2 を単独実行した場合など) 向けのフォールバック。
+# deftable の行順をサンプル / group の正順として返す。mapping_sum はサンプル名の
+# アルファベット順に並んでいるため、実験の並びを保つには deftable のほうが適切。
+pic_order_from_deftable <- function(base_dir) {
+  fs <- pic_list_summary(base_dir, "^deftable_.*\\.tsv$")
+  if (length(fs) == 0) return(NULL)
+  df <- tryCatch(suppressMessages(readr::read_tsv(fs[[1]], show_col_types = FALSE, progress = FALSE)),
+                 error = function(e) NULL)
+  if (is.null(df) || !("sample" %in% colnames(df))) return(NULL)
+  df <- as.data.frame(df, check.names = FALSE)
+  list(samples = as.character(df$sample),
+       groups = if ("group" %in% colnames(df)) unique(as.character(df$group)) else character(0))
+}
+
 # base_dir の mapping_sum__<run>.tsv から run 名を取り出す (無ければ "")。
 pic_report_run_name <- function(base_dir) {
   mf <- pic_list_summary(base_dir, "^mapping_sum__.*\\.tsv$")
@@ -396,6 +410,27 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
   if (!("group" %in% colnames(d))) d$group <- "all"
   varpct <- pca_variance_pct(deseq2_dir, project)
   pal <- ensure_palette(group_pal, d$group)
+
+  # 群の部分集合だけで主成分を引き直せるよう、rlog 行列 (分散上位 PCA_POOL_GENES) を
+  # レポートに埋め込む。report.js が選択された群のサンプルで上位 ntop を選び直し、
+  # 中心化/標準化のうえ PCA を再計算する。旧バージョンの出力にはこの CSV が無いので、
+  # その場合は従来どおり静的な PCA (全サンプル) のみになる。
+  rf <- file.path(pca_dir_of(deseq2_dir, project), sprintf("PCA_rlogTop_%s.csv", project))
+  if (file.exists(rf)) {
+    rl <- suppressMessages(readr::read_csv(rf, show_col_types = FALSE, progress = FALSE))
+    rl <- as.data.frame(rl, check.names = FALSE)
+    scols <- intersect(colnames(rl), as.character(d$sample))
+    if (length(scols) >= 3 && nrow(rl) >= 2) {
+      m <- as.matrix(rl[, scols, drop = FALSE]); storage.mode(m) <- "double"
+      grp <- as.character(d$group)[match(scols, as.character(d$sample))]
+      reg$pca[[paste0(id_prefix, "pca")]] <- list(
+        samples = as.list(scols),
+        groups = as.list(grp),
+        project = project,
+        ntop = as.integer(pic_plot_spec()$defaults$ntop),
+        mat = lapply(seq_len(nrow(m)), function(i) as.numeric(m[i, ])))
+    }
+  }
   # group (凡例) の順は palette (= sample_sheet) の順に従う
   groups_ord <- pic_reorder_vec(unique(as.character(d$group)), names(pal))
 
@@ -447,12 +482,22 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
         traces[[length(traces) + 1]] <- list(
           x = as.list(as.numeric(sub[[xc]])),
           y = as.list(as.numeric(sub[[yc]])),
-          text = as.list(as.character(sub$sample)),
+          # text = 点に添える replicate 番号 (1,2,3...)、hovertext = サンプル名。
+          # hover と report.js の座標差し替えは hovertext (サンプル名) を見る。
+          text = as.list(pic_replicate_labels(as.character(sub$sample))),
+          hovertext = as.list(as.character(sub$sample)),
+          # name は group 色付きの HTML なので、group トグル (report.js の
+          # applyGroupToggles) が照合できるよう legendgroup に素の group 名を渡す。
+          # batch で分割された trace も同じ legendgroup になり、group 単位でまとめて
+          # 表示/非表示が切り替わる (box plot と同じ扱い)。
           name = nm,
-          mode = "markers",
+          legendgroup = g,
+          mode = "markers+text",
+          textposition = "top center",
+          textfont = list(size = 9, color = base_col),
           type = "scatter",
           marker = marker,
-          hovertemplate = paste0("%{text}<br>", xc, ": %{x:.2f}<br>", yc, ": %{y:.2f}<extra>", html_escape(tip), "</extra>")
+          hovertemplate = paste0("%{hovertext}<br>", xc, ": %{x:.2f}<br>", yc, ": %{y:.2f}<extra>", html_escape(tip), "</extra>")
         )
       }
     }
@@ -471,8 +516,16 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
   }
   if (is.null(varpct) && length(pair_blocks) == 0) return(NULL)
   # 1 行目: 寄与率のみ / 2 行目: PC1-2, PC2-3
+  # ヘッダ右のダウンロード 2 種:
+  #   all samples = R が計算した PCA (埋め込み CSV をそのまま保存)
+  #   selected    = 現在チェックされているサンプルだけで引き直した座標 (report.js が生成)
+  dl_all <- sub(">Download CSV<", ">Download CSV (all samples)<",
+                src_note(report_rel_path(f, proj_dir)), fixed = TRUE)
+  dl_sel <- paste0('<span class="pic-headact">',
+                   '<a class="pic-dlcsv pic-pca-dlsel" role="button" tabindex="0">Download CSV (selected)</a>',
+                   '</span>')
   paste0(
-    src_note(report_rel_path(f, proj_dir)),
+    dl_all, dl_sel,
     '<p class="pic-note">PCA summarizes each sample&rsquo;s overall expression into a few axes so you can see how samples relate. ',
     'Samples close together are similar; replicates of the same group should cluster. The scree plot shows how much variance each axis captures.</p>',
     if (pic_has_batch()) paste0(
@@ -510,14 +563,50 @@ pic_group_contiguous <- function(samples, group_map, group_pal = NULL) {
   samples[order(match(g, glev), seq_along(samples))]
 }
 
-build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal = NULL, proj_dir = NULL, sample_order = NULL, id_prefix = "") {
+# heatmap を描けない場合に、無言で省略せず理由を明記するためのブロック。
+# (ORA が 5b88f5f で同じ扱いになっているのに合わせる)
+#
+# 描画時と同じ 2 カラム (左 = サブタブ, 右 = 本体) に入れる。理由は右カラムに出す。
+# 注意 2 点:
+#   - <!--SUBNAV--> を左 aside に置かないと pic_tab_panel がサブタブを
+#     チャンク先頭 (= 全幅) に差し込んでしまい、レイアウトが崩れる。
+#   - 理由文に class="pic-note" は使えない。pic_pull_notes が本文から抜き取って
+#     見出し横の info バッジへ集約するため、本文に何も残らなくなる。
+#     見た目が同じ pic-contrast-meta (同一 CSS ルール) を使う。
+heatmap_unavailable_html <- function(reason) {
+  view <- paste0(
+    sub_head("Expression heatmap", ""),
+    '<p class="pic-contrast-meta">', reason, '</p>')
+  sprintf('<div class="pic-hmsel"><aside class="pic-hmsel-ctrl"><!--SUBNAV--></aside><div class="pic-hmsel-view">%s</div></div>',
+          view)
+}
+
+build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal = NULL, proj_dir = NULL, sample_order = NULL, id_prefix = "", deg_counts = NULL) {
   f <- file.path(deg_dir_of(deseq2_dir, project), sprintf("DEG_normalizedCountTable_%s.csv", project))
-  if (!file.exists(f)) return(NULL)
+  n_deg <- if (!is.null(deg_counts) && length(deg_counts) > 0) sum(unlist(deg_counts), na.rm = TRUE) else NA_real_
+  if (!file.exists(f)) {
+    # DEG が 1 件も無いと deseq2 は DEG_normalizedCountTable を書かない。
+    return(heatmap_unavailable_html(
+      if (!is.na(n_deg) && n_deg == 0)
+        "No genes passed the FDR threshold."
+      else
+        "The DEG count table was not produced."))
+  }
   d <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
   d <- as.data.frame(d, check.names = FALSE)
   ann <- c("ens_gene", "ext_gene", "biotype", "chr")
   sample_cols <- setdiff(colnames(d), ann)
-  if (length(sample_cols) < 2 || nrow(d) < 2) return(NULL)
+  # 行数は 1 でも成立する (z-score / 色付けは 1 行で動き、hclust の失敗は下で
+  # tryCatch がフォールバックする)。サンプルが 1 列だと行方向 z-score が
+  # 退化するので、そちらだけ 2 列以上を要求する。
+  if (nrow(d) < 1) {
+    return(heatmap_unavailable_html(
+      "No genes passed the FDR threshold."))
+  }
+  if (length(sample_cols) < 2) {
+    return(heatmap_unavailable_html(
+      "Fewer than two samples: a per-gene z-score cannot be computed."))
+  }
   # 列 (サンプル) を sample_sheet の順に並べたうえで、
   # 同一 group が隣り合うようにグループ単位でまとめる。
   sample_cols <- pic_reorder_vec(sample_cols, sample_order)
@@ -571,7 +660,7 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
   # 左 = group 表示切替 / 右 = ヒートマップ本体 (タイトル右に Download csv + PNG ボタン)
   ctrl <- group_toggle_panel(group_pal)
   view <- paste0(
-    sub_head(sprintf('Expression heatmap (%d DEGs)', nrow(z)),
+    sub_head(sprintf('Expression heatmap (%d DEG%s)', nrow(z), if (nrow(z) == 1) "" else "s"),
              src_note(report_rel_path(f, proj_dir)), png_button(cap_id, "deg_heatmap")),
     '<p class="pic-note">Each row is a gene, each column a sample (grouped by color). ',
     'Cell color is the gene&rsquo;s z-score across samples &mdash; <b style="color:#b2182b">red</b> is higher than that gene&rsquo;s average, ',

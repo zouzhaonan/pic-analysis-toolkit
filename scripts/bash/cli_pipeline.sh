@@ -33,7 +33,7 @@ run_pipeline_subcommand() {
   fi
 
   local sample_sheet="" raw_fastq_dir="" run_name="" out_dir="" demux_fastq_dir=""
-  local run_name_set=0 no_report=0
+  local run_name_set=0 no_report=0 no_aggregate=0 barcode_first=0
   local hisat2_very_sensitive=0 hisat2_score_min=""
 
   while [[ $# -gt 0 ]]; do
@@ -63,6 +63,14 @@ run_pipeline_subcommand() {
       no_report=1
       shift
       ;;
+    --no-aggregate)
+      no_aggregate=1
+      shift
+      ;;
+    --barcode-first)
+      barcode_first=1
+      shift
+      ;;
     --hisat2-very-sensitive)
       hisat2_very_sensitive=1
       shift
@@ -77,7 +85,7 @@ run_pipeline_subcommand() {
       ;;
     *)
       handle_error "Unknown option: $1"
-      handle_error "pic all のオプション: --sample-sheet / --raw-fastq-dir / --demux-fastq-dir / --run-name / --out-dir / --no-report / --hisat2-score-min / --hisat2-very-sensitive"
+      handle_error "pic all のオプション: --sample-sheet / --raw-fastq-dir / --demux-fastq-dir / --run-name / --out-dir / --no-report / --no-aggregate / --hisat2-score-min / --hisat2-very-sensitive"
       handle_error "詳細な調整が必要な場合は deseq2 / enrich を個別に実行してください。"
       exit 1
       ;;
@@ -104,6 +112,10 @@ run_pipeline_subcommand() {
   if [[ -n "$hisat2_score_min" ]]; then
     mapping_args+=(--hisat2-score-min "$hisat2_score_min")
   fi
+  if [[ "$barcode_first" = 1 ]]; then
+    # read1 が barcode(6) + UMI(6) 並びのライブラリ (既定は UMI + barcode)
+    mapping_args+=(--barcode-first)
+  fi
 
   parse_pic_common_long_options "mapping" "${mapping_args[@]}"
 
@@ -127,9 +139,15 @@ run_pipeline_subcommand() {
   log_info "pic all: 解析対象 genome: ${genomes[*]}"
 
   # --- Step 2: aggregate (遺伝子全体 TSS→TES 集計) ---
-  log_info "pic all: [2/5] aggregate を実行します"
-  if ! run_aggregate_subcommand --out-dir "$OUTPUT_DIR" --run-name "$RUN_NAME" --threads "$THREADS"; then
-    handle_error "pic all: aggregate に失敗しました (解析は継続します)"
+  # cDNA / 3'断片リファレンス (遺伝子本体がフランク幅より短い genome) は
+  # aggregate 側が自動でスキップする。--no-aggregate は明示的に全体を止める。
+  if [[ "$no_aggregate" = 1 ]]; then
+    log_info "pic all: [2/5] --no-aggregate により aggregate をスキップします"
+  else
+    log_info "pic all: [2/5] aggregate を実行します"
+    if ! run_aggregate_subcommand --out-dir "$OUTPUT_DIR" --run-name "$RUN_NAME" --threads "$THREADS"; then
+      handle_error "pic all: aggregate に失敗しました (解析は継続します)"
+    fi
   fi
 
   # --- Step 3/4: genome ごとに deseq2 -> enrich ---

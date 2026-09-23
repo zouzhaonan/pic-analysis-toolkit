@@ -62,9 +62,22 @@ body.pic-resizing{cursor:col-resize;user-select:none}
 .pic-sub-hd{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:22px 0 10px}
 .pic-sub-hd h3{margin:0}
 /* 表示/非表示トグル (サンプル・group) */
+/* コントロール内の警告 (PCA を計算できないサンプル数のときなど) */
+.pic-ctrl-warn{margin:6px 0 0;color:#b45309;font-size:11px;line-height:1.45}
 .pic-tgl-list{display:flex;flex-direction:column;gap:3px}
 .pic-tgl{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;white-space:nowrap}
 .pic-tgl input{cursor:pointer;flex:none}
+/* PCA の group -> sample 階層セレクタ (group 行は折りたたみ + 一括トグル) */
+.pic-tree{display:flex;flex-direction:column;gap:1px}
+.pic-tree-g>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:5px;padding:2px 0}
+.pic-tree-g>summary::-webkit-details-marker{display:none}
+.pic-tree-g>summary>input{flex:none;cursor:pointer;margin:0}
+.pic-tree-name{flex:1;min-width:0;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pic-tree-arrow{flex:none;width:9px;color:var(--muted);font-size:9px;line-height:1;transition:transform .12s}
+.pic-tree-arrow::before{content:"\25B6"}
+.pic-tree-g[open]>summary .pic-tree-arrow{transform:rotate(90deg)}
+.pic-tree-n{flex:none;color:var(--muted);font-size:11px}
+.pic-tree-s{display:flex;flex-direction:column;gap:2px;padding:1px 0 5px 23px}
 @media(max-width:900px){.pic-2pane{grid-template-columns:1fr}.pic-ctrl{position:static;max-height:none}}
 h2{margin-top:0;font-size:21px;border-bottom:2px solid var(--accent);padding-bottom:6px}
 h3{font-size:18px;margin:22px 0 10px}

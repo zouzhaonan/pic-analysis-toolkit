@@ -621,8 +621,241 @@
         });
       });
     })();
+    // ---- 部分集合 PCA -------------------------------------------------------
+    // PCA タブの group トグルは「表示の on/off」ではなく「PCA の計算対象」を選ぶ。
+    // 選ばれた群のサンプルだけで分散上位 ntop を選び直し、中心化/標準化して主成分を
+    // 引き直す (R の prcomp(t(rld_top), scale.=TRUE, center=TRUE) と同じ手順)。
+    // 遺伝子数 p >> サンプル数 n なので、n×n のグラム行列 G = XXt を Jacobi 法で
+    // 対角化すれば PC 座標 = U*sqrt(lambda) が厳密に得られる (SVD と等価)。
+    // 対称行列の固有値分解 (Numerical Recipes の巡回 Jacobi)。固有値の降順で返す。
+    function picJacobiEigen(A, n) {
+      var a = [], v = [], i, j, ip, iq;
+      for (i = 0; i < n; i++) {
+        a.push(A[i].slice()); v.push([]);
+        for (j = 0; j < n; j++) v[i].push(i === j ? 1 : 0);
+      }
+      for (var sweep = 0; sweep < 100; sweep++) {
+        var sm = 0;
+        for (ip = 0; ip < n - 1; ip++) for (iq = ip + 1; iq < n; iq++) sm += Math.abs(a[ip][iq]);
+        if (sm < 1e-13) break;
+        for (ip = 0; ip < n - 1; ip++) {
+          for (iq = ip + 1; iq < n; iq++) {
+            if (Math.abs(a[ip][iq]) < 1e-300) { a[ip][iq] = 0; continue; }
+            var g = 100 * Math.abs(a[ip][iq]), h = a[iq][iq] - a[ip][ip], t;
+            if (Math.abs(h) + g === Math.abs(h)) { t = a[ip][iq] / h; }
+            else {
+              var theta = 0.5 * h / a[ip][iq];
+              t = 1 / (Math.abs(theta) + Math.sqrt(1 + theta * theta));
+              if (theta < 0) t = -t;
+            }
+            var c = 1 / Math.sqrt(1 + t * t), s = t * c, tau = s / (1 + c);
+            h = t * a[ip][iq];
+            a[ip][ip] -= h; a[iq][iq] += h; a[ip][iq] = 0;
+            var rot = function (m, i1, j1, i2, j2) {
+              var g1 = m[i1][j1], h1 = m[i2][j2];
+              m[i1][j1] = g1 - s * (h1 + g1 * tau);
+              m[i2][j2] = h1 + s * (g1 - h1 * tau);
+            };
+            for (j = 0; j < ip; j++) rot(a, j, ip, j, iq);
+            for (j = ip + 1; j < iq; j++) rot(a, ip, j, j, iq);
+            for (j = iq + 1; j < n; j++) rot(a, ip, j, iq, j);
+            for (j = 0; j < n; j++) rot(v, j, ip, j, iq);
+          }
+        }
+      }
+      var idx = [];
+      for (i = 0; i < n; i++) idx.push(i);
+      idx.sort(function (p, q) { return a[q][q] - a[p][p]; });
+      return {
+        values: idx.map(function (p) { return a[p][p]; }),
+        vectors: idx.map(function (p) { return v.map(function (row) { return row[p]; }); })
+      };
+    }
+    // keepIdx のサンプルだけで PCA を計算する。戻り: {coords:[PCごとの座標], varpct:[...]}
+    function picSubsetPCA(pd, keepIdx, ntop) {
+      var G = pd.mat.length, n = keepIdx.length, i, k, kk, q;
+      if (n < 3) return null;
+      var stat = [];
+      for (i = 0; i < G; i++) {
+        var row = pd.mat[i], m = 0;
+        for (k = 0; k < n; k++) m += row[keepIdx[k]];
+        m /= n;
+        var ss = 0;
+        for (k = 0; k < n; k++) { var dd = row[keepIdx[k]] - m; ss += dd * dd; }
+        stat.push({ i: i, mean: m, sd: Math.sqrt(ss / (n - 1)) });
+      }
+      // 分散 0 の遺伝子は標準化できない (prcomp も同様) ので除外してから上位 ntop
+      var usable = stat.filter(function (s) { return s.sd > 1e-9; });
+      usable.sort(function (p2, q2) { return q2.sd - p2.sd; });
+      var sel = usable.slice(0, Math.min(ntop, usable.length)), p = sel.length;
+      if (p < 2) return null;
+      var X = [];
+      for (k = 0; k < n; k++) X.push(new Array(p));
+      for (q = 0; q < p; q++) {
+        var st = sel[q], r = pd.mat[st.i];
+        for (k = 0; k < n; k++) X[k][q] = (r[keepIdx[k]] - st.mean) / st.sd;
+      }
+      var Gm = [];
+      for (k = 0; k < n; k++) Gm.push(new Array(n));
+      for (k = 0; k < n; k++) for (kk = k; kk < n; kk++) {
+        var acc = 0;
+        for (q = 0; q < p; q++) acc += X[k][q] * X[kk][q];
+        Gm[k][kk] = acc; Gm[kk][k] = acc;
+      }
+      var e = picJacobiEigen(Gm, n), tot = 0;
+      for (k = 0; k < n; k++) tot += Math.max(0, e.values[k]);
+      // 寄与率も座標も全 PC 分を返す (scree は PC1..PC15、CSV 出力は全 PC を使う)。
+      var varpct = [];
+      for (k = 0; k < n; k++) varpct.push(tot > 0 ? 100 * Math.max(0, e.values[k]) / tot : 0);
+      var npc = n, coords = [];
+      for (var pc = 0; pc < npc; pc++) {
+        var lam = Math.max(0, e.values[pc]), sq = Math.sqrt(lam), vec = e.vectors[pc], mi = 0;
+        // 符号は任意なので、絶対値最大の成分が正になるよう固定する
+        // (選択を変えるたびに軸が反転して見えるのを防ぐ)
+        for (k = 1; k < n; k++) if (Math.abs(vec[k]) > Math.abs(vec[mi])) mi = k;
+        var sg = vec[mi] < 0 ? -1 : 1, col = [];
+        for (k = 0; k < n; k++) col.push(sg * vec[k] * sq);
+        coords.push(col);
+      }
+      return { coords: coords, varpct: varpct, n: n, p: p };
+    }
+    function picPCAWarn(tab, msg) {
+      var host = tab.querySelector(".pic-ctrl");
+      if (!host) return;
+      var el = host.querySelector(".pic-ctrl-warn");
+      if (!msg) { if (el && el.parentNode) el.parentNode.removeChild(el); return; }
+      if (!el) { el = document.createElement("p"); el.className = "pic-ctrl-warn"; host.appendChild(el); }
+      el.textContent = msg;
+    }
+    // 初期状態 (R の prcomp が出した PCA) を退避しておく。全群を選び直したときは
+    // 再計算値ではなくこれを復元する: ブラウザ側の計算は R と数値的に一致するが、
+    // 埋め込み行列は小数を丸めてあるため完全に同じ値にはならない。全群のときは
+    // 元の図がそのまま出るほうが誤解がない。
+    function picStashPCA0(div) {
+      if (!div || !div.data || div._picPCA0) return;
+      var ax = function (a) { return a && a.title ? (a.title.text != null ? a.title.text : a.title) : null; };
+      div._picPCA0 = {
+        x: div.data.map(function (t) { return (t.x || []).slice(); }),
+        y: div.data.map(function (t) { return (t.y || []).slice(); }),
+        text: div.data.map(function (t) { return (t.text || []).slice(); }),          // replicate 番号
+        hovertext: div.data.map(function (t) { return (t.hovertext || []).slice(); }), // サンプル名
+        xt: ax(div.layout && div.layout.xaxis), yt: ax(div.layout && div.layout.yaxis)
+      };
+    }
+    function picRestorePCA0(div) {
+      if (!div || !div._picPCA0 || !div.data) return;
+      var s = div._picPCA0, idx = div.data.map(function (_, i) { return i; });
+      try {
+        Plotly.restyle(div, { x: s.x, y: s.y, text: s.text, hovertext: s.hovertext }, idx);
+        if (s.xt != null) Plotly.relayout(div, { "xaxis.title.text": s.xt, "yaxis.title.text": s.yt });
+      } catch (e) {}
+    }
+    // 現在チェックされているサンプルの添字。計算対象はサンプル側のチェックだけで決まる
+    // (group はその一括トグル)。sample トグルを持たない旧レイアウトでは group で判定。
+    function picPCAKeepIdx(tab, pd) {
+      var keepS = {}, hasS = false, keepG = {}, out = [], i;
+      tab.querySelectorAll(".pic-stoggle").forEach(function (c) { hasS = true; if (c.checked) keepS[c.dataset.sample] = 1; });
+      tab.querySelectorAll(".pic-gtoggle").forEach(function (c) { if (c.checked) keepG[c.dataset.group] = 1; });
+      for (i = 0; i < pd.samples.length; i++) {
+        if (hasS ? !keepS[pd.samples[i]] : !keepG[pd.groups[i]]) continue;
+        out.push(i);
+      }
+      return out;
+    }
+    // 選択中のサンプルだけで引き直した PCA 座標を CSV で保存する
+    // (R が出す PCA_RegLog_*.csv と同じ sample, PC1..PCn, group の並び)。
+    function picPCADownloadSelected(tab) {
+      if (!tab) return;
+      var pd = (typeof PIC_PCA !== "undefined" && PIC_PCA) ? PIC_PCA[tab.id] : null;
+      if (!pd || !pd.mat) return;
+      var keep = picPCAKeepIdx(tab, pd);
+      if (keep.length < 3) { alert("Select at least 3 samples to export a PCA."); return; }
+      var res = picSubsetPCA(pd, keep, pd.ntop || 500);
+      if (!res) { alert("Not enough usable genes for the current selection."); return; }
+      var npc = res.coords.length, head = ["sample"], pc, k;
+      for (pc = 0; pc < npc; pc++) head.push("PC" + (pc + 1));
+      head.push("group");
+      var rows = [head.join(",")];
+      for (k = 0; k < keep.length; k++) {
+        var row = [pd.samples[keep[k]]];
+        for (pc = 0; pc < npc; pc++) row.push(res.coords[pc][k]);
+        row.push(pd.groups[keep[k]]);
+        rows.push(row.join(","));
+      }
+      saveBlob(new Blob([rows.join("\n") + "\n"], { type: "text/csv" }),
+               "PCA_RegLog_" + (pd.project || "selected") + "_" + keep.length + "samples.csv");
+    }
+    // PCA タブなら再計算して true を返す。PCA データが無ければ false (従来処理へ)。
+    function picRecomputePCA(tab) {
+      var pd = (typeof PIC_PCA !== "undefined" && PIC_PCA) ? PIC_PCA[tab.id] : null;
+      if (!pd || !pd.mat || !pd.mat.length) return false;
+      var pairs = [[0, 1], [1, 2]];
+      var divs = pairs.map(function (pr) {
+        return document.getElementById(tab.id + "_PC" + (pr[0] + 1) + "_PC" + (pr[1] + 1));
+      });
+      var scree = document.getElementById(tab.id + "_scree");
+      divs.concat([scree]).forEach(picStashPCA0);
+
+      var keepIdx = picPCAKeepIdx(tab, pd);
+
+      // 全群を選んでいるときは R が計算した元の PCA に戻す
+      if (keepIdx.length === pd.samples.length) {
+        divs.concat([scree]).forEach(picRestorePCA0);
+        picPCAWarn(tab, "");
+        return true;
+      }
+      var res = keepIdx.length >= 3 ? picSubsetPCA(pd, keepIdx, pd.ntop || 500) : null;
+      if (!res) {
+        picPCAWarn(tab, "Select at least 3 samples to compute a PCA.");
+        return true;
+      }
+      picPCAWarn(tab, "");
+      // sample -> 新しい PC 座標
+      var coord = {};
+      for (var k = 0; k < res.n; k++) {
+        var s = pd.samples[keepIdx[k]], row = [];
+        for (var pc = 0; pc < res.coords.length; pc++) row.push(res.coords[pc][k]);
+        coord[s] = row;
+      }
+      var lbl = function (pc) {
+        return "PC" + (pc + 1) + (res.varpct[pc] != null ? " (" + res.varpct[pc].toFixed(1) + "%)" : "");
+      };
+      // 散布図: trace 構造 (色 / batch 分割 / legendgroup) は保ち、座標だけ差し替える
+      pairs.forEach(function (pr, pi) {
+        var div = divs[pi];
+        if (!div || !div.data) return;
+        var xs = [], ys = [], ts = [], hs = [], idxs = [];
+        div.data.forEach(function (t, ti) {
+          var s0 = div._picPCA0;
+          var names = (s0 ? s0.hovertext[ti] : t.hovertext) || [];  // サンプル名 (座標の引き当てに使う)
+          var reps = (s0 ? s0.text[ti] : t.text) || [];             // replicate 番号 (点のラベル)
+          var nx = [], ny = [], nt = [], nh = [];
+          for (var m = 0; m < names.length; m++) {
+            var nm = names[m];
+            if (coord[nm] && coord[nm].length > pr[1]) {
+              nx.push(coord[nm][pr[0]]); ny.push(coord[nm][pr[1]]);
+              nt.push(reps[m]); nh.push(nm);
+            }
+          }
+          xs.push(nx); ys.push(ny); ts.push(nt); hs.push(nh); idxs.push(ti);
+        });
+        try {
+          Plotly.restyle(div, { x: xs, y: ys, text: ts, hovertext: hs }, idxs);
+          Plotly.relayout(div, { "xaxis.title.text": lbl(pr[0]), "yaxis.title.text": lbl(pr[1]) });
+        } catch (e) {}
+      });
+      // scree (寄与率): R 側と同じく最大 15 本まで描く
+      if (scree && scree.data) {
+        var px = [], py = [], nb = Math.min(res.varpct.length, 15);
+        for (var pc2 = 0; pc2 < nb; pc2++) { px.push("PC" + (pc2 + 1)); py.push(res.varpct[pc2]); }
+        try { Plotly.restyle(scree, { x: [px], y: [py] }, [0]); } catch (e) {}
+      }
+      return true;
+    }
     // group トグル: plotly の trace を on/off + HTML テーブルの行/列を隠す
     function applyGroupToggles(tab) {
+      // PCA タブだけはトグルの意味が違う (計算対象の選択) ので専用処理に委ねる
+      if (picRecomputePCA(tab)) return;
       var hide = {};
       tab.querySelectorAll(".pic-gtoggle").forEach(function (c) { if (!c.checked) hide[c.dataset.group] = 1; });
       // plotly: group ごとに trace の visible を設定
@@ -644,9 +877,35 @@
         c.style.display = hide[c.dataset.gcol] ? "none" : "";
       });
     }
-    document.querySelectorAll(".pic-gtoggle").forEach(function (cb) {
+    // group -> sample 階層セレクタ: group のチェックは配下サンプルの一括トグル。
+    // 逆にサンプルを個別に触ったら、group 側は配下の状態から checked / indeterminate
+    // を決め直す (一部だけ選ばれている状態が見て分かるように)。
+    function picTreeApplyGroup(cb, tab) {
+      tab.querySelectorAll('.pic-stoggle[data-sgroup="' + cb.dataset.group + '"]').forEach(function (s) {
+        s.checked = cb.checked;
+      });
+    }
+    function picTreeSyncGroups(tab) {
+      tab.querySelectorAll(".pic-gtoggle").forEach(function (g) {
+        var kids = tab.querySelectorAll('.pic-stoggle[data-sgroup="' + g.dataset.group + '"]');
+        if (!kids.length) return;
+        var on = 0;
+        kids.forEach(function (k) { if (k.checked) on++; });
+        g.checked = on > 0;
+        g.indeterminate = on > 0 && on < kids.length;
+      });
+    }
+    // summary 内のチェックボックスを押しても折りたたみが切り替わらないようにする
+    document.querySelectorAll(".pic-tree-g > summary > .pic-gtoggle").forEach(function (cb) {
+      cb.addEventListener("click", function (e) { e.stopPropagation(); });
+    });
+    // group トグルと sample トグル (PCA の計算対象選択) の両方を拾う
+    document.querySelectorAll(".pic-gtoggle,.pic-stoggle").forEach(function (cb) {
       cb.addEventListener("change", function () {
-        var tab = cb.closest("section.pic-tab"); if (tab) applyGroupToggles(tab);
+        var tab = cb.closest("section.pic-tab"); if (!tab) return;
+        if (cb.classList.contains("pic-gtoggle")) picTreeApplyGroup(cb, tab);
+        picTreeSyncGroups(tab);
+        applyGroupToggles(tab);
       });
     });
     // HTML テーブルの Download PNG ボタン
@@ -688,6 +947,12 @@
       el.addEventListener("keydown", function (e) {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); downloadEmbedded(el.dataset.file); }
       });
+    });
+    // PCA の「選択中サンプルだけ」の CSV は埋め込みではなくその場で生成する
+    document.querySelectorAll(".pic-pca-dlsel").forEach(function (el) {
+      var run = function (e) { e.preventDefault(); picPCADownloadSelected(el.closest("section.pic-tab")); };
+      el.addEventListener("click", run);
+      el.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") run(e); });
     });
   });
 

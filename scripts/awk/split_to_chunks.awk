@@ -6,7 +6,7 @@
 #   あわせて read 名に UMI 情報を残す。
 # 入力:
 #   stdin から受け取る連結済み paired FASTQ。
-#   変数: barcodes, samples, chunk, tmp_dir。
+#   変数: barcodes, samples, chunk, tmp_dir, barcode_first。
 # 出力:
 #   tmp_dir 配下の sample ごとの FASTQ 断片と read 数ファイル。
 
@@ -29,10 +29,17 @@ function file_name(sample, suffix) {
     output_file = ""
     emit_read = 0
   } else if (NR % 4 == 2) {
-    # PIC の read1 先頭 6 塩基が UMI、続く 6 塩基が barcode という前提。
-    barcode = substr($1, 7, 6)
-    if (barcode in barcode_to_sample) {
+    # 既定 (barcode_first 未指定) は PIC 標準の read1 先頭 6 塩基が UMI、
+    # 続く 6 塩基が barcode。barcode_first=1 のライブラリは順序が逆で、
+    # 先頭 6 塩基が barcode、続く 6 塩基が UMI になる。
+    if (barcode_first == 1) {
+      barcode = substr($1, 1, 6)
+      umi = substr($1, 7, 6)
+    } else {
+      barcode = substr($1, 7, 6)
       umi = substr($1, 1, 6)
+    }
+    if (barcode in barcode_to_sample) {
       sample = barcode_to_sample[barcode]
       output_file = file_name(sample, "fastq")
       nreads[sample]++

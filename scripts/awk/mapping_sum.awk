@@ -10,9 +10,14 @@
 #   mapping と UMI の指標をまとめたタブ区切りの集計行。
 
 BEGIN {
+  # job_queue は sample_sheet から生成されるので、その行順が sample_sheet の並び。
+  # sample 名でソートすると実験の並びが崩れるため、順序番号を持ち回して
+  # 呼び出し側 (workflow_mapping.sh) がこれでソートできるようにする。
+  nord = 0
   while ((getline < job_queue) > 0) {
     barcode[$4] = $3
     group[$4] = $5
+    if (!($4 in ord)) ord[$4] = ++nord
     points[$4] = points[$4] ? points[$4] "," $6 : $6
   }
   close(job_queue)
@@ -66,7 +71,10 @@ BEGIN {
     umi_per_gene = genes > 0 ? umis/genes : "NA"
     ass_per_umis = umis > 0 ? reads["Assigned"]/umis : "NA"
 
-    print sample, group[sample], barcode[sample], total, trimmed, reads["Unmapped"], multi, \
+    # 先頭列は sample_sheet 順のソートキー。呼び出し側が cut で落とす。
+    # simulation mode では 1 sample から point ごとに複数行出るが、その並びは
+    # total (=サブサンプリングのリード数) の数値昇順で揃える (呼び出し側の第 2 キー)。
+    print ord[sample], sample, group[sample], barcode[sample], total, trimmed, reads["Unmapped"], multi, \
           reads["NoFeatures"], reads["Ambiguity"], reads["Assigned"], \
           umis, genes, umi_per_gene, ass_per_umis
   }
