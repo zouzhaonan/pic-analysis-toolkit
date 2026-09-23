@@ -51,6 +51,12 @@ main <- function() {
       get("pic_size_factor_method", envir = globalenv())
     } else "poscounts"
   )
+  pic_write_analysis_param(
+    args$out_dir, paste0("dispersion_method__", args$genome),
+    if (exists("pic_dispersion_method", envir = globalenv())) {
+      get("pic_dispersion_method", envir = globalenv())
+    } else "group"
+  )
   message("[INFO] Building stats and summary tables")
   stats_tables <- build_stats_tables(deseq_result$stats, contrasts, e2g, args$fdr)
   normcount <- build_normalized_counts(deseq_result$dds, e2g)

@@ -328,6 +328,7 @@ build_expression_section <- function(reg, deseq2_dir, project, group_map, group_
     '<p class="pic-note">Compare the expression of individual genes across sample groups. ',
     'Start typing a gene ID or symbol and pick it from the list to add it as a tag; ',
     'click <b>&times;</b> on a tag (or press Backspace) to remove it. The plot updates automatically. ',
+    'Each gene gets its own panel with its own y-axis scale (starting at 0), so compare heights within a panel, not across panels. ',
     'Each box shows the distribution of normalized counts for one group; dots are individual samples.</p>',
     '<p class="pic-note">A gene name turns <b style="color:#d7301f">red</b> when its adjusted p-value (padj) ',
     'is below the significance threshold (FDR = %s) in at least one comparison. ',

@@ -256,56 +256,31 @@ run_deseq <- function(mat, def, contrasts) {
       stop(deseq_fit)
     }
 
-    dds <- DESeq2::estimateSizeFactors(dds)
-    normalized_counts <- DESeq2::counts(dds, normalized = TRUE)
-    base_mean <- rowMeans(normalized_counts, na.rm = TRUE)
-
-    results_list <- purrr::imap(
-      contrasts,
-      function(contrast_values, contrast_name) {
-        numerator <- contrast_values[[2]]
-        denominator <- contrast_values[[3]]
-
-        numerator_samples <- label_df$sample[label_df$group == numerator]
-        denominator_samples <- label_df$sample[label_df$group == denominator]
-
-        numerator_mean <- rowMeans(
-          normalized_counts[, numerator_samples, drop = FALSE],
-          na.rm = TRUE
-        )
-        denominator_mean <- rowMeans(
-          normalized_counts[, denominator_samples, drop = FALSE],
-          na.rm = TRUE
-        )
-        log2_fc <- log2((numerator_mean + 1) / (denominator_mean + 1))
-
-        as.data.frame(
-          list(
-            baseMean = base_mean,
-            log2FoldChange = log2_fc,
-            lfcSE = NA_real_,
-            stat = NA_real_,
-            pvalue = NA_real_,
-            padj = NA_real_
-          ),
-          row.names = rownames(normalized_counts)
-        )
-      }
-    )
+    nc <- DESeq2::counts(dds, normalized = TRUE)
+    rng <- apply(log2(nc + 1), 1, function(x) diff(range(x)))
+    ok <- rowMeans(nc) > 5
+    stable <- ok & rng <= stats::quantile(rng[ok], 0.5)
+    ref <- dds[stable, ]
+    DESeq2::design(ref) <- ~1
+    ref <- DESeq2::estimateDispersionsFit(DESeq2::estimateDispersionsGeneEst(ref))
+    DESeq2::dispersions(dds) <- pmax(DESeq2::dispersionFunction(ref)(rowMeans(nc)), 1e-8)
+    dds <- DESeq2::nbinomWaldTest(dds)
+    assign("pic_dispersion_method", "stable_trend", envir = globalenv())
   } else {
     dds <- deseq_fit
-
-    results_list <- purrr::imap(
-      contrasts,
-      ~ DESeq2::results(
-        dds,
-        contrast = .x,
-        lfcThreshold = log2(1),
-        independentFiltering = FALSE,
-        cooksCutoff = FALSE
-      )
-    )
+    assign("pic_dispersion_method", "group", envir = globalenv())
   }
+
+  results_list <- purrr::imap(
+    contrasts,
+    ~ DESeq2::results(
+      dds,
+      contrast = .x,
+      lfcThreshold = log2(1),
+      independentFiltering = FALSE,
+      cooksCutoff = FALSE
+    )
+  )
 
   list(
     dds = dds,

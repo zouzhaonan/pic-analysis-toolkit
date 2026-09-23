@@ -330,16 +330,33 @@ build_overview_section <- function(run, genome, pre_steps = list(), extra_tools 
   # genome 別キーを優先し、旧出力 (genome 非依存キー) にはフォールバックする。
   sf_method <- pic_param(params, paste0("size_factor_method__", genome),
                          pic_param(params, "size_factor_method", "poscounts"))
+  blind_disp <- identical(pic_param(params, paste0("dispersion_method__", genome), "group"), "stable_trend")
   if (identical(sf_method, "libsize")) {
     sf_label <- "library-size"
     sf_code <- paste0(
 'lib &lt;- colSums(counts(dds))\n',
 'sizeFactors(dds) &lt;- lib / exp(mean(log(lib)))\n',
-'dds &lt;- DESeq(dds)\n')
+if (blind_disp) '' else 'dds &lt;- DESeq(dds)\n')
   } else {
     sf_label <- "poscounts"
-    sf_code <- 'dds &lt;- DESeq(dds, sfType = "poscounts")\n'
+    sf_code <- if (blind_disp) 'dds &lt;- estimateSizeFactors(dds, type = "poscounts")\n'
+               else 'dds &lt;- DESeq(dds, sfType = "poscounts")\n'
   }
+  if (blind_disp) {
+    sf_code <- paste0(sf_code,
+'nc &lt;- counts(dds, normalized = TRUE)\n',
+'rng &lt;- apply(log2(nc + 1), 1, function(x) diff(range(x)))\n',
+'ok &lt;- rowMeans(nc) &gt; 5\n',
+'ref &lt;- dds[ok &amp; rng &lt;= quantile(rng[ok], 0.5), ]\n',
+'design(ref) &lt;- ~1\n',
+'ref &lt;- estimateDispersionsFit(estimateDispersionsGeneEst(ref))\n',
+'dispersions(dds) &lt;- dispersionFunction(ref)(rowMeans(nc))\n',
+'dds &lt;- nbinomWaldTest(dds)\n')
+  }
+  blind_desc <- if (blind_disp) {
+    paste0(' With no replicates (n&nbsp;=&nbsp;1 per group), the dispersion trend is fitted on the most stable half ',
+           'of expressed genes (smallest between-sample change, mean normalized count &gt;&nbsp;5) and applied to all genes.')
+  } else ""
 
   # DESeq2 の design / batch 補正を analysis_params から反映する
   # (deseq2 が記録していない旧出力では従来どおり ~group として表示)。
@@ -398,7 +415,7 @@ build_overview_section <- function(run, genome, pre_steps = list(), extra_tools 
       desc = paste0('Join the per-sample UMI counts into a genes&times;samples matrix and run <code>DESeq2</code>: ',
                     '<code>', html_escape(ds_design), '</code> design, <b>', sf_label, '</b> size factors, ',
                     'all pairwise group contrasts, DEGs at <code>padj&nbsp;&lt;&nbsp;0.1</code>.',
-                    batch_desc, batch_vis),
+                    blind_desc, batch_desc, batch_vis),
       code = code_block(paste0(
 '<span class="c"># R</span>\n',
 'grp &lt;- c("Cntl_Nega","Cntl_Nega","Cntl_Nega", "Cntl_Posi","Cntl_Posi","Cntl_Posi", ...)  <span class="c"># one per sample</span>\n',

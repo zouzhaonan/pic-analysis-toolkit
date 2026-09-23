@@ -237,53 +237,94 @@
 
     function dispLabel(gi) { return data.ext[gi] ? (data.ext[gi] + " (" + data.ens[gi] + ")") : data.ens[gi]; }
 
+    // 遺伝子ごとに独立した y 軸 (下端 0、各遺伝子で最適スケール) を持つ小パネルを並べる。
+    // 列数はコンテナ幅から決め、幅が変わって列数が変わるときだけ描き直す。
+    var PANEL_ROW_H = 260, PANEL_VGAP = 56, PANEL_HGAP = 56;
+    var plotState = { idxs: [], ncol: 0 };
+    function panelCols(width, n) {
+      var minW = Math.max(170, 70 + groups.length * 34);
+      return Math.max(1, Math.min(n, Math.floor((width + PANEL_HGAP) / (minW + PANEL_HGAP))));
+    }
+    function axId(i) { return i === 0 ? "" : String(i + 1); }
     function plotGenes(idxs) {
+      plotState.idxs = idxs.slice();
       plots.innerHTML = "";
+      plotState.ncol = 0;
       if (!idxs.length) return;
+      var width = plots.clientWidth;
+      if (!width) return;   // 非表示タブ: 表示されたら ResizeObserver が描く
+      var n = idxs.length, ncol = panelCols(width, n), nrow = Math.ceil(n / ncol);
+      plotState.ncol = ncol;
+      var mar = { l: 78, r: 12, t: 34, b: 50 };
+      var H = mar.t + mar.b + nrow * PANEL_ROW_H + (nrow - 1) * PANEL_VGAP;
+      var plotW = Math.max(1, width - mar.l - mar.r), plotH = H - mar.t - mar.b;
+      var colW = (plotW - (ncol - 1) * PANEL_HGAP) / ncol;
       var div = document.createElement("div");
       div.className = "pic-plot";
-      div.style.height = Math.max(360, 300 + idxs.length * 8) + "px";
+      div.style.height = H + "px";
       plots.appendChild(div);
-      var geneLabels = idxs.map(function (gi) { return data.ext[gi] || data.ens[gi]; });
-      // group ごとに 1 トレース: x = 遺伝子(大カテゴリ), boxmode=group で group を横並び
-      var traces = groups.map(function (g) {
-        var xs = [], ys = [];
-        idxs.forEach(function (gi) {
-          var counts = data.counts[gi], gl = data.ext[gi] || data.ens[gi];
-          for (var s = 0; s < data.samples.length; s++) {
-            if (data.groups[s] === g) { xs.push(gl); ys.push(counts[s]); }
-          }
+      var layout = {
+        showlegend: true, hovermode: false,
+        legend: { orientation: "h", yanchor: "bottom", y: 1 + 6 / plotH, x: 0 },
+        margin: mar,
+        // 縦軸名は左端に 1 つだけ
+        annotations: [{ text: "Normalized count", xref: "paper", yref: "paper", x: 0, y: 0.5,
+                        xanchor: "center", yanchor: "middle", xshift: -62, textangle: -90,
+                        showarrow: false, font: { size: 14 } }]
+      };
+      var traces = [];
+      idxs.forEach(function (gi, k) {
+        var r = Math.floor(k / ncol), c = k % ncol, id = axId(k);
+        var x0 = c * (colW + PANEL_HGAP) / plotW, x1 = (c * (colW + PANEL_HGAP) + colW) / plotW;
+        var yTop = 1 - r * (PANEL_ROW_H + PANEL_VGAP) / plotH, yBot = yTop - PANEL_ROW_H / plotH;
+        var gl = data.ext[gi] || data.ens[gi];
+        // x は群 (色で区別できるので目盛りは出さない)。遺伝子名は x 軸タイトルに置く
+        layout["xaxis" + id] = { domain: [x0, Math.min(1, x1)], anchor: "y" + id, type: "category",
+                                 categoryorder: "array", categoryarray: groups, showticklabels: false,
+                                 title: { text: escHtml(gl), standoff: 6, font: { size: 13 } },
+                                 fixedrange: true, showline: true, linecolor: "#d7dee6", mirror: true };
+        layout["yaxis" + id] = { domain: [Math.max(0, yBot), yTop], anchor: "x" + id,
+                                 rangemode: "tozero", zeroline: false,
+                                 showline: true, linecolor: "#d7dee6", mirror: true };
+        groups.forEach(function (g) {
+          var ys = [], counts = data.counts[gi];
+          for (var s = 0; s < data.samples.length; s++) if (data.groups[s] === g) ys.push(counts[s]);
+          var col = data.palette[g] || "#1f77b4";
+          traces.push({
+            // 凡例テキストも group 色付き。group トグルは legendgroup (素の g) で全パネル一括
+            type: "box", name: '<span style="color:' + col + '">' + escHtml(g) + '</span>',
+            legendgroup: g, showlegend: k === 0, xaxis: "x" + id, yaxis: "y" + id,
+            x: ys.map(function () { return g; }), y: ys, boxpoints: "all", jitter: 0.5, pointpos: 0,
+            marker: { color: col, size: 5 }, line: { color: col }, fillcolor: hexToRgba(col, 0.25)
+          });
         });
-        var col = data.palette[g] || "#1f77b4";
-        return {
-          // 凡例テキストも group 色付き。group トグルは legendgroup (素の g) で判定
-          type: "box", name: '<span style="color:' + col + '">' + escHtml(g) + '</span>', legendgroup: g,
-          x: xs, y: ys, boxpoints: "all", jitter: 0.5, pointpos: 0,
-          marker: { color: col, size: 5 }, line: { color: col }, fillcolor: hexToRgba(col, 0.25)
-        };
       });
-      // 遺伝子間の縦の区切り線 (カテゴリ境界 = i-0.5)
-      var seps = [];
-      for (var b = 1; b < idxs.length; b++) {
-        seps.push({ type: "line", x0: b - 0.5, x1: b - 0.5, xref: "x", yref: "paper", y0: 0, y1: 1,
-                    line: { color: "#d7dee6", width: 1 } });
-      }
-      Plotly.newPlot(div, traces, {
-        yaxis: { title: "Normalized count", rangemode: "tozero" },
-        xaxis: { type: "category", categoryorder: "array", categoryarray: geneLabels },
-        boxmode: "group", showlegend: true, shapes: seps, hovermode: false,
-        legend: { orientation: "h", yanchor: "bottom", y: 1.02, x: 0 },
-        margin: { l: 56, r: 16, t: 30, b: 80 }
-      }, { responsive: true, displaylogo: false }).then(function () {
+      Plotly.newPlot(div, traces, layout, { responsive: true, displaylogo: false }).then(function () {
         attachTickTips(div, idxs);
         div.on("plotly_afterplot", function () { attachTickTips(div, idxs); });
       });
       div.dataset.rendered = "1";
-      // 凡例で group を on/off した後、表示中 group だけで y を再スケール
+      // 凡例で group を on/off した後、表示中 group だけで各 y を再スケール
       div.on("plotly_legendclick", function () {
-        setTimeout(function () { try { Plotly.relayout(div, { "yaxis.autorange": true }); } catch (e) {} }, 60);
+        setTimeout(function () {
+          var upd = {};
+          idxs.forEach(function (gi, k) { upd["yaxis" + axId(k) + ".autorange"] = true; });
+          try { Plotly.relayout(div, upd); } catch (e) {}
+        }, 60);
         return true;
       });
+    }
+    // ウィンドウ/分割幅の変化に追従: 列数が変わるときは描き直し、同じなら plotly の resize で足りる
+    if (window.ResizeObserver) {
+      var _roTimer = null;
+      new ResizeObserver(function () {
+        clearTimeout(_roTimer);
+        _roTimer = setTimeout(function () {
+          if (!plotState.idxs.length || !plots.clientWidth) return;
+          var nc = panelCols(plots.clientWidth, plotState.idxs.length);
+          if (nc !== plotState.ncol) plotGenes(plotState.idxs);
+        }, 120);
+      }).observe(plots);
     }
 
     // x 軸の遺伝子ラベルに hover -> contrast ごとの padj (q-value) を表示
@@ -299,13 +340,15 @@
       var tip = ensureTip();
       div.style.position = "relative";
       div.querySelectorAll(".pic-expr-tickzone").forEach(function (z) { z.remove(); });
-      var ticks = div.querySelectorAll(".xaxislayer-above .xtick text");
-      if (!ticks.length) ticks = div.querySelectorAll(".xtick text");
+      // 各パネルの x 軸タイトル (= 遺伝子名) を拾う
+      var ticks = idxs.map(function (gi, k) {
+        return div.querySelector("text." + (k === 0 ? "x" : "x" + (k + 1)) + "title");
+      });
       var drect = div.getBoundingClientRect();
       var fdr = (typeof data.fdr === "number") ? data.fdr : 0.1;
       ticks.forEach(function (t, k) {
         var gi = idxs[k];
-        if (gi === undefined) return;
+        if (gi === undefined || !t) return;
         var q = data.qval[gi] || [];
         var sig = q.some(function (v) { return v != null && !isNaN(v) && v < fdr; });
         if (sig) { t.style.fill = "#d7301f"; t.style.fontWeight = "700"; }
