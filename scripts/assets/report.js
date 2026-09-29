@@ -38,6 +38,7 @@
 
   function renderWithin(root) {
     root.querySelectorAll(".pic-plot").forEach(renderPlot);
+    root.querySelectorAll(".pic-expr").forEach(function (b) { if (b._picRefit) b._picRefit(); });
   }
   function resizeWithin(root) {
     root.querySelectorAll(".pic-plot").forEach(function (p) {
@@ -253,8 +254,13 @@
       if (!idxs.length) return;
       var width = plots.clientWidth;
       if (!width) return;   // 非表示タブ: 表示されたら ResizeObserver が描く
+      var on = activeSamples();
+      var shownGroups = groups.filter(function (g) {
+        return data.samples.some(function (sm, s) { return data.groups[s] === g && on[sm]; });
+      });
       var n = idxs.length, ncol = panelCols(width, n), nrow = Math.ceil(n / ncol);
       plotState.ncol = ncol;
+      plotState.shown = shownGroups;
       var mar = { l: 78, r: 12, t: 34, b: 50 };
       var H = mar.t + mar.b + nrow * PANEL_ROW_H + (nrow - 1) * PANEL_VGAP;
       var plotW = Math.max(1, width - mar.l - mar.r), plotH = H - mar.t - mar.b;
@@ -280,15 +286,15 @@
         var gl = data.ext[gi] || data.ens[gi];
         // x は群 (色で区別できるので目盛りは出さない)。遺伝子名は x 軸タイトルに置く
         layout["xaxis" + id] = { domain: [x0, Math.min(1, x1)], anchor: "y" + id, type: "category",
-                                 categoryorder: "array", categoryarray: groups, showticklabels: false,
+                                 categoryorder: "array", categoryarray: shownGroups, showticklabels: false,
                                  title: { text: escHtml(gl), standoff: 6, font: { size: 13 } },
                                  fixedrange: true, showline: true, linecolor: "#d7dee6", mirror: true };
         layout["yaxis" + id] = { domain: [Math.max(0, yBot), yTop], anchor: "x" + id,
                                  rangemode: "tozero", zeroline: false,
                                  showline: true, linecolor: "#d7dee6", mirror: true };
-        groups.forEach(function (g) {
+        shownGroups.forEach(function (g) {
           var ys = [], counts = data.counts[gi];
-          for (var s = 0; s < data.samples.length; s++) if (data.groups[s] === g) ys.push(counts[s]);
+          for (var s = 0; s < data.samples.length; s++) if (data.groups[s] === g && on[data.samples[s]]) ys.push(counts[s]);
           var col = data.palette[g] || "#1f77b4";
           traces.push({
             // 凡例テキストも group 色付き。group トグルは legendgroup (素の g) で全パネル一括
@@ -315,23 +321,32 @@
       });
     }
     // ウィンドウ/分割幅の変化に追従: 列数が変わるときは描き直し、同じなら plotly の resize で足りる
+    // 左パネルの group トグルで表示するサンプルを絞る (トグルが無い group は表示)
+    function activeSamples() {
+      var off = {}, on = {};
+      box.querySelectorAll(".pic-gtoggle").forEach(function (c) { if (!c.checked) off[c.dataset.group] = 1; });
+      data.samples.forEach(function (sm, s) { on[sm] = !off[data.groups[s]]; });
+      return on;
+    }
+    box._picRefilter = function () { if (plotState.idxs.length) plotGenes(plotState.idxs); };
+    box._picRefit = function () {
+      if (!plotState.idxs.length || !plots.clientWidth) return;
+      if (panelCols(plots.clientWidth, plotState.idxs.length) !== plotState.ncol) plotGenes(plotState.idxs);
+    };
     if (window.ResizeObserver) {
       var _roTimer = null;
       new ResizeObserver(function () {
         clearTimeout(_roTimer);
-        _roTimer = setTimeout(function () {
-          if (!plotState.idxs.length || !plots.clientWidth) return;
-          var nc = panelCols(plots.clientWidth, plotState.idxs.length);
-          if (nc !== plotState.ncol) plotGenes(plotState.idxs);
-        }, 120);
+        _roTimer = setTimeout(box._picRefit, 120);
       }).observe(plots);
     }
 
-    // x 軸の遺伝子ラベルに hover -> contrast ごとの padj (q-value) を表示
-    function fmtQ(v) {
+    // 遺伝子名に hover -> contrast ごとの p / padj を -log10 で表示
+    function fmtLog(v) {
       if (v == null || isNaN(v)) return "NA";
-      if (v !== 0 && (v < 0.001 || v >= 1000)) return v.toExponential(2);
-      return String(v);
+      if (v <= 0) return "&gt;300";
+      var l = -Math.log10(v);
+      return (l < 0.05 ? 0 : l).toFixed(1);
     }
     // x 軸の遺伝子ラベルに、確実に hover できる透明オーバーレイを重ねる。
     // (plotly の目盛りテキストは実操作で mouse イベントが届きにくいため)
@@ -346,11 +361,19 @@
       });
       var drect = div.getBoundingClientRect();
       var fdr = (typeof data.fdr === "number") ? data.fdr : 0.1;
+      // 表示中の群どうしの contrast だけを対象にする
+      var shownSet = {};
+      (plotState.shown || groups).forEach(function (g) { shownSet[g] = 1; });
+      var cidx = [];
+      data.contrasts.forEach(function (c, ci) {
+        var ab = String(c).split(" / ");
+        if (ab.length === 2 && shownSet[ab[0]] && shownSet[ab[1]]) cidx.push(ci);
+      });
       ticks.forEach(function (t, k) {
         var gi = idxs[k];
         if (gi === undefined || !t) return;
         var q = data.qval[gi] || [];
-        var sig = q.some(function (v) { return v != null && !isNaN(v) && v < fdr; });
+        var sig = cidx.some(function (ci) { var v = q[ci]; return v != null && !isNaN(v) && v < fdr; });
         if (sig) { t.style.fill = "#d7301f"; t.style.fontWeight = "700"; }
         var r = t.getBoundingClientRect();
         var zone = document.createElement("div");
@@ -360,26 +383,25 @@
           (r.width + 16) + "px;height:" + (r.height + 10) + "px;";
         (function (gi) {
           function show(e) {
-            var qq = data.qval[gi] || [];
-            var rows = data.contrasts.map(function (c, ci) {
-              var v = qq[ci];
-              if (v != null && !isNaN(v) && v >= 1) return "";  // padj=1 (有意でない) の行は非表示
-              return "<tr><td>" + escHtml(c) + "</td><td>" + fmtQ(qq[ci]) + "</td></tr>";
+            var qq = data.qval[gi] || [], pp = (data.pval && data.pval[gi]) || [];
+            var rows = cidx.map(function (ci) {
+              var q = qq[ci], sigq = q != null && !isNaN(q) && q < fdr;
+              return "<tr><td>" + escHtml(data.contrasts[ci]) + "</td><td>" + fmtLog(pp[ci]) + "</td><td" +
+                (sigq ? " class='pic-expr-tip-sig'" : "") + ">" + fmtLog(q) + "</td></tr>";
             }).join("");
             var head = "<div class='pic-expr-tip-h'>" + escHtml(data.ext[gi] || data.ens[gi]) + "</div>";
-            var body = rows
-              ? "<table><tr><th>contrast</th><th>padj</th></tr>" + rows + "</table>"
-              : "<div class='pic-expr-tip-none'>not significant (padj = 1) in any comparison</div>";
-            tip.innerHTML = head + body;
+            tip.innerHTML = head + (rows
+              ? "<table><tr><th>contrast</th><th>&minus;log<sub>10</sub> p</th><th>&minus;log<sub>10</sub> padj</th></tr>" + rows + "</table>"
+              : "<div class='pic-expr-tip-none'>no comparison among the shown groups</div>");
             tip.style.display = "block";
-            // 描画後の実寸で viewport 内にクランプ (下端の見切れ防止・必要なら上/左へ反転)
+            // カーソルの横 (右、入らなければ左) に、縦はカーソル中心で viewport 内にクランプ
             tip.style.left = "0px"; tip.style.top = "0px";
             var tw = tip.offsetWidth, th = tip.offsetHeight;
             var vw = window.innerWidth, vh = window.innerHeight;
-            var left = e.clientX + 14;
-            if (left + tw > vw - 6) left = e.clientX - 14 - tw;
+            var left = e.clientX + 18;
+            if (left + tw > vw - 6) left = e.clientX - 18 - tw;
             if (left < 6) left = 6;
-            var top = e.clientY + 14;
+            var top = e.clientY - th / 2;
             if (top + th > vh - 6) top = vh - th - 6;
             if (top < 6) top = 6;
             tip.style.left = left + "px"; tip.style.top = top + "px";
@@ -856,6 +878,8 @@
     function applyGroupToggles(tab) {
       // PCA タブだけはトグルの意味が違う (計算対象の選択) ので専用処理に委ねる
       if (picRecomputePCA(tab)) return;
+      var exprs = tab.querySelectorAll(".pic-expr");
+      if (exprs.length) { exprs.forEach(function (b) { if (b._picRefilter) b._picRefilter(); }); return; }
       var hide = {};
       tab.querySelectorAll(".pic-gtoggle").forEach(function (c) { if (!c.checked) hide[c.dataset.group] = 1; });
       // plotly: group ごとに trace の visible を設定

@@ -145,13 +145,16 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-expr-ac{display:none;position:absolute;z-index:60;left:0;right:0;top:calc(100% + 2px);max-height:280px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
 .pic-expr-ac-item{padding:6px 10px;font-size:13px;cursor:pointer;white-space:nowrap}
 .pic-expr-ac-item:hover{background:#eef3f9}
-.pic-expr-tip{position:fixed;z-index:200;pointer-events:none;background:#1f2933;color:#fff;border-radius:6px;padding:6px 8px;font-size:12px;max-width:320px;max-height:calc(100vh - 12px);overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.pic-expr-tip{position:fixed;z-index:200;pointer-events:none;background:#1f2933;color:#fff;border-radius:6px;padding:6px 8px;font-size:12px;max-width:480px;max-height:calc(100vh - 12px);overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.25)}
 .pic-expr-tip-h{font-weight:700;margin-bottom:4px}
 .pic-expr-tip table{border-collapse:collapse}
 .pic-expr-tip th,.pic-expr-tip td{text-align:left;padding:1px 8px 1px 0;font-variant-numeric:tabular-nums}
+.pic-expr-tip th+th,.pic-expr-tip td+td{text-align:right;padding-left:10px}
 .pic-expr-tip th{color:#9aa4af;font-weight:600}
+.pic-expr-tip-sig{color:#ff8a7a;font-weight:700}
 .pic-expr-tip-none{color:#cdd7e2}
 .pic-expr-msg{color:#b45309;font-size:13px;min-height:1em;margin:2px 0}
+.pic-expr-msg+h4{margin-top:12px}
 .pic-expr-plots{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
 
 /* 複数ブロックをチェックボックスで表示選択 */

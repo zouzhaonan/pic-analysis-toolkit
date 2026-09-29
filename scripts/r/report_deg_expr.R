@@ -277,6 +277,7 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
   default_ens <- character(0)
   contrasts <- character(0)
   qval <- NULL
+  pval <- NULL
   if (!is.null(stats) && all(c("ens_gene", "aspect") %in% colnames(stats))) {
     stats$ens_gene <- as.character(stats$ens_gene)
     if ("pvalue" %in% colnames(stats)) {
@@ -290,13 +291,17 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
     if ("padj" %in% colnames(stats)) {
       contrasts <- unique(as.character(stats$aspect))
       if (!is.null(group_order)) contrasts <- pic_order_contrasts(contrasts, group_order)
+      has_p <- "pvalue" %in% colnames(stats)
       qmat <- matrix(NA_real_, nrow = length(ens_all), ncol = length(contrasts))
+      pmat <- qmat
       for (ci in seq_along(contrasts)) {
-        sub <- stats[as.character(stats$aspect) == contrasts[ci], c("ens_gene", "padj")]
+        sub <- stats[as.character(stats$aspect) == contrasts[ci], , drop = FALSE]
         idx <- match(ens_all, sub$ens_gene)
         qmat[, ci] <- signif(as.numeric(sub$padj)[idx], 3)
+        if (has_p) pmat[, ci] <- signif(as.numeric(sub$pvalue)[idx], 3)
       }
-      qval <- lapply(seq_len(nrow(qmat)), function(i) as.numeric(qmat[i, ]))
+      qval <- lapply(seq_len(nrow(qmat)), function(i) as.list(as.numeric(qmat[i, ])))
+      if (has_p) pval <- lapply(seq_len(nrow(pmat)), function(i) as.list(as.numeric(pmat[i, ])))
       # 表示用 contrast 名は deftable どおりの casing に (stats$aspect は小文字化されている)
       # 注: 名前付きベクトルにすると JSON が配列でなくオブジェクトになり JS 側で map できないため unname
       contrasts <- unname(vapply(contrasts, function(cc) paste(vapply(strsplit(cc, " / ", fixed = TRUE)[[1]], function(g) group_name_of(g, group_pal), character(1)), collapse = " / "), character(1)))
@@ -313,6 +318,7 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
     default = as.list(default_ens),
     contrasts = as.list(contrasts),
     qval = qval,
+    pval = pval,
     fdr = pic_plot_spec()$defaults$fdr
   )
   TRUE
@@ -323,6 +329,7 @@ build_expression_section <- function(reg, deseq2_dir, project, group_map, group_
   if (!register_expr_data(reg, id, deseq2_dir, project, group_map, group_pal, stats, sample_order, group_order)) return("")
   countf <- file.path(deseq2_dir, sprintf("normalizedCountTable_%s.csv", project))
   fdr <- pic_plot_spec()$defaults$fdr
+  tree <- group_toggle_panel(group_pal[names(group_pal) %in% unlist(reg$expr[[id]]$groups)])
   sprintf(paste0(
     '<section id="%s"><h2>%s</h2>',
     '<p class="pic-note">Compare the expression of individual genes across sample groups. ',
@@ -331,19 +338,18 @@ build_expression_section <- function(reg, deseq2_dir, project, group_map, group_
     'Each gene gets its own panel with its own y-axis scale (starting at 0), so compare heights within a panel, not across panels. ',
     'Each box shows the distribution of normalized counts for one group; dots are individual samples.</p>',
     '<p class="pic-note">A gene name turns <b style="color:#d7301f">red</b> when its adjusted p-value (padj) ',
-    'is below the significance threshold (FDR = %s) in at least one comparison. ',
-    'Hover over a gene name to see its padj per comparison; comparisons with padj&nbsp;=&nbsp;1 are omitted, ',
-    'and if none remain the gene is flagged as not significant in any comparison.</p>',
+    'is below the significance threshold (FDR = %s) in at least one comparison between the shown groups. ',
+    'Hover over a gene name to see &minus;log<sub>10</sub> p-value and &minus;log<sub>10</sub> padj for every comparison between the shown groups (larger = more significant). Use the Groups panel to narrow the groups and comparisons.</p>',
     '%s',
     '<div class="pic-expr" data-expr="%s">',
     '<div class="pic-expr-side"><h4>Genes</h4>',
     '<div class="pic-expr-typeahead"><div class="pic-expr-tagbox">',
     '<input class="pic-expr-input" type="text" autocomplete="off" placeholder="Add a gene…"></div>',
     '<div class="pic-expr-ac"></div></div>',
-    '<div class="pic-expr-msg"></div></div>',
+    '<div class="pic-expr-msg"></div>%s</div>',
     '<div class="pic-expr-plots"></div></div></section>'),
     section_id, html_escape(heading), format(fdr, trim = TRUE),
-    src_note(report_rel_path(countf, proj_dir)), id)
+    src_note(report_rel_path(countf, proj_dir)), id, tree)
 }
 
 # DEG クラスタの挙動 (group ごとの rlog 分布) を facet で示す図。
