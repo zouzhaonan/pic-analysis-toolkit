@@ -161,7 +161,7 @@ pic_set_size_factors <- function(dds) {
   )
 
   degenerate <- is.null(sf) || any(!is.finite(sf)) || any(sf <= 0)
-  if (!degenerate && length(sf) > 2) {
+  if (!degenerate && length(sf) >= 2) {
     # サイズ因子が深度差をどれだけ追随できているかで判定する。
     # 正常なら log(sizeFactor) は log(ライブラリサイズ) と同程度にばらつく。
     # 退化していると、深度が何倍違ってもサイズ因子はほぼ動かない。
@@ -169,7 +169,8 @@ pic_set_size_factors <- function(dds) {
     #  ばらつきの比で判定する。)
     sd_sf <- stats::sd(log(sf))
     sd_lib <- stats::sd(log(lib))
-    degenerate <- is.finite(sd_lib) && sd_lib > 0.1 && sd_sf < 0.2 * sd_lib
+    degenerate <- is.finite(sd_lib) && sd_lib > 0 &&
+      (sd_sf < 1e-8 || (sd_lib > 0.1 && sd_sf < 0.2 * sd_lib))
   }
 
   if (degenerate) {
