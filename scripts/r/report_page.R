@@ -57,7 +57,7 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
   # QC セクション末尾に sub_head 付きで差し込むと、pic_tab_panel の marker 分割が
   # そのままサブタブ化してくれる (Read distribution / Sequencing depth と同じ扱い)。
   # aggregate をスキップした genome では agg_html が空になり、サブタブも出ない。
-  agg_html <- build_aggregate_html(reg, base_dir, id_prefix, out_dir, sample_order, group_pal)
+  agg_html <- build_aggregate_html(reg, base_dir, id_prefix, out_dir, sample_order, group_pal, project = project)
   qc_subs <- list(
     list(label = "Read distribution", id = sid("qc-readdist"), marker = ""),
     list(label = "Sequencing depth",  id = sid("qc-depth"),    marker = '<div class="pic-sub-hd"><h3>Sequencing depth'))
@@ -133,10 +133,16 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   # genome は sample_sheet の genome 列 (無ければ project から run 接頭辞を除去) で解決する。
   run <- pic_report_run_name(out_dir)
   if (!nzchar(run)) run <- project
-  genome <- pic_report_genome_of(out_dir, project)
+  # 1 run に複数 genome があると mapping_sum / sample_sheet / aggregate は run 共通なので、
+  # この project (= genome) の deftable に載っているサンプルに絞って使う。
+  proj_samples <- pic_project_samples(out_dir, project)
+  genome <- pic_report_genome_of(out_dir, project, samples = proj_samples)
   reg <- pic_report_registry()
   # src_note / register_file が参照する埋め込みレジストリと基準ディレクトリ
   options(pic.report.reg = reg, pic.report.projdir = out_dir)
+  # Downloads から他 project (他 genome) のファイルを外すための一覧
+  options(pic.report.project = project,
+          pic.report.all_projects = vapply(pic_report_discover_projects(out_dir), function(d) d$project, character(1)))
 
   stats <- suppressMessages(readr::read_csv(desc$stats_csv, show_col_types = FALSE, progress = FALSE))
   stats <- as.data.frame(stats, check.names = FALSE)
@@ -148,15 +154,18 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   dir.create(tmp_dir, recursive = TRUE, showWarnings = FALSE)
 
   # sample_sheet の順を正順とする (なければ mapping_sum の順)。
-  sheet <- pic_read_sample_sheet(out_dir)
+  sheet <- pic_read_sample_sheet(out_dir, samples = proj_samples)
   # sample_sheet に batch 列があれば、ラベル / マーカーの batch 表現を有効にする。
   pic_set_batch_info(if (!is.null(sheet)) sheet$batch else NULL,
                      if (!is.null(sheet)) sheet$batch_levels else NULL)
   # sample_sheet が無ければ deftable の行順を使う (mapping_sum はアルファベット順なので、
   # そちらにフォールバックすると実験の並びが崩れる)。
-  ord <- if (!is.null(sheet)) sheet else pic_order_from_deftable(out_dir)
+  ord <- if (!is.null(sheet)) sheet else pic_order_from_deftable(out_dir, project)
   sample_order <- if (!is.null(ord)) ord$samples else NULL
   group_order  <- if (!is.null(ord) && length(ord$groups) > 0) ord$groups else NULL
+  if (!is.null(msum) && !is.null(proj_samples) && "sample" %in% colnames(msum)) {
+    msum <- msum[as.character(msum$sample) %in% proj_samples, , drop = FALSE]
+  }
   if (!is.null(msum)) msum <- pic_reorder_rows(msum, "sample", sample_order)
 
   # サンプル -> グループの対応とグループ配色 (PCA / heatmap で共有)
@@ -466,6 +475,18 @@ sf_code,
           overview, pipe_intro, tools_block, paste(steps, collapse = arrow))
 }
 
+# 1 run に複数 genome (= 複数 project) があるとき、パスが他 project のものかを判定する。
+# パスに含まれる project 名のうち最長のものをそのファイルの持ち主とみなす
+# (run_hg38 と run_hg38_rm のように一方が他方を含む名前でも取り違えない)。
+# project 名を含まないファイル (mapping_sum など run 共通) は持ち主なし = 残す。
+pic_belongs_to_other_project <- function(paths, project, all_projects) {
+  if (is.null(project) || length(all_projects) < 2) return(rep(FALSE, length(paths)))
+  vapply(paths, function(p) {
+    hits <- all_projects[vapply(all_projects, function(q) grepl(q, p, fixed = TRUE), logical(1))]
+    length(hits) > 0 && hits[which.max(nchar(hits))] != project
+  }, logical(1), USE.NAMES = FALSE)
+}
+
 # Downloads セクション。プロジェクトの全 csv/tsv をカテゴリ別 (折りたたみ) に列挙。
 # 各ファイルは HTML 埋め込み・クリックで DL。
 build_downloads_section <- function(tabs, run, genome, group_pal = NULL, geno_map = NULL) {
@@ -473,6 +494,8 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL, geno_ma
   if (!is.null(proj)) {
     all <- list.files(proj, pattern = "\\.(csv|tsv)$", recursive = TRUE)
     all <- all[!grepl("(^|/)enrich_old_backup/", all)]
+    all <- all[!pic_belongs_to_other_project(all, getOption("pic.report.project"),
+                                             getOption("pic.report.all_projects"))]
     for (rel in all) register_file(rel)
   }
   reg <- getOption("pic.report.reg")

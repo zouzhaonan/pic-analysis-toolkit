@@ -195,8 +195,15 @@ png_data_uri <- function(path) {
 # <base_dir>/aggregate_profile_<run>_<genome>.csv からインタラクティブな
 # メタジーン折れ線 (plotly) を作る。
 # (平坦化: aggregate/ フォルダも PNG も廃し、プロジェクト直下の CSV を suffix で識別)
-build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL, sample_order = NULL, group_pal = NULL) {
+build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL, sample_order = NULL, group_pal = NULL,
+                                 project = NULL) {
   csvs <- pic_list_summary(base_dir, "^aggregate_profile_.*\\.csv$")
+  # 1 run に複数 genome があると aggregate_profile_<run>_<genome>.csv が genome ごとにあるので、
+  # この project のものだけ使う (一致が無ければ従来どおり全部)。
+  if (!is.null(project)) {
+    hit <- csvs[basename(csvs) == sprintf("aggregate_profile_%s.csv", project)]
+    if (length(hit) > 0) csvs <- hit
+  }
   blocks <- character(0)
   for (csv in sort(csvs)) {
     proj <- sub("\\.csv$", "", sub("^aggregate_profile_", "", basename(csv)))

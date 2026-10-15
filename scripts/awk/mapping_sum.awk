@@ -56,10 +56,18 @@ BEGIN {
       reads[$1] = $2
     }
 
+    # count 表は gene x cell(barcode)。複数 barcode を合算したサンプルでは同じ gene が
+    # barcode ごとに複数行出るので、genes は重複を除いて数える。
+    for (key in seen_gene) delete seen_gene[key]
     while ((getline < umi_count) > 0) {
+      # ヘッダー (gene cell count) は文字列比較で $3 > 0 が真になり 1 遺伝子多く数えていた。
+      if ($1 == "gene" && $3 == "count") continue
       if ($3 > 0) {
         umis += $3
-        genes++
+        if (!($1 in seen_gene)) {
+          seen_gene[$1] = 1
+          genes++
+        }
       }
     }
 

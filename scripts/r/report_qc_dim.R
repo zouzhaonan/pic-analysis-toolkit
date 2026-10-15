@@ -245,7 +245,9 @@ group_palette <- function(groups) {
 
 # sample_sheet(_<frac>).tsv を読み、レポート全体で使う sample / group の正順を返す。
 # 見つからなければ NULL (この場合は従来どおり mapping_sum の順に従う)。
-pic_read_sample_sheet <- function(out_dir, frac_key = NULL) {
+# samples を渡すとその sample の行だけに絞る (1 run に複数 genome がある場合、
+# genome ごとのレポートが他 genome のサンプル / group を拾わないようにする)。
+pic_read_sample_sheet <- function(out_dir, frac_key = NULL, samples = NULL) {
   cand <- if (!is.null(frac_key)) file.path(out_dir, sprintf("sample_sheet_%s.tsv", frac_key))
           else file.path(out_dir, "sample_sheet.tsv")
   if (!file.exists(cand)) return(NULL)
@@ -253,10 +255,15 @@ pic_read_sample_sheet <- function(out_dir, frac_key = NULL) {
                  error = function(e) NULL)
   if (is.null(df) || !("sample" %in% colnames(df))) return(NULL)
   df <- as.data.frame(df, check.names = FALSE)
+  if (!is.null(samples)) {
+    df <- df[as.character(df$sample) %in% samples, , drop = FALSE]
+    if (nrow(df) == 0) return(NULL)
+  }
   batch <- if ("batch" %in% colnames(df)) {
     stats::setNames(as.character(df$batch), as.character(df$sample))
   } else NULL
-  list(samples = as.character(df$sample),
+  # 複数 barcode を合算したサンプルは sample_sheet に同名の行が複数あるので unique。
+  list(samples = unique(as.character(df$sample)),
        groups = if ("group" %in% colnames(df)) unique(as.character(df$group)) else character(0),
        genome = if ("genome" %in% colnames(df) && nrow(df) > 0) as.character(df$genome[[1]]) else NA_character_,
        batch = batch,
@@ -266,15 +273,38 @@ pic_read_sample_sheet <- function(out_dir, frac_key = NULL) {
 # sample_sheet が無い出力 (deseq2 を単独実行した場合など) 向けのフォールバック。
 # deftable の行順をサンプル / group の正順として返す。mapping_sum はサンプル名の
 # アルファベット順に並んでいるため、実験の並びを保つには deftable のほうが適切。
-pic_order_from_deftable <- function(base_dir) {
-  fs <- pic_list_summary(base_dir, "^deftable_.*\\.tsv$")
+pic_order_from_deftable <- function(base_dir, project = NULL) {
+  fs <- pic_project_deftable(base_dir, project)
   if (length(fs) == 0) return(NULL)
   df <- tryCatch(suppressMessages(readr::read_tsv(fs[[1]], show_col_types = FALSE, progress = FALSE)),
                  error = function(e) NULL)
   if (is.null(df) || !("sample" %in% colnames(df))) return(NULL)
   df <- as.data.frame(df, check.names = FALSE)
-  list(samples = as.character(df$sample),
+  list(samples = unique(as.character(df$sample)),
        groups = if ("group" %in% colnames(df)) unique(as.character(df$group)) else character(0))
+}
+
+# project (= <run>_<genome>) の deftable。無ければ最初の deftable (project 不明時の従来動作)。
+pic_project_deftable <- function(base_dir, project = NULL) {
+  fs <- pic_list_summary(base_dir, "^deftable_.*\\.tsv$")
+  if (!is.null(project)) {
+    hit <- fs[basename(fs) == sprintf("deftable_%s.tsv", project)]
+    if (length(hit) > 0) return(hit)
+  }
+  fs
+}
+
+# project の deftable に載っているサンプル。1 run に複数 genome があるとき、
+# mapping_sum / sample_sheet / aggregate をこのサンプルに絞るのに使う。
+# project の deftable が見つからなければ NULL (= 絞らない)。
+pic_project_samples <- function(base_dir, project) {
+  fs <- pic_list_summary(base_dir, "^deftable_.*\\.tsv$")
+  fs <- fs[basename(fs) == sprintf("deftable_%s.tsv", project)]
+  if (length(fs) == 0) return(NULL)
+  df <- tryCatch(suppressMessages(readr::read_tsv(fs[[1]], show_col_types = FALSE, progress = FALSE)),
+                 error = function(e) NULL)
+  if (is.null(df) || !("sample" %in% colnames(df))) return(NULL)
+  unique(as.character(df$sample))
 }
 
 # base_dir の mapping_sum__<run>.tsv から run 名を取り出す (無ければ "")。
@@ -286,8 +316,10 @@ pic_report_run_name <- function(base_dir) {
 
 # project (= <run>_<genome>) と base_dir から genome を解決する。
 # 優先: sample_sheet の genome 列 → 次善: project から run 接頭辞を除去。
-pic_report_genome_of <- function(base_dir, project, frac_key = NULL) {
-  sheet <- pic_read_sample_sheet(base_dir, frac_key)
+# samples (project のサンプル) を渡すと、その行の genome を使う。渡さないと sample_sheet の
+# 先頭行の genome になり、複数 genome の run では 2 つ目以降の genome を取り違える。
+pic_report_genome_of <- function(base_dir, project, frac_key = NULL, samples = NULL) {
+  sheet <- pic_read_sample_sheet(base_dir, frac_key, samples)
   if (!is.null(sheet) && !is.na(sheet$genome) && nzchar(sheet$genome)) return(sheet$genome)
   run <- pic_report_run_name(base_dir)
   if (nzchar(run) && startsWith(project, paste0(run, "_"))) return(substring(project, nchar(run) + 2L))
