@@ -12,8 +12,26 @@ BEGIN {
 }
 {
   if (NR == 1 && tolower($1) == "fastq_prefix" && tolower($2) == "genome" && tolower($3) == "barcode" && tolower($4) == "sample" && tolower($5) == "group") next
-  print $0, "all"
-  for (point in points) {
-    if (nreads[$4] / point >= 3) print $0, point
+  # 同じ sample が複数行 (= 複数 barcode を 1 サンプルに合算) でも、demux は 1 つの
+  # FASTQ にまとめるので mapping は 1 回でよい。barcode 列はカンマ連結で持ち回す。
+  if ($4 in row) {
+    if (("," bcs[$4] ",") !~ ("," $3 ",")) bcs[$4] = bcs[$4] "," $3
+    next
+  }
+  row[$4] = $0
+  bcs[$4] = $3
+  order[++n] = $4
+}
+END {
+  for (i = 1; i <= n; i++) {
+    s = order[i]
+    nf = split(row[s], f, "\t")
+    f[3] = bcs[s]
+    line = f[1]
+    for (j = 2; j <= nf; j++) line = line OFS f[j]
+    print line, "all"
+    for (point in points) {
+      if (nreads[s] / point >= 3) print line, point
+    }
   }
 }

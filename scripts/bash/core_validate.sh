@@ -74,6 +74,30 @@ validate_inputs() {
     exit 1
   fi
 
+  validate_sample_sheet_rows
+}
+
+# 同じ sample 名の複数行は「複数 barcode を 1 サンプルに合算」の指定として許すが、
+# genome / group が食い違うものと、同じ (fastq_prefix, barcode) の重複は誤記として止める。
+# (fastq_prefix, barcode) の重複は raw FASTQ から demux するときだけの問題。
+# --demux-fastq-dir では同じ読みを別サンプル (例: barcode 別と合算) に使ってよい。
+validate_sample_sheet_rows() {
+  local problems
+  problems="$(tr -d '\015' <"$SAMPLE_SHEET" | awk -F'\t' -v skip_demux="${SKIP_DEMUX:-0}" '
+    NR == 1 && tolower($1) == "fastq_prefix" { next }
+    NF < 5 { next }
+    {
+      key = $1 SUBSEP $3
+      if (skip_demux != 1 && (key in pair)) printf "duplicate fastq_prefix/barcode %s/%s (samples %s, %s)\n", $1, $3, pair[key], $4
+      pair[key] = $4
+      if (($4 in genome) && genome[$4] != $2) printf "sample %s has different genomes (%s, %s)\n", $4, genome[$4], $2
+      if (($4 in group) && group[$4] != $5) printf "sample %s has different groups (%s, %s)\n", $4, group[$4], $5
+      genome[$4] = $2; group[$4] = $5
+    }')"
+  if [[ -n "$problems" ]]; then
+    handle_error "Invalid sample sheet rows:"$'\n'"${problems}"
+    exit 1
+  fi
 }
 
 validate_sample_sheet_genome_registration() {

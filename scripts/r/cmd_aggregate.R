@@ -160,6 +160,8 @@ aggregate_one_genome <- function(out_dir, genome, project, deftable, bwaob, nbin
   if (!all(c("count_prefix", "sample", "group") %in% names(def))) {
     message(sprintf("[WARN] aggregate: deftable の列が不足 (%s)", deftable)); return(invisible(NULL))
   }
+  # 複数 barcode を合算したサンプルは deftable に barcode ごとの行があるが、bigwig は 1 つ。
+  def <- unique(def, by = "sample")
   if (!is.null(group_pat) && nzchar(group_pat)) {
     keep <- grepl(group_pat, def$group) | grepl(group_pat, def$sample)
     def <- def[keep]

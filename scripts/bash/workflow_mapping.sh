@@ -203,7 +203,9 @@ filter_primer_derived_reads() {
   local barcode filtered
 
   [[ "${FILTER_PRIMER_READS:-0}" = 1 ]] || return 0
-  barcode="$(awk -F'\t' -v s="$sample_name" 'NR>1 && $4==s {print $3; exit}' "$FORMATTED_SAMPLE_SHEET")"
+  # 複数 barcode を 1 サンプルに合算する場合は sample_sheet に同名の行が複数あるので、
+  # その全 barcode を集める (カンマ連結)。
+  barcode="$(awk -F'\t' -v s="$sample_name" 'NR>1 && $4==s && !seen[$3]++ {printf "%s%s", (n++ ? "," : ""), $3}' "$FORMATTED_SAMPLE_SHEET")"
   if [[ -z "$barcode" ]]; then
     printf "[WARN] barcode not found for %s; skip primer-read filter\n" "$sample_name" >>"$MAPPING_JOB_LOG"
     return 0
@@ -215,11 +217,20 @@ filter_primer_derived_reads() {
   filtered="${MAPPING_JOB_PREFIX}.fastq.gz"
   # 注: awk の変数名に log は使えない (GNU awk の組み込み関数と衝突する)。
   #     集計値は stderr に出し、bash 側でログへ追記する。
+  # 判定パターンは各リード自身の barcode (read 名末尾の _<barcode>_<umi>) から作る。
+  # 合算サンプルでも、barcode 別に処理した場合と同じリードだけが落ちる。
+  # read 名から barcode が取れない / sample の barcode でない場合は全 barcode で判定する。
   gzip -cd "$INPUT_FASTQ" |
-    awk -v pat="${barcode}TTTTTTTT" '
+    awk -v bcs="$barcode" '
+      BEGIN { nb = split(bcs, bl, ","); for (i = 1; i <= nb; i++) ok[bl[i]] = 1 }
       { h = $0; getline s; getline p; getline q
         total++
-        if (index(s, pat) > 0) { removed++; next }
+        split(h, hf, " "); nt = split(hf[1], tk, "_")
+        rb = nt >= 3 ? tk[nt - 1] : ""
+        hit = 0
+        if (rb in ok) hit = index(s, rb "TTTTTTTT") > 0
+        else for (i = 1; i <= nb && !hit; i++) hit = index(s, bl[i] "TTTTTTTT") > 0
+        if (hit) { removed++; next }
         print h; print s; print p; print q }
       END { printf("[INFO] primer-derived reads removed: %d / %d (%.2f%%)\n",
                    removed, total, total ? 100 * removed / total : 0) > "/dev/stderr" }
