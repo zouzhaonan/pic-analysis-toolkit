@@ -103,6 +103,16 @@ gsea_csv_dir <- function(out_dir, method) {
   file.path(out_dir, "GSEA", method)
 }
 
+# method_dir を作り、この project の旧 CSV (*_<project_name>.csv) だけを消す。
+# pic all は全 genome が同じ out_dir/enrich を共有するので、フォルダごと消すと
+# 先に走った genome の結果まで消えてしまう。
+reset_method_dir <- function(method_dir, project_name) {
+  dir.create(method_dir, recursive = TRUE, showWarnings = FALSE)
+  old <- list.files(method_dir, full.names = TRUE)
+  old <- old[endsWith(basename(old), sprintf("_%s.csv", project_name))]
+  unlink(old)
+}
+
 
 run_ora_enrichment <- function(stats, genome, out_dir, project_name,
                                methods = c("GO_BP"), parallel_threads = 1,
@@ -118,9 +128,7 @@ run_ora_enrichment <- function(stats, genome, out_dir, project_name,
   }
 
   purrr::walk(methods, function(method) {
-    method_dir <- ora_csv_dir(out_dir, method)
-    unlink(method_dir, recursive = TRUE)
-    dir.create(method_dir, recursive = TRUE, showWarnings = FALSE)
+    reset_method_dir(ora_csv_dir(out_dir, method), project_name)
   })
 
   build_method_clusters <- function(method_gene_col, method_precomputed_clusters = NULL) {
@@ -269,9 +277,7 @@ run_gsea_enrichment <- function(stats, contrasts, genome, out_dir, project_name,
   }
 
   purrr::walk(methods, function(method) {
-    method_dir <- gsea_csv_dir(out_dir, method)
-    unlink(method_dir, recursive = TRUE)
-    dir.create(method_dir, recursive = TRUE, showWarnings = FALSE)
+    reset_method_dir(gsea_csv_dir(out_dir, method), project_name)
   })
   message(sprintf("[INFO] GSEA contrasts: %d", length(contrasts)))
 
