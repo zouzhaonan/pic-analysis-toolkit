@@ -5,6 +5,11 @@
 #   ディレクトリや参照先を設定する。
 
 declare -gr PIC_DEFAULT_THREADS=8
+# pic mapping で同時に走らせるサンプル (mapping ジョブ) の数。
+# 各ジョブは --threads を丸ごと使うので、総スレッド数は jobs x threads になる。
+# 1 ジョブは 8 スレッドより上でほぼ速くならないため、コア数に余裕があるときは
+# threads を上げるより jobs を増やす。既定 1 は従来どおりの逐次実行。
+declare -gr PIC_DEFAULT_MAPPING_JOBS=1
 declare -gr PIC_DEFAULT_SKIP_DEMUX=0
 declare -gr PIC_DEFAULT_SIMULATION_MODE=0
 declare -gr PIC_DEFAULT_HISAT2_VERY_SENSITIVE=0
@@ -43,7 +48,7 @@ pic_default_run_name() {
 # 入力:
 #   出力ディレクトリ、sample sheet、thread 数、各フラグ、
 #   run 名、必要なら入力に使う demux 済み FASTQ ディレクトリ、
-#   hisat2 の追加フラグ。
+#   hisat2 の追加フラグ、mapping の同時ジョブ数。
 # 出力:
 #   グローバル変数を設定する。
 
@@ -60,6 +65,7 @@ init_config() {
   local demux_layout="${10:-nested}"
   local hisat2_score_min="${11:-}"
   local filter_primer_reads="${12:-0}"
+  local mapping_jobs="${13:-1}"
 
   declare -gr SKIP_DEMUX="$skip_demux"
   declare -gr SIMULATION_MODE="$simulation_mode"
@@ -111,6 +117,7 @@ init_config() {
   declare -gr DEMUX_FASTQ_DIR="$resolved_demux_fastq_dir"
   declare -gr TOTAL_READS="${DEMUX_FASTQ_DIR}/total_reads"
   declare -gr THREADS="$threads"
+  declare -gr MAPPING_JOBS="$mapping_jobs"
 }
 
 init_prepare_config() {

@@ -15,9 +15,15 @@ validate_common_arguments() {
   local demux_fastq_dir="$5"
   local run_name="$6"
   local raw_fastq_dir="$7"
+  local mapping_jobs="${8:-1}"
 
   if [[ ! "$threads" =~ ^[1-9][0-9]*$ ]]; then
     handle_error "Threads must be a positive integer: ${threads}"
+    exit 1
+  fi
+
+  if [[ ! "$mapping_jobs" =~ ^[1-9][0-9]*$ ]]; then
+    handle_error "Jobs must be a positive integer: ${mapping_jobs}"
     exit 1
   fi
 
