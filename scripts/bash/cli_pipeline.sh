@@ -3,7 +3,9 @@
 # 役割:
 #   mapping -> deseq2 -> enrich を 1 コマンドで一括実行する `pic all`。
 # 入力:
-#   --sample-sheet / --raw-fastq-dir / --run-name / --out-dir の 4 オプションのみ。
+#   --sample-sheet / --raw-fastq-dir / --run-name / --out-dir が基本。
+#   --threads / --jobs は threads を受ける段 (mapping / aggregate / enrich) に渡す。
+#   deseq2 とレポートは threads を受けないので渡さない。
 # 出力:
 #   <out-dir>/            : mapping 成果物 (counts, bam, bw ...) と report_*.html / sample_sheet.tsv
 #   <out-dir>/summary/    : 集計/中間テーブル (mapping_sum, deftable, aggregate_profile)
@@ -35,6 +37,9 @@ run_pipeline_subcommand() {
   local sample_sheet="" raw_fastq_dir="" run_name="" out_dir="" demux_fastq_dir=""
   local run_name_set=0 no_report=0 no_aggregate=0 barcode_first=0
   local hisat2_very_sensitive=0 hisat2_score_min=""
+  # 既定は pic mapping と同じ (threads=PIC_DEFAULT_THREADS, jobs=1)。
+  # 指定がなければ mapping に渡さず、mapping 側の既定に任せる。
+  local threads="" jobs=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -79,13 +84,21 @@ run_pipeline_subcommand() {
       hisat2_score_min="${2:-}"
       shift 2
       ;;
+    --threads)
+      threads="${2:-}"
+      shift 2
+      ;;
+    --jobs)
+      jobs="${2:-}"
+      shift 2
+      ;;
     --help)
       show_help_for_subcommand all
       return 0
       ;;
     *)
       handle_error "Unknown option: $1"
-      handle_error "pic all のオプション: --sample-sheet / --raw-fastq-dir / --demux-fastq-dir / --run-name / --out-dir / --no-report / --no-aggregate / --hisat2-score-min / --hisat2-very-sensitive"
+      handle_error "pic all のオプション: --sample-sheet / --raw-fastq-dir / --demux-fastq-dir / --run-name / --out-dir / --threads / --jobs / --no-report / --no-aggregate / --hisat2-score-min / --hisat2-very-sensitive"
       handle_error "詳細な調整が必要な場合は deseq2 / enrich を個別に実行してください。"
       exit 1
       ;;
@@ -112,11 +125,19 @@ run_pipeline_subcommand() {
   if [[ -n "$hisat2_score_min" ]]; then
     mapping_args+=(--hisat2-score-min "$hisat2_score_min")
   fi
+  if [[ -n "$threads" ]]; then
+    mapping_args+=(--threads "$threads")
+  fi
+  if [[ -n "$jobs" ]]; then
+    mapping_args+=(--jobs "$jobs")
+  fi
   if [[ "$barcode_first" = 1 ]]; then
     # read1 が barcode(6) + UMI(6) 並びのライブラリ (既定は UMI + barcode)
     mapping_args+=(--barcode-first)
   fi
 
+  # threads / jobs の検証もここで行われ、確定値は THREADS / MAPPING_JOBS に入る。
+  # 以降の aggregate / enrich は THREADS を使う。
   parse_pic_common_long_options "mapping" "${mapping_args[@]}"
 
   # --- Step 1: mapping ---
