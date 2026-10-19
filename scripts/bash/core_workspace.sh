@@ -80,7 +80,9 @@ prepare_workspace_for_run() {
 
 prepare_workspace_for_demux() {
   reset_demux_outputs
-  prepare_workspace_dirs
+  # demux 単独では log/ と summary/ に何も書かないので作らない
+  # (作ると --out-dir に空フォルダが残る)。mapping / all は prepare_workspace_for_run を使う。
+  mkdir -p "$OUTPUT_DIR" "$TMP_DIR"
 
   if [[ "$SKIP_DEMUX" = 0 ]]; then
     mkdir -p "$DEMUX_FASTQ_DIR"

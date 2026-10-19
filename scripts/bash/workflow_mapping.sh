@@ -367,6 +367,66 @@ run_single_mapping_job() {
   debug_log "RESULT=run_single_mapping_job sample=${sample_name} status=ok"
 }
 
+# 並列実行用の 1 ジョブ分。バックグラウンドのサブシェルで動くので、
+# MAPPING_JOB_PREFIX などのグローバル変数はジョブごとに独立している。
+# 一時ファイル (tmp/<stem>.*)・ログ (log/<stem>.*)・bam/<stem>.bam は
+# stem (= sample、simulation では sample_point) ごとに別名なので衝突しない。
+# 終了コードは wait -n だと取りこぼしうる (先に終わったジョブ) ため、
+# ジョブごとの status ファイルに書き、全ジョブ終了後にまとめて確かめる。
+run_mapping_job_in_background() {
+  local job_id="$1"
+  local status_file="$2"
+  local genome_name sample_name read_limit status=0
+
+  read -r genome_name sample_name read_limit < <(read_mapping_job "$job_id")
+  # 逐次実行 (|| return 1) と同じく、失敗は戻り値で判定する。
+  run_single_mapping_job "$genome_name" "$sample_name" "$read_limit" || status=$?
+  printf "%s\n" "$status" >"$status_file"
+  return "$status"
+}
+
+# 1 つでも失敗したジョブがあれば (status ファイルが無い = 異常終了も含む) 真。
+mapping_jobs_failed() {
+  local status_dir="$1"
+  local job_count="$2"
+  local job_id status
+
+  for job_id in $(seq "$job_count"); do
+    [[ -f "${status_dir}/${job_id}" ]] || return 0
+    status="$(<"${status_dir}/${job_id}")"
+    [[ "$status" = 0 ]] || return 0
+  done
+  return 1
+}
+
+exec_mapping_jobs_in_parallel() {
+  local job_count="$1"
+  local status_dir="${TMP_DIR}/mapping_job_status"
+  local job_id failed=0
+
+  debug_kv "arg.jobs" "$MAPPING_JOBS"
+  mkdir -p "$status_dir"
+  for job_id in $(seq "$job_count"); do
+    # 空き枠ができるまで待つ。終了コードは status ファイルで拾うので wait -n の値は見ない。
+    while (( $(jobs -pr | wc -l) >= MAPPING_JOBS )); do
+      wait -n || true
+    done
+    # 失敗が出たら新しいジョブは始めない (実行中のものは最後まで待つ)。
+    if grep -qvx 0 "$status_dir"/* 2>/dev/null; then
+      failed=1
+      break
+    fi
+    run_mapping_job_in_background "$job_id" "${status_dir}/${job_id}" &
+  done
+  wait || true
+
+  if [[ "$failed" = 1 ]] || mapping_jobs_failed "$status_dir" "$job_count"; then
+    handle_error "One or more mapping jobs failed (jobs=${MAPPING_JOBS})."
+    return 1
+  fi
+  rm -rf "$status_dir"
+}
+
 exec_mapping_jobs() {
   local job_count job_id genome_name sample_name read_limit
 
@@ -374,6 +434,12 @@ exec_mapping_jobs() {
   debug_log "STEP=exec_mapping_jobs"
   debug_kv "input.job_queue" "$JOB_QUEUE"
   debug_kv "arg.job_count" "$job_count"
+  # --jobs 2 以上ならサンプルを同時に mapping する。1 (既定) は従来どおり逐次。
+  if (( ${MAPPING_JOBS:-1} > 1 )); then
+    exec_mapping_jobs_in_parallel "$job_count" || return 1
+    debug_log "RESULT=exec_mapping_jobs status=ok"
+    return 0
+  fi
   for job_id in $(seq "$job_count"); do
     read -r genome_name sample_name read_limit < <(read_mapping_job "$job_id")
     run_single_mapping_job "$genome_name" "$sample_name" "$read_limit" || return 1
@@ -574,6 +640,7 @@ run_primary_command() {
   debug_kv "arg.sample_sheet" "$SAMPLE_SHEET"
   debug_kv "arg.run_name" "$RUN_NAME"
   debug_kv "arg.threads" "$THREADS"
+  debug_kv "arg.jobs" "$MAPPING_JOBS"
   debug_kv "arg.skip_demux" "$SKIP_DEMUX"
   debug_kv "arg.input_fastq_dir" "$DEMUX_FASTQ_DIR"
   log_info "Validating inputs"

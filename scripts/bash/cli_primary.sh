@@ -8,9 +8,11 @@ parse_pic_common_long_options() {
   local allow_demux_fastq=0
   local allow_simulation=0
   local allow_hisat2_very_sensitive=0
+  local allow_jobs=0
 
   case "$subcommand" in
   mapping)
+    allow_jobs=1
     allow_run_name=1
     allow_demux_fastq=1
     allow_simulation=1
@@ -23,6 +25,7 @@ parse_pic_common_long_options() {
   PIC_OUTPUT_DIR=""
   PIC_SAMPLE_SHEET=""
   PIC_THREADS="$PIC_DEFAULT_THREADS"
+  PIC_MAPPING_JOBS="$PIC_DEFAULT_MAPPING_JOBS"
   PIC_SKIP_DEMUX="$PIC_DEFAULT_SKIP_DEMUX"
   PIC_SIMULATION_MODE="$PIC_DEFAULT_SIMULATION_MODE"
   PIC_HISAT2_VERY_SENSITIVE="$PIC_DEFAULT_HISAT2_VERY_SENSITIVE"
@@ -50,6 +53,14 @@ parse_pic_common_long_options() {
       ;;
     --threads)
       PIC_THREADS="${2:-}"
+      shift 2
+      ;;
+    --jobs)
+      if [[ "$allow_jobs" != 1 ]]; then
+        handle_error "--jobs is not supported for ${subcommand}."
+        exit 1
+      fi
+      PIC_MAPPING_JOBS="${2:-}"
       shift 2
       ;;
     --demux-fastq-dir)
@@ -121,7 +132,8 @@ parse_pic_common_long_options() {
     "$PIC_SKIP_DEMUX" \
     "$PIC_DEMUX_FASTQ_DIR" \
     "$PIC_RUN_NAME" \
-    "$PIC_RAW_FASTQ_DIR"
+    "$PIC_RAW_FASTQ_DIR" \
+    "$PIC_MAPPING_JOBS"
 
   init_config \
     "$PIC_OUTPUT_DIR" \
@@ -135,7 +147,8 @@ parse_pic_common_long_options() {
     "$PIC_RAW_FASTQ_DIR" \
     "$PIC_DEMUX_LAYOUT" \
     "$PIC_HISAT2_SCORE_MIN" \
-    "$PIC_FILTER_PRIMER_READS"
+    "$PIC_FILTER_PRIMER_READS" \
+    "$PIC_MAPPING_JOBS"
 }
 
 run_primary_family_subcommand() {

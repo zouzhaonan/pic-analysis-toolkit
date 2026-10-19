@@ -26,6 +26,12 @@ Required options:
 
 Optional options:
   --run-name <name>          Run name suffix for output files (default: random 8 chars)
+  --threads <n>              Threads per job, passed to every step that takes
+                             threads (mapping, aggregate, enrich) (default: 8)
+  --jobs <n>                 Number of samples mapped at the same time in the
+                             mapping step (default: 1). Total threads during
+                             mapping = jobs x threads. A single job hardly gets
+                             faster above 8 threads; raise --jobs instead.
   --demux-fastq-dir <dir>    Use already-demultiplexed/classified FASTQ (skips demux).
                              Each sample is read from <dir>/<sample>.fastq.gz
   --no-report                Skip the final HTML report step

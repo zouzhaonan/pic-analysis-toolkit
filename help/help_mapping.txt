@@ -26,7 +26,15 @@ Required options:
                              * No need when --demux-fastq-dir is specified
 
 Optional options:
-  --threads <n>              Number of parallel threads (default: 8)
+  --threads <n>              Threads per mapping job; also used for demux and
+                             UMI counting (default: 8)
+  --jobs <n>                 Number of samples mapped at the same time (default: 1)
+                             Each job uses --threads, so the total is
+                             jobs x threads (e.g. --jobs 4 --threads 8 = 32).
+                             A single job hardly gets faster above 8 threads;
+                             on a machine with more cores, raise --jobs rather
+                             than --threads. Each job loads its own hisat2
+                             index, so memory also grows with --jobs.
   --run-name <name>          Run name suffix for output files (default: random 8 chars)
   --demux-fastq-dir <dir>    Directory containing already-demultiplexed FASTQ files
   --simulation               Run in simulation mode (default: off)
