@@ -60,12 +60,13 @@ RNA integrity (任意):
   RIN データセットのフォルダ直下に、名前 (フォルダ名かファイル名) が run 名で
   始まるもの (例: pic192_kimura_... 。直後は英数字以外) があれば、QC タブの
   先頭に「RNA integrity」を出す。無ければ出さない (エラーにもしない)。
-    - TapeStation の export: <名前>_sampleTable.csv /
+    - TapeStation の export: <名前>_sampleTable.csv (RINe) /
       _compactPeakTable.csv (Lower Marker / 18S / 28S の位置) /
       _Electropherogram.csv (図の本体)。複数当たれば泳動ごとに並べる。
     - サンプル名は sampleTable の Sample Description に従う
       (sample_sheet とは突き合わせない)。
     - ladder は横軸 (nt) の較正だけに使い、描画しない。
+    - 各波形の右に、その RINe を同じ色の数字で出す (RINe が空のサンプルは出さない)。
   pic all から呼ばれるときは PIC_RIN_DIR (か既定パス) を使う。
 
 備考:

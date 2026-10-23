@@ -1,4 +1,4 @@
-# 役割: QC タブの「RNA integrity」サブタブ (TapeStation の electropherogram)。
+# 役割: QC タブの「RNA integrity」サブタブ (TapeStation の electropherogram と、各波形の隣の RINe)。
 # 注記: report_build.R を責務別に分割したファイル。cmd_build_report.R が
 #       report_build.R (ローダ) 経由で source する。単体では動作しない。
 #
@@ -104,8 +104,10 @@ pic_rin_load <- function(ds) {
   well <- st[[c_well]]
   obs <- if (!is.null(c_obs)) st[[c_obs]] else rep("", nrow(st))
   lad <- pic_rin_is_ladder(well, obs)
+  c_rin <- pic_rin_col(st, "^RINe?$")
   samples <- data.frame(
     well = well, sample = if (!is.null(c_desc)) st[[c_desc]] else well,
+    rine = if (!is.null(c_rin)) pic_rin_num(st[[c_rin]]) else NA_real_,
     stringsAsFactors = FALSE)[!lad, , drop = FALSE]
   samples$sample[!nzchar(samples$sample)] <- samples$well[!nzchar(samples$sample)]
   if (nrow(samples) == 0) return(NULL)
@@ -159,7 +161,34 @@ pic_rin_load <- function(ds) {
   list(stem = ds$stem, samples = samples, traces = traces, ladder_sizes = lsz)
 }
 
-# QC タブ「RNA integrity」の中身 (説明 + electropherogram)。データが無ければ ""。
+# RINe ラベルの縦位置: 望む位置 (want) をなるべく保ち、隣同士を gap 以上離す。
+# 下から押し上げ、上限 hi を超えたら上から押し下げる (順序は want の順のまま)。
+pic_rin_spread <- function(want, gap, lo, hi) {
+  n <- length(want)
+  if (n == 0) return(numeric(0))
+  o <- order(want); y <- want[o]
+  y[[1]] <- max(y[[1]], lo)
+  if (n > 1) for (i in 2:n) y[[i]] <- max(y[[i]], y[[i - 1]] + gap)
+  if (y[[n]] > hi) {
+    y[[n]] <- hi
+    if (n > 1) for (i in (n - 1):1) y[[i]] <- min(y[[i]], y[[i + 1]] - gap)
+  }
+  out <- numeric(n); out[o] <- y
+  out
+}
+
+# 波形のどこから RINe ラベルへ線を引くか: 28S ピークの右肩 (28S の注釈文字を避ける)。
+# 28S が無ければ (分解した RNA など) 200 nt 以上で最も高い点の右肩。
+pic_rin_anchor <- function(tr) {
+  p28 <- tr$peaks$size[grepl("^28S", tr$peaks$label)]
+  big <- which(tr$size >= 200)
+  if (length(big) == 0) big <- seq_along(tr$size)
+  x0 <- if (length(p28) > 0) p28[[1]] else tr$size[[big[[which.max(tr$y[big])]]]]
+  k <- which.min(abs(log10(tr$size) - log10(x0 * 1.2)))
+  c(x = tr$size[[k]], y = tr$y[[k]])
+}
+
+# QC タブ「RNA integrity」の中身 (説明 + electropherogram + RINe ラベル)。データが無ければ ""。
 build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_dir()) {
   dss <- pic_rin_find_datasets(rin_dir, project_id)
   if (length(dss) == 0) return("")
@@ -192,16 +221,47 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
             hovertemplate = sprintf("%s<br>%%{text}: %%{customdata} nt<extra></extra>", html_escape(nm)))
         }
       }
+      # RINe ラベル: 波形の右に 1 列に並べ (重ならないよう縦にずらす)、細い点線で波形とつなぐ。
+      # 凡例のクリックで波形と一緒に隠れるよう、同じ legendgroup に入れる。
+      drawn <- s[s$well %in% names(r$traces), , drop = FALSE]
+      lab <- drawn[is.finite(drawn$rine), , drop = FALSE]
+      ymax <- max(vapply(r$traces, function(t) max(c(t$y, t$peaks$y), na.rm = TRUE), numeric(1)))
+      xmax <- max(vapply(r$traces, function(t) max(t$size), numeric(1)))
+      xmin <- min(vapply(r$traces, function(t) min(t$size), numeric(1)))
+      n_leg <- nrow(drawn)
+      # 縦の大きさ: 凡例の行 (5 サンプル/行ほど) を除いた描画域に、ラベル 1 つ 17 px が収まるように
+      leg_px <- 22 * ceiling(n_leg / 5)
+      height <- max(420, ceiling(76 + leg_px + nrow(lab) * 17 / 0.9))
+      xrange <- NULL
+      if (nrow(lab) > 0 && is.finite(ymax) && ymax > 0) {
+        area <- height - 76 - leg_px
+        anc <- t(vapply(lab$well, function(w) pic_rin_anchor(r$traces[[w]]), numeric(2)))
+        ly <- pic_rin_spread(anc[, "y"], gap = ymax * 17 / area, lo = ymax * 0.03, hi = ymax * 0.97)
+        xcol <- xmax * 1.08
+        xrange <- list(log10(xmin), log10(xcol * 1.5))
+        for (i in seq_len(nrow(lab))) {
+          nm <- lab$sample[[i]]; col <- unname(pal[[nm]])
+          txt <- formatC(lab$rine[[i]], format = "f", digits = 1)
+          traces[[length(traces) + 1]] <- list(
+            x = list(anc[i, "x"], xcol), y = list(anc[i, "y"], ly[[i]]),
+            text = list("", sprintf("<b>%s</b>", txt)), name = html_escape(nm), legendgroup = nm, showlegend = FALSE,
+            mode = "lines+text", type = "scatter", textposition = "middle right", cliponaxis = FALSE,
+            textfont = list(size = 12, color = col), line = list(color = col, width = 0.8, dash = "dot"),
+            hovertemplate = sprintf("%s<br>RINe %s<extra></extra>", html_escape(nm), txt))
+        }
+      }
       id <- sprintf("%srin_%d", id_prefix, k)
       ticks <- as.list(r$ladder_sizes)
+      xaxis <- list(title = "size [nt]", type = "log", tickmode = "array", tickvals = ticks,
+                    ticktext = as.list(format(r$ladder_sizes, trim = TRUE)), zeroline = FALSE)
+      if (!is.null(xrange)) xaxis$range <- xrange
       layout <- list(
-        xaxis = list(title = "size [nt]", type = "log", tickmode = "array", tickvals = ticks,
-                     ticktext = as.list(format(r$ladder_sizes, trim = TRUE)), zeroline = FALSE),
+        xaxis = xaxis,
         yaxis = list(title = "sample intensity [FU]", autorange = TRUE),
         hovermode = "closest", margin = list(l = 60, r = 20, t = 30, b = 46),
         legend = list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0))
       register_plot(reg, id, list(data = traces, layout = layout))
-      plot <- sprintf('<div id="%s" class="pic-plot"></div>', id)
+      plot <- sprintf('<div id="%s" class="pic-plot" style="height:%dpx"></div>', id, height)
     }
     if (!nzchar(plot)) next
     head <- if (length(dss) > 1) sprintf('<h4>%s</h4>', html_escape(r$stem)) else ""
@@ -209,7 +269,8 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
   }
   if (length(blocks) == 0) return("")
   paste0('<p class="pic-note">RNA integrity of the input RNA measured on the TapeStation. The electropherogram shows each sample&rsquo;s fluorescence along fragment size; the lower marker and the ',
-         '18S / 28S ribosomal RNA peaks are marked. Click a sample in the legend to show or hide it. ',
+         '18S / 28S ribosomal RNA peaks are marked. The number next to each trace, in the same colour, is its <b>RINe</b> ',
+         '(1 = degraded, 10 = intact). Click a sample in the legend to show or hide it. ',
          'Sample names follow the TapeStation sample table.</p><div class="pic-plot-grid">',
          paste(blocks, collapse = ""), '</div>')
 }
