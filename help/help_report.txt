@@ -13,7 +13,7 @@ pic report — 解析結果から自己完結型 HTML レポートを生成す�
                     配下の deseq2 stats_*.csv ごとに 1 レポートを生成する。
   --rin-dir <dir>   TapeStation の RIN データセットのフォルダ (任意)。
                     省略時は環境変数 PIC_RIN_DIR、それも無ければ
-                    /Users/zou/OkiLab Dropbox/OkiLab_Data/TapeStation/RIN_raw_data。
+                    ~/OkiLab Dropbox/OkiLab_Data/TapeStation/RIN_raw_data (~ はホーム)。
 
 出力:
   <out-dir>/report_<project>.html   (project = <genome>_<run>)

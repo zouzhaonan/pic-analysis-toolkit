@@ -9,13 +9,14 @@
 # サンプル名は sampleTable の Sample Description に従う (sample_sheet とは突き合わせない)。
 # ladder は electropherogram の横軸 (データ点 -> nt) の較正だけに使い、描画しない。
 
-PIC_RIN_DEFAULT_DIR <- "/Users/zou/OkiLab Dropbox/OkiLab_Data/TapeStation/RIN_raw_data"
+PIC_RIN_DEFAULT_DIR <- "~/OkiLab Dropbox/OkiLab_Data/TapeStation/RIN_raw_data"
 
 # RIN データセットのフォルダ。優先: pic report --rin-dir → 環境変数 PIC_RIN_DIR → 既定パス。
 pic_rin_dir <- function() {
   d <- getOption("pic.report.rin_dir", default = NULL)
   if (is.null(d)) d <- Sys.getenv("PIC_RIN_DIR", unset = "")
   if (!nzchar(d)) d <- PIC_RIN_DEFAULT_DIR
+  d <- path.expand(d)
   d
 }
 
