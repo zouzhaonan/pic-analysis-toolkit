@@ -167,6 +167,9 @@ file_desc <- function(rel) {
   if (grepl("DEGCluster", b)) return("DEG clustering result.")
   if (grepl("^DEGList|DEG_", b)) return("Differentially expressed gene list.")
   if (grepl("aggregate_profile", b)) return("Gene-body aggregation profile (TSS→TES metagene).")
+  if (grepl("_sampleTable\\.csv$", b)) return("TapeStation sample table (RINe, 28S/18S ratio, concentration).")
+  if (grepl("_compactPeakTable\\.csv$", b)) return("TapeStation peak table (lower marker, 18S, 28S sizes).")
+  if (grepl("_Electropherogram\\.csv$", b)) return("TapeStation electropherogram (fluorescence per data point; one column per well).")
   m <- regmatches(b, regexpr("^GSEA_([A-Za-z0-9]+)_(.+?)_", b, perl = TRUE))
   if (grepl("^GSEA_", b)) {
     mm <- regmatches(b, regexec("^GSEA_([A-Za-z0-9]+)_(.+)_[^_]+_[^_]+\\.csv$", b))[[1]]
@@ -212,6 +215,7 @@ file_category <- function(rel) {
     if (grepl("enrich", rel, fixed = TRUE) && grepl("(^|/)GSEA/", rel)) list(key = "gsea", title = "Enrichment — GSEA", tab = "enrich")
     else if (grepl("enrich", rel, fixed = TRUE) && grepl("(^|/)ORA/", rel)) list(key = "ora", title = "Enrichment — ORA", tab = "enrich")
     else if (grepl("^aggregate_profile", b)) list(key = "agg", title = "Aggregation", tab = "qc")
+    else if (grepl("^RIN/", rel)) list(key = "rin", title = "RNA integrity", tab = "qc")
     else if (grepl("correlation", b)) list(key = "cor", title = "Sample Correlation", tab = "cor")
     else if (grepl("PCA", b)) list(key = "pca", title = "PCA", tab = "pca")
     else if (grepl("^stats|DEG", b)) list(key = "deg", title = "Differential Expression", tab = "deg")

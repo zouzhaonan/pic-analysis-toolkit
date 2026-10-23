@@ -12,7 +12,7 @@
 # (source は globalenv で評価されるため script_dir が参照可能)
 for (.pic_report_part in c(
   "report_helpers.R", "report_qc_dim.R", "report_deg_expr.R",
-  "report_enrichment.R", "report_page.R")) {
+  "report_enrichment.R", "report_rin.R", "report_page.R")) {
   source(file.path(script_dir, .pic_report_part))
 }
 rm(.pic_report_part)
