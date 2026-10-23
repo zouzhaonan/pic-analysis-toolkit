@@ -4,6 +4,7 @@
 #   解析出力ディレクトリを読み取り、自己完結型の HTML レポートを生成する。
 # 入力:
 #   --out-dir <dir>      : mapping / deseq2 / enrich の出力ベース (必須)
+#   --rin-dir <dir>      : TapeStation RIN データセットのフォルダ (任意。既定は PIC_RIN_DIR / 既定パス)
 # 出力:
 #   <out-dir>/report_<project>.html (project = genome_run ごとに 1 ファイル)
 
@@ -17,11 +18,12 @@ source(file.path(script_dir, "enrichment_plots.R"))
 source(file.path(script_dir, "report_build.R"))
 
 parse_report_args <- function(args) {
-  out <- list(out_dir = NULL)
+  out <- list(out_dir = NULL, rin_dir = NULL)
   i <- 1
   while (i <= length(args)) {
     a <- args[[i]]
     if (a == "--out-dir") { out$out_dir <- args[[i + 1]]; i <- i + 2 }
+    else if (a == "--rin-dir") { out$rin_dir <- args[[i + 1]]; i <- i + 2 }
     else { stop(sprintf("Unknown option: %s", a), call. = FALSE) }
   }
   if (is.null(out$out_dir)) stop("Missing required option: --out-dir", call. = FALSE)
@@ -36,6 +38,7 @@ main <- function() {
   })
 
   out_dir <- normalizePath(args$out_dir, mustWork = TRUE)
+  if (!is.null(args$rin_dir)) options(pic.report.rin_dir = args$rin_dir)
 
   # xenograft 統合レポート (分類サマリ + graft/host) を優先判定
   if (pic_is_xenograft_out(out_dir)) {
