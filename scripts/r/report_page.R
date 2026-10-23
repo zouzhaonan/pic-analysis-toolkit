@@ -525,7 +525,7 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL, geno_ma
   }
 
   # 2 欄グリッド (行優先) の並び: 左=Mapping/Aggregation/Count Table/GSEA、右=PCA/Correlation/Diff/ORA
-  order_cats <- c("RNA integrity", "Mapping", "PCA", "Aggregation", "Sample Correlation",
+  order_cats <- c("Mapping", "PCA", "Aggregation", "Sample Correlation",
                   "Count Table", "Differential Expression",
                   "Enrichment — GSEA", "Enrichment — ORA")
   # xenograft では "… — graft/host" 接尾辞が付く。base 部で並べ、画分は graft->host。

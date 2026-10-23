@@ -1,4 +1,4 @@
-# 役割: QC タブの「RNA integrity」サブタブ (TapeStation の RINe + electropherogram)。
+# 役割: QC タブの「RNA integrity」サブタブ (TapeStation の electropherogram)。
 # 注記: report_build.R を責務別に分割したファイル。cmd_build_report.R が
 #       report_build.R (ローダ) 経由で source する。単体では動作しない。
 #
@@ -104,11 +104,8 @@ pic_rin_load <- function(ds) {
   well <- st[[c_well]]
   obs <- if (!is.null(c_obs)) st[[c_obs]] else rep("", nrow(st))
   lad <- pic_rin_is_ladder(well, obs)
-  get <- function(re) { cc <- pic_rin_col(st, re); if (is.null(cc)) rep("", nrow(st)) else st[[cc]] }
   samples <- data.frame(
     well = well, sample = if (!is.null(c_desc)) st[[c_desc]] else well,
-    rine = pic_rin_num(get("^RINe?$")), ratio = pic_rin_num(get("^28S/18S")),
-    conc = pic_rin_num(get("^Conc\\.")), alert = get("^Alert$"),
     stringsAsFactors = FALSE)[!lad, , drop = FALSE]
   samples$sample[!nzchar(samples$sample)] <- samples$well[!nzchar(samples$sample)]
   if (nrow(samples) == 0) return(NULL)
@@ -162,18 +159,7 @@ pic_rin_load <- function(ds) {
   list(stem = ds$stem, samples = samples, traces = traces, ladder_sizes = lsz)
 }
 
-# 元の CSV を "RIN/<basename>" として埋め込み登録し、Download ボタンの HTML を返す。
-pic_rin_src_note <- function(path) {
-  if (is.null(path)) return("")
-  txt <- tryCatch(paste(readLines(path, warn = FALSE, encoding = "latin1"), collapse = "\n"),
-                  error = function(e) NULL)
-  if (is.null(txt)) return("")
-  id <- register_virtual_file(file.path("RIN", basename(path)), enc2utf8(iconv(txt, "latin1", "UTF-8")))
-  if (is.null(id)) return("")
-  sprintf('<span class="pic-src"><a class="pic-dlcsv" role="button" tabindex="0" data-file="%s">Download CSV</a></span>', id)
-}
-
-# QC タブ「RNA integrity」の中身 (説明 + RINe 表 + electropherogram)。データが無ければ ""。
+# QC タブ「RNA integrity」の中身 (説明 + electropherogram)。データが無ければ ""。
 build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_dir()) {
   dss <- pic_rin_find_datasets(rin_dir, project_id)
   if (length(dss) == 0) return("")
@@ -183,14 +169,6 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
     if (is.null(r)) next
     s <- r$samples
     pal <- group_palette(s$sample)
-    fmt <- function(v, d) ifelse(is.finite(v), formatC(v, format = "f", digits = d), "NA")
-    rows <- vapply(seq_len(nrow(s)), function(i) sprintf(
-      '<tr><td class="pic-td-sample" style="color:%s">%s</td><td>%s</td><td><b>%s</b></td><td>%s</td><td>%s</td><td>%s</td></tr>',
-      pal[[s$sample[[i]]]], html_escape(s$sample[[i]]), html_escape(s$well[[i]]),
-      fmt(s$rine[[i]], 1), fmt(s$ratio[[i]], 1), fmt(s$conc[[i]], 1), html_escape(s$alert[[i]])), character(1))
-    tbl <- paste0('<table class="pic-table"><thead><tr><th>Sample</th><th>Well</th><th>RINe</th>',
-                  '<th>28S/18S (Area)</th><th>Conc. [ng/&micro;l]</th><th>Alert</th></tr></thead><tbody>',
-                  paste(rows, collapse = ""), '</tbody></table>')
     plot <- ""
     if (length(r$traces) > 0) {
       traces <- list()
@@ -198,10 +176,9 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
         tr <- r$traces[[s$well[[i]]]]
         if (is.null(tr)) next
         nm <- s$sample[[i]]; col <- unname(pal[[nm]])
-        lab <- sprintf("%s (RINe %s)", nm, fmt(s$rine[[i]], 1))
         traces[[length(traces) + 1]] <- list(
           x = as.list(round(tr$size, 1)), y = as.list(round(tr$y, 3)),
-          name = sprintf('<span style="color:%s">%s</span>', col, html_escape(lab)), legendgroup = nm,
+          name = sprintf('<span style="color:%s">%s</span>', col, html_escape(nm)), legendgroup = nm,
           mode = "lines", type = "scatter", line = list(color = col, width = 1.4),
           hovertemplate = sprintf("%s<br>%%{x:.0f} nt<br>%%{y:.1f} FU<extra></extra>", html_escape(nm)))
         if (nrow(tr$peaks) > 0) {
@@ -226,16 +203,12 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
       register_plot(reg, id, list(data = traces, layout = layout))
       plot <- sprintf('<div id="%s" class="pic-plot"></div>', id)
     }
+    if (!nzchar(plot)) next
     head <- if (length(dss) > 1) sprintf('<h4>%s</h4>', html_escape(r$stem)) else ""
-    # セルの Download は図の元データ (electropherogram が無ければ sampleTable)。
-    # 残りの CSV も Downloads から取れるように登録だけしておく。
-    notes <- vapply(list(dss[[k]]$ep, dss[[k]]$sample, dss[[k]]$peak), pic_rin_src_note, character(1))
-    blocks <- c(blocks, sprintf('<div class="pic-plot-cell">%s%s%s%s</div>',
-                                head, c(notes[nzchar(notes)], "")[[1]], tbl, plot))
+    blocks <- c(blocks, sprintf('<div class="pic-plot-cell">%s%s</div>', head, plot))
   }
   if (length(blocks) == 0) return("")
-  paste0('<p class="pic-note">RNA integrity of the input RNA measured on the TapeStation. <b>RINe</b> ranges from 1 (degraded) ',
-         'to 10 (intact). The electropherogram shows each sample&rsquo;s fluorescence along fragment size; the lower marker and the ',
+  paste0('<p class="pic-note">RNA integrity of the input RNA measured on the TapeStation. The electropherogram shows each sample&rsquo;s fluorescence along fragment size; the lower marker and the ',
          '18S / 28S ribosomal RNA peaks are marked. Click a sample in the legend to show or hide it. ',
          'Sample names follow the TapeStation sample table.</p><div class="pic-plot-grid">',
          paste(blocks, collapse = ""), '</div>')
