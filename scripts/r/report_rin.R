@@ -8,6 +8,8 @@
 #         見つからなければサブタブを出さない。
 # サンプル名は sampleTable の Sample Description に従う (sample_sheet とは突き合わせない)。
 # ladder は electropherogram の横軸 (データ点 -> nt) の較正だけに使い、描画しない。
+# テープが普通の RNA ScreenTape (assay 名 "RNA"。HS RNA は "HSRNA") のときは、
+# ポジティブコントロール (pic_rin_pc_dir() の泳動) を毎回同じ図に重ねる。HS RNA には入れない。
 
 PIC_RIN_DEFAULT_DIR <- "~/OkiLab Dropbox/OkiLab_Data/TapeStation/RIN_raw_data"
 
@@ -20,17 +22,20 @@ pic_rin_dir <- function() {
   d
 }
 
-# rin_dir 直下で名前が project_id で始まるもの (直後が英数字でないこと: pic19 は pic192 に
-# 当たらない) を集め、TapeStation の 1 回の泳動 (stem) ごとに 3 種のファイルをまとめる。
-# 複数当たれば全部使う (泳動ごとに 1 ブロック)。sampleTable が無い / 空の stem は捨てる。
-pic_rin_find_datasets <- function(rin_dir, project_id) {
-  if (is.null(project_id) || !nzchar(project_id) || !dir.exists(rin_dir)) return(list())
-  hits <- list.files(rin_dir, full.names = TRUE)
-  b <- tolower(basename(hits)); id <- tolower(project_id)
-  nxt <- substr(b, nchar(id) + 1L, nchar(id) + 1L)
-  hits <- hits[startsWith(b, id) & !grepl("[a-z0-9]", nxt)]
-  files <- unlist(lapply(hits, function(h)
-    if (dir.exists(h)) list.files(h, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE) else h))
+# ポジティブコントロール (RNA ScreenTape 用) のフォルダ。
+# 優先: pic report --rin-pc-dir → 環境変数 PIC_RIN_PC_DIR → <rin_dir>/RNA_positive_control
+#       (あれば) → <既定パス>/RNA_positive_control。
+pic_rin_pc_dir <- function(rin_dir = pic_rin_dir()) {
+  d <- getOption("pic.report.rin_pc_dir", default = NULL)
+  if (is.null(d)) d <- Sys.getenv("PIC_RIN_PC_DIR", unset = "")
+  if (nzchar(d)) return(path.expand(d))
+  d <- file.path(rin_dir, "RNA_positive_control")
+  if (dir.exists(d)) return(d)
+  file.path(path.expand(PIC_RIN_DEFAULT_DIR), "RNA_positive_control")
+}
+
+# CSV の一覧を TapeStation の 1 回の泳動 (stem) ごとに 3 種のファイルへまとめる。
+pic_rin_group_files <- function(files) {
   if (length(files) == 0) return(list())
   kinds <- c(sample = "sampleTable", peak = "compactPeakTable", ep = "Electropherogram")
   re <- sprintf("_(%s)\\.csv$", paste(kinds, collapse = "|"))
@@ -47,6 +52,37 @@ pic_rin_find_datasets <- function(rin_dir, project_id) {
     if (!is.null(ds$sample)) out[[length(out) + 1]] <- ds
   }
   out
+}
+
+# ポジティブコントロールの泳動 (pc_dir 以下の CSV すべて)。
+pic_rin_find_pc <- function(pc_dir) {
+  if (!dir.exists(pc_dir)) return(list())
+  pic_rin_group_files(list.files(pc_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE))
+}
+
+# テープの種類 (assay 名)。compactPeakTable の FileName ("2026-09-02 - 15.27.32.RNA") の
+# 最後の "." の後ろ、無ければ stem の最後の "-" の後ろ。"RNA" / "HSRNA" など (大文字)。
+pic_rin_assay <- function(ds) {
+  pk <- pic_rin_read_csv(ds$peak)
+  if (!is.null(pk) && nrow(pk) > 0) {
+    c_fn <- pic_rin_col(pk, "^FileName$")
+    if (!is.null(c_fn) && nzchar(pk[[c_fn]][[1]])) return(toupper(sub("^.*\\.", "", pk[[c_fn]][[1]])))
+  }
+  toupper(sub("^.*-", "", ds$stem))
+}
+
+# rin_dir 直下で名前が project_id で始まるもの (直後が英数字でないこと: pic19 は pic192 に
+# 当たらない) を集め、TapeStation の 1 回の泳動 (stem) ごとに 3 種のファイルをまとめる。
+# 複数当たれば全部使う (泳動ごとに 1 ブロック)。sampleTable が無い / 空の stem は捨てる。
+pic_rin_find_datasets <- function(rin_dir, project_id) {
+  if (is.null(project_id) || !nzchar(project_id) || !dir.exists(rin_dir)) return(list())
+  hits <- list.files(rin_dir, full.names = TRUE)
+  b <- tolower(basename(hits)); id <- tolower(project_id)
+  nxt <- substr(b, nchar(id) + 1L, nchar(id) + 1L)
+  hits <- hits[startsWith(b, id) & !grepl("[a-z0-9]", nxt)]
+  files <- unlist(lapply(hits, function(h)
+    if (dir.exists(h)) list.files(h, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE) else h))
+  pic_rin_group_files(files)
 }
 
 # TapeStation の CSV は latin1 (µ が 0xB5)。全列を文字列で読み、読めなければ NULL。
@@ -162,6 +198,30 @@ pic_rin_load <- function(ds) {
   list(stem = ds$stem, samples = samples, traces = traces, ladder_sizes = lsz)
 }
 
+# RNA ScreenTape の泳動 r に、ポジティブコントロールのサンプルを足す (well は "PC<n>:<well>")。
+# 名前は "Positive control" (PC が複数あれば " (<sample>)" を付ける)。PC が無ければ r のまま (警告)。
+pic_rin_add_pc <- function(r, pc_dir) {
+  pcs <- pic_rin_find_pc(pc_dir)
+  pls <- Filter(Negate(is.null), lapply(pcs, pic_rin_load))
+  if (length(pls) == 0) {
+    message(sprintf("[WARN] RIN: RNA ScreenTape ですが、ポジティブコントロールが見つかりません: %s", pc_dir))
+    return(r)
+  }
+  n_pc <- sum(vapply(pls, function(p) nrow(p$samples), integer(1)))
+  for (j in seq_along(pls)) {
+    p <- pls[[j]]; s <- p$samples
+    new_well <- sprintf("PC%d:%s", j, s$well)
+    for (i in seq_len(nrow(s))) {
+      tr <- p$traces[[s$well[[i]]]]
+      if (!is.null(tr)) { tr$peaks$well <- rep(new_well[[i]], nrow(tr$peaks)); r$traces[[new_well[[i]]]] <- tr }
+    }
+    s$sample <- if (n_pc > 1) sprintf("Positive control (%s)", s$sample) else "Positive control"
+    s$well <- new_well
+    r$samples <- rbind(r$samples, s)
+  }
+  r
+}
+
 # RINe ラベルの縦位置: 望む位置 (want) をなるべく保ち、隣同士を gap 以上離す。
 # 下から押し上げ、上限 hi を超えたら上から押し下げる (順序は want の順のまま)。
 pic_rin_spread <- function(want, gap, lo, hi) {
@@ -194,9 +254,15 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
   dss <- pic_rin_find_datasets(rin_dir, project_id)
   if (length(dss) == 0) return("")
   blocks <- character(0)
+  pc_used <- FALSE
   for (k in seq_along(dss)) {
     r <- pic_rin_load(dss[[k]])
     if (is.null(r)) next
+    if (identical(pic_rin_assay(dss[[k]]), "RNA")) {
+      pr <- pic_rin_add_pc(r, pic_rin_pc_dir(rin_dir))
+      if (!identical(pr, r)) pc_used <- TRUE
+      r <- pr
+    }
     s <- r$samples
     pal <- group_palette(s$sample)
     plot <- ""
@@ -272,6 +338,8 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
   paste0('<p class="pic-note">RNA integrity of the input RNA measured on the TapeStation. The electropherogram shows each sample&rsquo;s fluorescence along fragment size; the lower marker and the ',
          '18S / 28S ribosomal RNA peaks are marked. The number next to each trace, in the same colour, is its <b>RINe</b> ',
          '(1 = degraded, 10 = intact). Click a sample in the legend to show or hide it. ',
-         'Sample names follow the TapeStation sample table.</p><div class="pic-plot-grid">',
+         'Sample names follow the TapeStation sample table.',
+         if (pc_used) ' <b>Positive control</b> is a reference RNA of known good integrity, run on a separate RNA ScreenTape and shown for comparison.' else '',
+         '</p><div class="pic-plot-grid">',
          paste(blocks, collapse = ""), '</div>')
 }
