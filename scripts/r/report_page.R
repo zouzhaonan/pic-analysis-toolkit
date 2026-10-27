@@ -77,7 +77,8 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
   # RNA integrity (TapeStation RINe) は QC タブの先頭のサブタブ。RIN データセットのフォルダに
   # run 名で始まるデータがあるときだけ、QC セクションの見出し直後に差し込む。
   # 後ろの Read distribution は目印コメントで切り分ける (先頭 sub の marker は "")。
-  rin_html <- if (nzchar(sec_qc)) build_rin_html(reg, pic_report_run_name(out_dir), id_prefix) else ""
+  rin_html <- if (nzchar(sec_qc)) build_rin_html(reg, pic_report_run_name(out_dir), id_prefix,
+                                                         project = project, base_dir = base_dir) else ""
   if (nzchar(rin_html)) {
     rin_end <- "<!--pic-qc-rin-end-->"
     m <- regexpr("</h2>", sec_qc, fixed = TRUE)
