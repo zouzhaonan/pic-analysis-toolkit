@@ -9,7 +9,10 @@
 # サンプル名は sampleTable の Sample Description に従う (sample_sheet とは突き合わせない)。
 # ladder は electropherogram の横軸 (データ点 -> nt) の較正だけに使い、描画しない。
 # テープが普通の RNA ScreenTape (assay 名 "RNA"。HS RNA は "HSRNA") のときは、
-# ポジティブコントロール (pic_rin_pc_dir() の泳動) を毎回同じ図に重ねる。HS RNA には入れない。
+# ポジティブコントロール (pic_rin_pc_dir() の泳動) を毎回、本番サンプルの下の別パネルに出す
+# (y 軸は別に autoscale)。HS RNA には入れない。
+# 1 run に複数 genome があるときは、レポートの genome のサンプルに当たる測定だけ出す
+# (pic_rin_filter_genome)。
 
 PIC_RIN_DEFAULT_DIR <- "~/OkiLab Dropbox/OkiLab_Data/TapeStation/RIN_raw_data"
 
@@ -198,27 +201,68 @@ pic_rin_load <- function(ds) {
   list(stem = ds$stem, samples = samples, traces = traces, ladder_sizes = lsz)
 }
 
-# RNA ScreenTape の泳動 r に、ポジティブコントロールのサンプルを足す (well は "PC<n>:<well>")。
-# 名前は "Positive control" (PC が複数あれば " (<sample>)" を付ける)。PC が無ければ r のまま (警告)。
-pic_rin_add_pc <- function(r, pc_dir) {
-  pcs <- pic_rin_find_pc(pc_dir)
-  pls <- Filter(Negate(is.null), lapply(pcs, pic_rin_load))
-  if (length(pls) == 0) {
-    message(sprintf("[WARN] RIN: RNA ScreenTape ですが、ポジティブコントロールが見つかりません: %s", pc_dir))
-    return(r)
-  }
+# ポジティブコントロール (pc_dir の泳動すべて) を 1 つの泳動のように読む (well は "PC<n>:<well>")。
+# 名前は "Positive control" (PC が複数あれば " (<sample>)" を付ける)。無ければ NULL。
+pic_rin_load_pc <- function(pc_dir) {
+  pls <- Filter(Negate(is.null), lapply(pic_rin_find_pc(pc_dir), pic_rin_load))
+  if (length(pls) == 0) return(NULL)
   n_pc <- sum(vapply(pls, function(p) nrow(p$samples), integer(1)))
+  out <- list(stem = "positive control", samples = NULL, traces = list(), ladder_sizes = pls[[1]]$ladder_sizes)
   for (j in seq_along(pls)) {
     p <- pls[[j]]; s <- p$samples
     new_well <- sprintf("PC%d:%s", j, s$well)
     for (i in seq_len(nrow(s))) {
       tr <- p$traces[[s$well[[i]]]]
-      if (!is.null(tr)) { tr$peaks$well <- rep(new_well[[i]], nrow(tr$peaks)); r$traces[[new_well[[i]]]] <- tr }
+      if (!is.null(tr)) { tr$peaks$well <- rep(new_well[[i]], nrow(tr$peaks)); out$traces[[new_well[[i]]]] <- tr }
     }
     s$sample <- if (n_pc > 1) sprintf("Positive control (%s)", s$sample) else "Positive control"
     s$well <- new_well
-    r$samples <- rbind(r$samples, s)
+    out$samples <- rbind(out$samples, s)
   }
+  out
+}
+
+# 1 run に複数 genome があるとき、このレポート (project) の genome のサンプルに当たる測定だけ残す。
+# 照合: summary/deftable_<run>_<genome>.tsv の sample / group 名と TapeStation の Sample Description
+# (大小文字を無視)。一致、または名前を区切り (_ - . 空白) で割った語の並びの先頭・途中に現れれば当たり
+# (例: "tora" は "tora_posi" に当たる)。どの genome にも当たらない測定は全レポートに残す。
+# genome が 1 つ (deftable が 1 つ以下) なら絞らない。
+pic_rin_genome_names <- function(base_dir, run) {
+  if (is.null(base_dir) || !nzchar(run)) return(list())
+  dfs <- pic_list_summary(base_dir, "^deftable_.*\\.tsv$")
+  dfs <- dfs[startsWith(basename(dfs), paste0("deftable_", run, "_"))]
+  out <- list()
+  for (f in dfs) {
+    d <- tryCatch(utils::read.delim(f, check.names = FALSE, stringsAsFactors = FALSE, colClasses = "character"),
+                  error = function(e) NULL)
+    if (is.null(d)) next
+    nm <- unique(c(d$sample, d$group)); nm <- nm[!is.na(nm) & nzchar(nm)]
+    out[[sub("\\.tsv$", "", sub("^deftable_", "", basename(f)))]] <- tolower(nm)
+  }
+  out
+}
+
+pic_rin_name_hits <- function(ts, names) {
+  t <- tolower(trimws(ts))
+  if (!nzchar(t)) return(FALSE)
+  tt <- strsplit(t, "[_. -]+")[[1]]
+  any(vapply(names, function(n) {
+    if (n == t) return(TRUE)
+    tok <- strsplit(n, "[_. -]+")[[1]]
+    k <- length(tt)
+    if (k > length(tok)) return(FALSE)
+    any(vapply(seq_len(length(tok) - k + 1L), function(i) all(tok[i:(i + k - 1L)] == tt), logical(1)))
+  }, logical(1)))
+}
+
+pic_rin_filter_genome <- function(r, project, gnames) {
+  if (is.null(project) || length(gnames) < 2 || !(project %in% names(gnames))) return(r)
+  keep <- vapply(r$samples$sample, function(ts) {
+    hit <- names(gnames)[vapply(gnames, function(n) pic_rin_name_hits(ts, n), logical(1))]
+    length(hit) == 0 || project %in% hit
+  }, logical(1))
+  r$samples <- r$samples[keep, , drop = FALSE]
+  r$traces <- r$traces[intersect(names(r$traces), r$samples$well)]
   r
 }
 
@@ -249,97 +293,120 @@ pic_rin_anchor <- function(tr) {
   c(x = tr$size[[k]], y = tr$y[[k]])
 }
 
-# QC タブ「RNA integrity」の中身 (説明 + electropherogram + RINe ラベル)。データが無ければ ""。
-build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_dir()) {
+# 1 パネル分の plotly 図 (electropherogram + RINe ラベル)。x_lim は log10 前の [min, max] (パネル間で揃える)。
+# y 軸はパネルごとに autoscale。図を作れなければ ""。
+pic_rin_panel <- function(reg, id, r, x_lim) {
+  if (is.null(r) || length(r$traces) == 0) return("")
+  s <- r$samples[r$samples$well %in% names(r$traces), , drop = FALSE]
+  if (nrow(s) == 0) return("")
+  pal <- group_palette(s$sample)
+  traces <- list()
+  for (i in seq_len(nrow(s))) {
+    tr <- r$traces[[s$well[[i]]]]
+    nm <- s$sample[[i]]; col <- unname(pal[[nm]])
+    traces[[length(traces) + 1]] <- list(
+      x = as.list(round(tr$size, 1)), y = as.list(round(tr$y, 3)),
+      name = sprintf('<span style="color:%s">%s</span>', col, html_escape(nm)), legendgroup = nm,
+      mode = "lines", type = "scatter", line = list(color = col, width = 1.4),
+      hovertemplate = sprintf("%s<br>%%{x:.0f} nt<br>%%{y:.1f} FU<extra></extra>", html_escape(nm)))
+    if (nrow(tr$peaks) > 0) {
+      traces[[length(traces) + 1]] <- list(
+        x = as.list(tr$peaks$size), y = as.list(tr$peaks$y), text = as.list(html_escape(tr$peaks$label)),
+        name = html_escape(nm), legendgroup = nm, showlegend = FALSE,
+        mode = "markers+text", type = "scatter", textposition = "top center", cliponaxis = FALSE,
+        textfont = list(size = 11, color = col),
+        marker = list(color = col, size = 7, symbol = "triangle-down"),
+        customdata = as.list(tr$peaks$size),
+        hovertemplate = sprintf("%s<br>%%{text}: %%{customdata} nt<extra></extra>", html_escape(nm)))
+    }
+  }
+  # RINe ラベル: 波形の右に 1 列に並べ (重ならないよう縦にずらす)、細い点線で波形とつなぐ。
+  # 凡例のクリックで波形と一緒に隠れるよう、同じ legendgroup に入れる。
+  trs <- r$traces[s$well]
+  lab <- s[is.finite(s$rine), , drop = FALSE]
+  ymax <- max(vapply(trs, function(t) max(c(t$y, t$peaks$y), na.rm = TRUE), numeric(1)))
+  n_leg <- nrow(s)
+  # 縦の大きさ: 凡例の行 (5 サンプル/行ほど) を除いた描画域に、ラベル 1 つ 17 px が収まるように
+  leg_px <- 22 * ceiling(n_leg / 5)
+  height <- max(420, ceiling(76 + leg_px + nrow(lab) * 17 / 0.9))
+  xcol <- x_lim[[2]] * 1.08
+  xrange <- list(log10(x_lim[[1]]), log10(xcol * 1.5))
+  if (nrow(lab) > 0 && is.finite(ymax) && ymax > 0) {
+    area <- height - 76 - leg_px
+    anc <- t(vapply(lab$well, function(w) pic_rin_anchor(r$traces[[w]]), numeric(2)))
+    ly <- pic_rin_spread(anc[, "y"], gap = ymax * 17 / area, lo = ymax * 0.03, hi = ymax * 0.97)
+    for (i in seq_len(nrow(lab))) {
+      nm <- lab$sample[[i]]; col <- unname(pal[[nm]])
+      txt <- formatC(lab$rine[[i]], format = "f", digits = 1)
+      traces[[length(traces) + 1]] <- list(
+        x = list(anc[i, "x"], xcol), y = list(anc[i, "y"], ly[[i]]),
+        text = list("", sprintf("<b>%s</b>", txt)), name = html_escape(nm), legendgroup = nm, showlegend = FALSE,
+        mode = "lines+text", type = "scatter", textposition = "middle right", cliponaxis = FALSE,
+        textfont = list(size = 12, color = col), line = list(color = col, width = 0.8, dash = "dot"),
+        hovertemplate = sprintf("%s<br>RINe %s<extra></extra>", html_escape(nm), txt))
+    }
+  }
+  layout <- list(
+    xaxis = list(title = "size [nt]", type = "log", tickmode = "array", tickvals = as.list(r$ladder_sizes),
+                 ticktext = as.list(format(r$ladder_sizes, trim = TRUE)), zeroline = FALSE, range = xrange),
+    yaxis = list(title = "sample intensity [FU]", autorange = TRUE),
+    hovermode = "closest", margin = list(l = 60, r = 20, t = 30, b = 46),
+    legend = list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0))
+  register_plot(reg, id, list(data = traces, layout = layout))
+  sprintf('<div id="%s" class="pic-plot" style="height:%dpx"></div>', id, height)
+}
+
+# QC タブ「RNA integrity」の中身 (説明 + 本番サンプルのパネル + その下に PC のパネル)。
+# データが無ければ ""。project / base_dir を渡すと、複数 genome の run で genome ごとに絞る。
+build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_dir(),
+                           project = NULL, base_dir = NULL) {
   dss <- pic_rin_find_datasets(rin_dir, project_id)
   if (length(dss) == 0) return("")
-  blocks <- character(0)
-  pc_used <- FALSE
+  gnames <- pic_rin_genome_names(base_dir, project_id)
+  runs <- list(); rna_tape <- FALSE
   for (k in seq_along(dss)) {
     r <- pic_rin_load(dss[[k]])
     if (is.null(r)) next
-    if (identical(pic_rin_assay(dss[[k]]), "RNA")) {
-      pr <- pic_rin_add_pc(r, pic_rin_pc_dir(rin_dir))
-      if (!identical(pr, r)) pc_used <- TRUE
-      r <- pr
+    r <- pic_rin_filter_genome(r, project, gnames)
+    if (nrow(r$samples) == 0 || length(r$traces) == 0) next
+    if (identical(pic_rin_assay(dss[[k]]), "RNA")) rna_tape <- TRUE
+    runs[[length(runs) + 1]] <- r
+  }
+  if (length(runs) == 0) return("")
+  pc <- NULL
+  if (rna_tape) {
+    pc_dir <- pic_rin_pc_dir(rin_dir)
+    pc <- pic_rin_load_pc(pc_dir)
+    if (is.null(pc) || length(pc$traces) == 0) {
+      message(sprintf("[WARN] RIN: RNA ScreenTape ですが、ポジティブコントロールが見つかりません: %s", pc_dir))
+      pc <- NULL
     }
-    s <- r$samples
-    pal <- group_palette(s$sample)
-    plot <- ""
-    if (length(r$traces) > 0) {
-      traces <- list()
-      for (i in seq_len(nrow(s))) {
-        tr <- r$traces[[s$well[[i]]]]
-        if (is.null(tr)) next
-        nm <- s$sample[[i]]; col <- unname(pal[[nm]])
-        traces[[length(traces) + 1]] <- list(
-          x = as.list(round(tr$size, 1)), y = as.list(round(tr$y, 3)),
-          name = sprintf('<span style="color:%s">%s</span>', col, html_escape(nm)), legendgroup = nm,
-          mode = "lines", type = "scatter", line = list(color = col, width = 1.4),
-          hovertemplate = sprintf("%s<br>%%{x:.0f} nt<br>%%{y:.1f} FU<extra></extra>", html_escape(nm)))
-        if (nrow(tr$peaks) > 0) {
-          traces[[length(traces) + 1]] <- list(
-            x = as.list(tr$peaks$size), y = as.list(tr$peaks$y), text = as.list(html_escape(tr$peaks$label)),
-            name = html_escape(nm), legendgroup = nm, showlegend = FALSE,
-            mode = "markers+text", type = "scatter", textposition = "top center", cliponaxis = FALSE,
-            textfont = list(size = 11, color = col),
-            marker = list(color = col, size = 7, symbol = "triangle-down"),
-            customdata = as.list(tr$peaks$size),
-            hovertemplate = sprintf("%s<br>%%{text}: %%{customdata} nt<extra></extra>", html_escape(nm)))
-        }
-      }
-      # RINe ラベル: 波形の右に 1 列に並べ (重ならないよう縦にずらす)、細い点線で波形とつなぐ。
-      # 凡例のクリックで波形と一緒に隠れるよう、同じ legendgroup に入れる。
-      drawn <- s[s$well %in% names(r$traces), , drop = FALSE]
-      lab <- drawn[is.finite(drawn$rine), , drop = FALSE]
-      ymax <- max(vapply(r$traces, function(t) max(c(t$y, t$peaks$y), na.rm = TRUE), numeric(1)))
-      xmax <- max(vapply(r$traces, function(t) max(t$size), numeric(1)))
-      xmin <- min(vapply(r$traces, function(t) min(t$size), numeric(1)))
-      n_leg <- nrow(drawn)
-      # 縦の大きさ: 凡例の行 (5 サンプル/行ほど) を除いた描画域に、ラベル 1 つ 17 px が収まるように
-      leg_px <- 22 * ceiling(n_leg / 5)
-      height <- max(420, ceiling(76 + leg_px + nrow(lab) * 17 / 0.9))
-      xrange <- NULL
-      if (nrow(lab) > 0 && is.finite(ymax) && ymax > 0) {
-        area <- height - 76 - leg_px
-        anc <- t(vapply(lab$well, function(w) pic_rin_anchor(r$traces[[w]]), numeric(2)))
-        ly <- pic_rin_spread(anc[, "y"], gap = ymax * 17 / area, lo = ymax * 0.03, hi = ymax * 0.97)
-        xcol <- xmax * 1.08
-        xrange <- list(log10(xmin), log10(xcol * 1.5))
-        for (i in seq_len(nrow(lab))) {
-          nm <- lab$sample[[i]]; col <- unname(pal[[nm]])
-          txt <- formatC(lab$rine[[i]], format = "f", digits = 1)
-          traces[[length(traces) + 1]] <- list(
-            x = list(anc[i, "x"], xcol), y = list(anc[i, "y"], ly[[i]]),
-            text = list("", sprintf("<b>%s</b>", txt)), name = html_escape(nm), legendgroup = nm, showlegend = FALSE,
-            mode = "lines+text", type = "scatter", textposition = "middle right", cliponaxis = FALSE,
-            textfont = list(size = 12, color = col), line = list(color = col, width = 0.8, dash = "dot"),
-            hovertemplate = sprintf("%s<br>RINe %s<extra></extra>", html_escape(nm), txt))
-        }
-      }
-      id <- sprintf("%srin_%d", id_prefix, k)
-      ticks <- as.list(r$ladder_sizes)
-      xaxis <- list(title = "size [nt]", type = "log", tickmode = "array", tickvals = ticks,
-                    ticktext = as.list(format(r$ladder_sizes, trim = TRUE)), zeroline = FALSE)
-      if (!is.null(xrange)) xaxis$range <- xrange
-      layout <- list(
-        xaxis = xaxis,
-        yaxis = list(title = "sample intensity [FU]", autorange = TRUE),
-        hovermode = "closest", margin = list(l = 60, r = 20, t = 30, b = 46),
-        legend = list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0))
-      register_plot(reg, id, list(data = traces, layout = layout))
-      plot <- sprintf('<div id="%s" class="pic-plot" style="height:%dpx"></div>', id, height)
-    }
+  }
+  # x 軸はパネル間で揃える
+  all_tr <- unlist(lapply(c(runs, if (!is.null(pc)) list(pc)), function(r) r$traces), recursive = FALSE)
+  x_lim <- c(min(vapply(all_tr, function(t) min(t$size), numeric(1))),
+             max(vapply(all_tr, function(t) max(t$size), numeric(1))))
+  blocks <- character(0)
+  for (k in seq_along(runs)) {
+    plot <- pic_rin_panel(reg, sprintf("%srin_%d", id_prefix, k), runs[[k]], x_lim)
     if (!nzchar(plot)) next
-    head <- if (length(dss) > 1) sprintf('<h4>%s</h4>', html_escape(r$stem)) else ""
+    head <- if (length(runs) > 1) sprintf('<h4>%s</h4>', html_escape(runs[[k]]$stem)) else ""
     blocks <- c(blocks, sprintf('<div class="pic-plot-cell">%s%s</div>', head, plot))
   }
   if (length(blocks) == 0) return("")
+  pc_used <- FALSE
+  if (!is.null(pc)) {
+    plot <- pic_rin_panel(reg, sprintf("%srin_pc", id_prefix), pc, x_lim)
+    if (nzchar(plot)) {
+      pc_used <- TRUE
+      blocks <- c(blocks, sprintf('<div class="pic-plot-cell"><h4>Positive control</h4>%s</div>', plot))
+    }
+  }
   paste0('<p class="pic-note">RNA integrity of the input RNA measured on the TapeStation. The electropherogram shows each sample&rsquo;s fluorescence along fragment size; the lower marker and the ',
          '18S / 28S ribosomal RNA peaks are marked. The number next to each trace, in the same colour, is its <b>RINe</b> ',
          '(1 = degraded, 10 = intact). Click a sample in the legend to show or hide it. ',
          'Sample names follow the TapeStation sample table.',
-         if (pc_used) ' <b>Positive control</b> is a reference RNA of known good integrity, run on a separate RNA ScreenTape and shown for comparison.' else '',
-         '</p><div class="pic-plot-grid">',
+         if (pc_used) ' The lower panel is the <b>positive control</b>, a reference RNA of known good integrity run on a separate RNA ScreenTape, for comparison (its intensity axis is scaled separately).' else '',
+         '</p><div class="pic-rin-panels" style="display:grid;grid-template-columns:1fr;gap:16px">',
          paste(blocks, collapse = ""), '</div>')
 }
