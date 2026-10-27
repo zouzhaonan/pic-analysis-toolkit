@@ -6,7 +6,7 @@ pic report — 解析結果から自己完結型 HTML レポートを生成す�
   PCA / heatmap / MA / volcano はインタラクティブ (マウス hover でラベル表示)。
 
 使い方:
-  pic report --out-dir <dir> [--rin-dir <dir>]
+  pic report --out-dir <dir> [--rin-dir <dir>] [--rin-pc-dir <dir>]
 
 オプション:
   --out-dir <dir>   mapping/deseq2/enrich を含む出力ベース (必須)。
@@ -14,6 +14,11 @@ pic report — 解析結果から自己完結型 HTML レポートを生成す�
   --rin-dir <dir>   TapeStation の RIN データセットのフォルダ (任意)。
                     省略時は環境変数 PIC_RIN_DIR、それも無ければ
                     ~/OkiLab Dropbox/OkiLab_Data/TapeStation/RIN_raw_data (~ はホーム)。
+  --rin-pc-dir <dir>
+                    RNA ScreenTape 用ポジティブコントロールのフォルダ (任意)。
+                    テープが普通の RNA (assay 名 RNA) のときは毎回 PC を図に重ねる
+                    (HS RNA には入れない)。省略時は PIC_RIN_PC_DIR →
+                    <rin-dir>/RNA_positive_control → 既定パス/RNA_positive_control。
 
 出力:
   <out-dir>/report_<project>.html   (project = <genome>_<run>)
