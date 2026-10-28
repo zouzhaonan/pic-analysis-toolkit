@@ -331,11 +331,14 @@ pic_rin_panel <- function(reg, id, r, x_lim, colour = NULL, legend = TRUE) {
   n_leg <- nrow(s)
   # 縦の大きさ: 凡例の行 (5 サンプル/行ほど) を除いた描画域に、ラベル 1 つ 17 px が収まるように
   leg_px <- if (legend) 22 * ceiling(n_leg / 5) else 0
-  height <- max(420, ceiling(76 + leg_px + nrow(lab) * 17 / 0.9))
+  # 描画域は既定 170 px (本番と PC の 2 段が一目で見えるよう低めに。どのパネルも同じ高さ)。
+  # 凡例は上の余白に置く (描画域に食い込ませない)。
+  m_top <- 16 + if (legend) 8 + leg_px else 0
+  area <- max(170, ceiling(nrow(lab) * 17 / 0.9))
+  height <- m_top + 46 + area
   xcol <- x_lim[[2]] * 1.08
   xrange <- list(log10(x_lim[[1]]), log10(xcol * 1.5))
   if (nrow(lab) > 0 && is.finite(ymax) && ymax > 0) {
-    area <- height - 76 - leg_px
     anc <- t(vapply(lab$well, function(w) pic_rin_anchor(r$traces[[w]]), numeric(2)))
     ly <- pic_rin_spread(anc[, "y"], gap = ymax * 17 / area, lo = ymax * 0.03, hi = ymax * 0.97)
     for (i in seq_len(nrow(lab))) {
@@ -353,7 +356,7 @@ pic_rin_panel <- function(reg, id, r, x_lim, colour = NULL, legend = TRUE) {
     xaxis = list(title = "size [nt]", type = "log", tickmode = "array", tickvals = as.list(r$ladder_sizes),
                  ticktext = as.list(format(r$ladder_sizes, trim = TRUE)), zeroline = FALSE, range = xrange),
     yaxis = list(title = "sample intensity [FU]", autorange = TRUE),
-    hovermode = "closest", margin = list(l = 60, r = 20, t = if (legend) 30 else 16, b = 46),
+    hovermode = "closest", margin = list(l = 60, r = 20, t = m_top, b = 46),
     showlegend = legend,
     legend = list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0))
   register_plot(reg, id, list(data = traces, layout = layout))
