@@ -25,6 +25,8 @@ pic_rin_dir <- function() {
   d
 }
 
+PIC_RIN_PC_COLOUR <- "#555555"
+
 # ポジティブコントロール (RNA ScreenTape 用) のフォルダ。
 # 優先: pic report --rin-pc-dir → 環境変数 PIC_RIN_PC_DIR → <rin_dir>/RNA_positive_control
 #       (あれば) → <既定パス>/RNA_positive_control。
@@ -295,11 +297,12 @@ pic_rin_anchor <- function(tr) {
 
 # 1 パネル分の plotly 図 (electropherogram + RINe ラベル)。x_lim は log10 前の [min, max] (パネル間で揃える)。
 # y 軸はパネルごとに autoscale。図を作れなければ ""。
-pic_rin_panel <- function(reg, id, r, x_lim) {
+# colour を渡すと全サンプルをその色で描く (PC 用)。legend = FALSE で凡例を出さない。
+pic_rin_panel <- function(reg, id, r, x_lim, colour = NULL, legend = TRUE) {
   if (is.null(r) || length(r$traces) == 0) return("")
   s <- r$samples[r$samples$well %in% names(r$traces), , drop = FALSE]
   if (nrow(s) == 0) return("")
-  pal <- group_palette(s$sample)
+  pal <- if (is.null(colour)) group_palette(s$sample) else stats::setNames(rep(colour, nrow(s)), s$sample)
   traces <- list()
   for (i in seq_len(nrow(s))) {
     tr <- r$traces[[s$well[[i]]]]
@@ -307,7 +310,7 @@ pic_rin_panel <- function(reg, id, r, x_lim) {
     traces[[length(traces) + 1]] <- list(
       x = as.list(round(tr$size, 1)), y = as.list(round(tr$y, 3)),
       name = sprintf('<span style="color:%s">%s</span>', col, html_escape(nm)), legendgroup = nm,
-      mode = "lines", type = "scatter", line = list(color = col, width = 1.4),
+      showlegend = legend, mode = "lines", type = "scatter", line = list(color = col, width = 1.4),
       hovertemplate = sprintf("%s<br>%%{x:.0f} nt<br>%%{y:.1f} FU<extra></extra>", html_escape(nm)))
     if (nrow(tr$peaks) > 0) {
       traces[[length(traces) + 1]] <- list(
@@ -327,7 +330,7 @@ pic_rin_panel <- function(reg, id, r, x_lim) {
   ymax <- max(vapply(trs, function(t) max(c(t$y, t$peaks$y), na.rm = TRUE), numeric(1)))
   n_leg <- nrow(s)
   # 縦の大きさ: 凡例の行 (5 サンプル/行ほど) を除いた描画域に、ラベル 1 つ 17 px が収まるように
-  leg_px <- 22 * ceiling(n_leg / 5)
+  leg_px <- if (legend) 22 * ceiling(n_leg / 5) else 0
   height <- max(420, ceiling(76 + leg_px + nrow(lab) * 17 / 0.9))
   xcol <- x_lim[[2]] * 1.08
   xrange <- list(log10(x_lim[[1]]), log10(xcol * 1.5))
@@ -350,7 +353,8 @@ pic_rin_panel <- function(reg, id, r, x_lim) {
     xaxis = list(title = "size [nt]", type = "log", tickmode = "array", tickvals = as.list(r$ladder_sizes),
                  ticktext = as.list(format(r$ladder_sizes, trim = TRUE)), zeroline = FALSE, range = xrange),
     yaxis = list(title = "sample intensity [FU]", autorange = TRUE),
-    hovermode = "closest", margin = list(l = 60, r = 20, t = 30, b = 46),
+    hovermode = "closest", margin = list(l = 60, r = 20, t = if (legend) 30 else 16, b = 46),
+    showlegend = legend,
     legend = list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0))
   register_plot(reg, id, list(data = traces, layout = layout))
   sprintf('<div id="%s" class="pic-plot" style="height:%dpx"></div>', id, height)
@@ -396,7 +400,8 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
   if (length(blocks) == 0) return("")
   pc_used <- FALSE
   if (!is.null(pc)) {
-    plot <- pic_rin_panel(reg, sprintf("%srin_pc", id_prefix), pc, x_lim)
+    # PC はパネルの見出しで分かるので凡例は出さず、本番と区別できる暗いグレーで描く
+    plot <- pic_rin_panel(reg, sprintf("%srin_pc", id_prefix), pc, x_lim, colour = PIC_RIN_PC_COLOUR, legend = FALSE)
     if (nzchar(plot)) {
       pc_used <- TRUE
       blocks <- c(blocks, sprintf('<div class="pic-plot-cell"><h4>Positive control</h4>%s</div>', plot))
