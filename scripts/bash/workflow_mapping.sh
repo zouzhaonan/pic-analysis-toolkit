@@ -511,7 +511,7 @@ mapping_sum() {
   debug_kv "result.map_summary_rows" "$(wc -l <"$MAP_SUMMARY")"
 
   if [[ "$SIMULATION_MODE" = 1 ]]; then
-    /usr/local/bin/Rscript "$PLOT_SIM_SCRIPT" \
+    Rscript "$PLOT_SIM_SCRIPT" \
       "$MAP_SUMMARY" "$OUTPUT_DIR" >/dev/null 2>&1
   fi
 }

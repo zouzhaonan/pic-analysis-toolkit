@@ -1,4 +1,4 @@
-#!/usr/local/bin/Rscript
+#!/usr/bin/env Rscript
 
 # 役割:
 #   pic の集計結果をもとに、read 数と UMI 数の関係を図にする。
@@ -10,15 +10,11 @@
 
 suppressWarnings(library(ggplot2))
 suppressWarnings(library(scales))
-suppressWarnings(library(rlang))
-suppressWarnings(library(tidyverse))
+suppressWarnings(suppressPackageStartupMessages(library(dplyr)))
 
 args <- commandArgs(trailingOnly = TRUE)
 mapping_sum <- file.path(args[1])
 plot_dir <- file.path(args[2])
-
-# mapping_sum <- "/Users/zou/tmp/NextSeq_250514/mapping_liver/simulation/mapping_sum.tsv"
-# plot_dir <- "/Users/zou/tmp/plot_test"
 
 
 if (!dir.exists(plot_dir)) dir.create(plot_dir, recursive = TRUE)
