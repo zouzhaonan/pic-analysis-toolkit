@@ -14,7 +14,8 @@ Required options:
 
 Optional options:
   --deg-clusters <path>    DEG list for ORA (No need if no DEGs)
-                           deseq2 output: DEG/DEGCluster/DEGCluster_gene_for_ora_*.csv
+                           deseq2 output: DEG_<project>/DEGCluster_<project>/
+                           DEGCluster_gene_for_ora_<project>.csv
   --project-name <name>    Output suffix (default: auto from --stats filename)
   --threads <n>            Number of parallel threads (default: 8)
   --methods <csv>          Methods to run (comma-separated)
@@ -31,9 +32,9 @@ ID mapping behavior:
 
 Examples:
   pic enrich \
-    --stats /path/to/stats_mm10.csv \
+    --stats /path/to/deseq2/stats_test_mm10.csv \
     --genome mm10 \
     --out-dir /path/to/out \
-    --deg-clusters /path/to/DEGCluster_gene_for_ora_xxx.csv
+    --deg-clusters /path/to/deseq2/DEG_test_mm10/DEGCluster_test_mm10/DEGCluster_gene_for_ora_test_mm10.csv
 
   pic enrich --prepare-libs --genome mm10

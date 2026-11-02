@@ -6,11 +6,15 @@ Overview:
   Figures (correlation, PCA, MA, volcano, heatmap, DEG clusters) are drawn
   interactively by `pic report` from these tables; no static images are written.
 
-Outputs (all CSV):
-  stats_*.csv, normalizedCountTable_*.csv, correlation_*.csv,
-  PCA/PCA_RegLog_*.csv, PCA/PCA_Variance_*.csv,
-  DEG/DEG_count_*.csv, DEG/DEG_normalizedCountTable_*.csv,
-  DEG/DEGCluster/*.csv, DEG/DEGList/*.txt
+Outputs (CSV; <project> = <run>_<genome>, taken from the deftable name
+deftable_<run>_<genome>.tsv):
+  stats_<project>.csv, normalizedCountTable_<project>.csv,
+  UMI_count_<project>.csv, correlation_<project>.csv,
+  PCA_<project>/PCA_RegLog_<project>.csv, PCA_<project>/PCA_Variance_<project>.csv,
+  DEG_<project>/DEG_count_<project>.csv,
+  DEG_<project>/DEG_normalizedCountTable_<project>.csv,
+  DEG_<project>/DEGCluster_<project>/DEGCluster_*_<project>.csv,
+  DEG_<project>/DEGList_<project>/<contrast>__<group>.txt
 
 Prerequisite:
   Target genome must be registered with:
@@ -35,7 +39,7 @@ Optional options:
 
 Example:
   pic deseq2 \
-    --deftable /path/to/deftable_mm10.tsv \
-    --count-dir /path/to/counts \
+    --deftable /path/to/out/summary/deftable_test_mm10.tsv \
+    --count-dir /path/to/out/counts \
     --genome mm10 \
     --out-dir /path/to/out

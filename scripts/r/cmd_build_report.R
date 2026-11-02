@@ -8,7 +8,7 @@
 #   --rin-pc-dir <dir>   : RNA ScreenTape 用ポジティブコントロールのフォルダ (任意。既定は PIC_RIN_PC_DIR /
 #                          <rin-dir>/RNA_positive_control / 既定パス/RNA_positive_control)
 # 出力:
-#   <out-dir>/report_<project>.html (project = genome_run ごとに 1 ファイル)
+#   <out-dir>/report_<project>.html (project = <run>_<genome> ごとに 1 ファイル)
 
 script_path <- grep("^--file=", commandArgs(), value = TRUE)[[1]]
 script_dir <- dirname(normalizePath(sub("^--file=", "", script_path)))

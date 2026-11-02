@@ -11,7 +11,8 @@ Overview:
 Required options:
   --deftable <tsv>           Deftable TSV used for deseq2 input
   --umi <csv>                UMI_count_*.csv (raw count table)
-  --deg-list-dir <dir>       DEGList directory from deseq2 output (DEG/DEGList)
+  --deg-list-dir <dir>       DEGList directory from deseq2 output
+                             (DEG_<project>/DEGList_<project>)
   --genome <name>            Supported: hg38, mm10, rn6, dm6, ce11, sacCer3
   --out-dir <dir>            Output directory
 
@@ -24,8 +25,8 @@ Optional options:
 
 Example:
   pic chipatlas \
-    --deftable /path/to/deftable_mm10_xxx.tsv \
-    --umi /path/to/UMI_count_mm10_xxx.csv \
-    --deg-list-dir /path/to/deseq2_out/DEG/DEGList \
+    --deftable /path/to/out/summary/deftable_test_mm10.tsv \
+    --umi /path/to/out/deseq2/UMI_count_test_mm10.csv \
+    --deg-list-dir /path/to/out/deseq2/DEG_test_mm10/DEGList_test_mm10 \
     --genome mm10 \
     --out-dir /path/to/chipatlas_out

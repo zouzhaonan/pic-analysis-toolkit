@@ -12,8 +12,11 @@ pic report — 解析結果から自己完結型 HTML レポートを生成す�
   --out-dir <dir>   mapping/deseq2/enrich を含む出力ベース (必須)。
                     配下の deseq2 stats_*.csv ごとに 1 レポートを生成する。
   --rin-dir <dir>   TapeStation の RIN データセットのフォルダ (任意)。
-                    省略時は環境変数 PIC_RIN_DIR、それも無ければ
-                    ~/OkiLab Dropbox/OkiLab_Data/TapeStation/RIN_raw_data (~ はホーム)。
+                    省略時は環境変数 PIC_RIN_DIR を使う。それも無ければ
+                    開発元の研究室の Dropbox の場所
+                    (~/OkiLab Dropbox/OkiLab_Data/TapeStation/RIN_raw_data) を見る。
+                    ほかの環境では --rin-dir か PIC_RIN_DIR で指定する。
+                    どれも見つからなければ RNA integrity は出さない (エラーにはしない)。
   --rin-pc-dir <dir>
                     RNA ScreenTape 用ポジティブコントロールのフォルダ (任意)。
                     テープが普通の RNA (assay 名 RNA) のときは毎回 PC を図に重ねる
@@ -21,7 +24,7 @@ pic report — 解析結果から自己完結型 HTML レポートを生成す�
                     <rin-dir>/RNA_positive_control → 既定パス/RNA_positive_control。
 
 出力:
-  <out-dir>/report_<project>.html   (project = <genome>_<run>)
+  <out-dir>/report_<project>.html   (project = <run>_<genome>)
 
 内容 (タブ構成):
   Overview & downloads  レポート概要 + プロジェクトの全 csv/tsv ファイル一覧
@@ -72,7 +75,7 @@ RNA integrity (任意):
       (sample_sheet とは突き合わせない)。
     - ladder は横軸 (nt) の較正だけに使い、描画しない。
     - 各波形の右に、その RINe を同じ色の数字で出す (RINe が空のサンプルは出さない)。
-  pic all から呼ばれるときは PIC_RIN_DIR (か既定パス) を使う。
+  pic all から呼ばれるときは PIC_RIN_DIR (か上の既定パス) を使う。
 
 備考:
   pic all の最終ステップでも自動実行される。
