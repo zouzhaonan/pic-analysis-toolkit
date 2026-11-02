@@ -1,5 +1,7 @@
 # プロジェクト一括処理ランブック (Claude 向け手順書)
 
+**開発者向け**の内部資料です。`pic` を使うだけなら不要です。
+
 このドキュメントは、`Book2.txt` のような **6 列テーブル** を渡されたときに Claude が
 プロジェクト単位で `pic all` を実行するための手順書です。`pic all` 自体は単一サンプル
 シート専用のシンプルなコマンドなので、複数プロジェクトへの分割・genome 整備の判断・
@@ -18,7 +20,7 @@
 | 5 | group |
 | 6 | project (出力フォルダ名) |
 
-1〜5 列目は `pic mapping` のサンプルシートと同形式。例 (`/Users/zou/Downloads/Book2.txt`):
+1〜5 列目は `pic mapping` のサンプルシートと同形式。例 (`Book2.txt`):
 
 ```
 1_S1   xenbase_v10.1   CATGAG   GFP_posi_1   GFP_posi   pic163
