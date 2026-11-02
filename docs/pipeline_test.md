@@ -1,7 +1,7 @@
 # PIC Analysis Toolkit Test
 
 This guide runs the basic pic workflow using a human (hg38) test dataset.
-The test data are about 1.08 million read pairs randomly subsampled from real PIC-seq data (10 samples in 8 groups: `R6_CTRL` and `Lig_CTRL` with *n* = 2 each, the others *n* = 1); about 53 MB.
+The test data are about 434,000 read pairs randomly subsampled from real PIC-seq data (4 samples in 2 groups: `R6_CTRL` and `Lig_CTRL` with *n* = 2 each); about 22 MB.
 A single `pic all` command runs mapping → DESeq2 → ORA/GSEA → HTML report, and you then open the report in a browser.
 
 ## 1. Prepare the test dataset
@@ -36,9 +36,9 @@ pic all \
   --run-name test
 ```
 
-The run is finished when `pic all: 完了しました` ("completed") is printed. It takes about 10-15 minutes on an Apple Silicon Mac (mapping about 3 minutes; the rest is enrichment and the report).
+The run is finished when `pic all: 完了しました` ("completed") is printed. It takes several minutes to about 10 minutes on an Apple Silicon Mac (mapping is followed by enrichment and report generation).
 
-Check `mapping_sum`: all 10 samples should be listed, each with roughly 80,000-150,000 reads in `total`.
+Check `mapping_sum`: all 4 samples should be listed, each with roughly 80,000-150,000 reads in `total`.
 
 ```bash
 cat "$wd/summary/mapping_sum__test.tsv"
@@ -50,8 +50,8 @@ cat "$wd/summary/mapping_sum__test.tsv"
 open "$wd/report_test_hg38.html"
 ```
 
-The report embeds all of its data in a single HTML file, so you can share just this file (about 85 MB for this dataset).
-`R6_CTRL` vs `Lig_CTRL` gives a few dozen DEGs.
+The report embeds all of its data in a single HTML file, so you can share just this file (tens of MB at this data size).
+`R6_CTRL` vs `Lig_CTRL` gives some DEGs.
 The main outputs are (`<run>_<genome>` = `test_hg38`):
 
 | Location | Contents |
