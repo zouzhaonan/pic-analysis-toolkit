@@ -1,6 +1,7 @@
 # PIC Analysis Toolkit Test
 
 This guide runs the basic pic workflow using a mouse `Brain` vs `Ovary` test dataset (*n* = 2).
+A single `pic all` command runs mapping → DESeq2 → ORA/GSEA → HTML report, and you then open the report in a browser.
 
 ## 1. Prepare the test dataset
 
@@ -12,9 +13,7 @@ curl -L "https://chip-atlas.dbcls.jp/data/share/pic_test.tar.gz" | tar zx
 wd="$HOME/tmp/pic_test"
 ```
 
-## 2. Run mapping
-
-### 2-1. Activate the conda environment
+## 2. Activate the conda environment
 
 ```bash
 shell_name="$(basename "${SHELL:-zsh}")"
@@ -22,72 +21,86 @@ eval "$("$(command -v conda)" "shell.${shell_name}" hook)"
 conda activate pic
 ```
 
-### 2-2. Run mapping
+If you forget `conda activate pic`, `pic` is either not found or, on Linux, a different program (groff's `pic`) runs.
+
+## 3. Run everything with `pic all`
 
 ```bash
-pic mapping \
+pic all \
   --sample-sheet "$wd/sample_sheet__test.txt" \
   --raw-fastq-dir "$wd/fastq" \
   --out-dir "$wd" \
   --run-name test
 ```
 
-After completion, check `mapping_sum`:
+The run is finished when `pic all: 完了しました` ("completed") is printed.
+
+Check `mapping_sum`: both `brain` and `ovary` should be listed with 2 samples each.
 
 ```bash
-cat "$wd/mapping_sum__test.tsv"
+cat "$wd/summary/mapping_sum__test.tsv"
 ```
 
-If both `brain` and `ovary` are shown with 2 samples each, mapping succeeded.
+## 4. Open the report
 
-## 3. Run DESeq2
+```bash
+open "$wd/report_test_mm10.html"
+```
 
-`deftable` is automatically generated after `pic mapping`.
+The report embeds all of its data in a single HTML file, so you can share just this file.
+The main outputs are (`<run>_<genome>` = `test_mm10`):
+
+| Location | Contents |
+| --- | --- |
+| `$wd/summary/` | `mapping_sum__test.tsv`, `deftable_test_mm10.tsv`, etc. |
+| `$wd/deseq2/` | `stats_test_mm10.csv`, `normalizedCountTable_test_mm10.csv`, `DEG_test_mm10/`, etc. |
+| `$wd/enrich/` | `GSEA/<method>/*.csv`, `ORA/<method>/*.csv` |
+| `$wd/report_test_mm10.html` | HTML report |
+
+## 5. Advanced: run subcommands individually
+
+To change the FDR or enrichment methods, or to run ChIP-Atlas analysis or per-gene plots, run the subcommands individually on the `pic all` results.
+
+### 5-1. DESeq2 (changing the FDR)
 
 ```bash
 pic deseq2 \
-  --deftable "$wd/deftable_mm10_test.tsv" \
+  --deftable "$wd/summary/deftable_test_mm10.tsv" \
   --count-dir "$wd/counts" \
   --genome mm10 \
-  --out-dir "$wd/deseq2"
+  --fdr 0.05 \
+  --out-dir "$wd/custom/deseq2"
 ```
 
-After completion, check `stats`:
-
-```bash
-cat "$wd/deseq2/stats_mm10_test.csv"
-```
-
-## 4. Run ORA/GSEA enrichment
+### 5-2. ORA/GSEA (choosing methods)
 
 ```bash
 pic enrich \
-  --stats "$wd/deseq2/stats_mm10_test.csv" \
+  --stats "$wd/custom/deseq2/stats_test_mm10.csv" \
   --genome mm10 \
-  --out-dir "$wd/enrich" \
-  --deg-clusters "$wd/deseq2/DEG/DEGCluster/DEGCluster_gene_for_ora_mm10_test.csv"
+  --methods GO_BP,KEGG \
+  --out-dir "$wd/custom/enrich" \
+  --deg-clusters "$wd/custom/deseq2/DEG_test_mm10/DEGCluster_test_mm10/DEGCluster_gene_for_ora_test_mm10.csv"
 ```
 
-If `GSEA/<method>/*.csv` and `ORA/<method>/*.csv` are generated under `$wd/enrich/`, the run succeeded (figures are drawn from the CSVs by `pic report`).
+If `GSEA/<method>/*.csv` and `ORA/<method>/*.csv` are generated under `$wd/custom/enrich/`, the run succeeded.
 
-## 5. Run ChIP-Atlas analysis
+### 5-3. ChIP-Atlas analysis
 
 ```bash
 pic chipatlas \
-  --deftable "$wd/deftable_mm10_test.tsv" \
-  --umi "$wd/deseq2/UMI_count_mm10_test.csv" \
-  --deg-list-dir "$wd/deseq2/DEG/DEGList" \
+  --deftable "$wd/summary/deftable_test_mm10.tsv" \
+  --umi "$wd/deseq2/UMI_count_test_mm10.csv" \
+  --deg-list-dir "$wd/deseq2/DEG_test_mm10/DEGList_test_mm10" \
   --genome mm10 \
   --out-dir "$wd/chipatlas"
 ```
 
-The computation runs on the ChIP-Atlas side. Results are saved under the specified `out-dir` after completion.
+The computation runs on the ChIP-Atlas side. Results are saved under `<out-dir>/result/` after completion.
 
-## 6. Run plot-expression
+### 5-4. plot-expression
 
 This step plots normalized counts by group for selected genes.
-
-First, create a gene list for plotting.
 
 ```bash
 cat > "$wd/genes.txt" <<'EOF'
@@ -96,29 +109,25 @@ Gfap
 Ddx4
 Kit
 EOF
-```
 
-Then generate expression plots from the DESeq2 normalized count table.
-
-```bash
 pic plot-expression \
-  --count "$wd/deseq2/normalizedCountTable_mm10_test.csv" \
-  --deftable "$wd/deftable_mm10_test.tsv" \
+  --count "$wd/deseq2/normalizedCountTable_test_mm10.csv" \
+  --deftable "$wd/summary/deftable_test_mm10.tsv" \
   --gene-list "$wd/genes.txt" \
-  --out "$wd/deseq2/plot_expression_test.pdf"
+  --out "$wd/plot_expression_test.pdf"
 ```
 
-Warnings may appear during plotting, but this is fine as long as `$wd/deseq2/plot_expression_test.pdf` is generated correctly.
+Warnings may appear during plotting, but this is fine as long as `$wd/plot_expression_test.pdf` is generated correctly.
 
-## 7. Cleanup
+## 6. Cleanup
 
-### 7-1. Deactivate conda environment
+### 6-1. Deactivate conda environment
 
 ```bash
 conda deactivate
 ```
 
-### 7-2. Remove test data (optional)
+### 6-2. Remove test data (optional)
 
 ```bash
 rm -rf "$wd"
