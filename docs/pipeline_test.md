@@ -1,6 +1,7 @@
 # PIC Analysis Toolkit Test
 
-This guide runs the basic pic workflow using a mouse `Brain` vs `Ovary` test dataset (*n* = 2).
+This guide runs the basic pic workflow using a human (hg38) test dataset.
+The test data are about 1.08 million read pairs randomly subsampled from real PIC-seq data (10 samples in 8 groups: `R6_CTRL` and `Lig_CTRL` with *n* = 2 each, the others *n* = 1); about 53 MB.
 A single `pic all` command runs mapping → DESeq2 → ORA/GSEA → HTML report, and you then open the report in a browser.
 
 ## 1. Prepare the test dataset
@@ -8,10 +9,12 @@ A single `pic all` command runs mapping → DESeq2 → ORA/GSEA → HTML report,
 ```bash
 mkdir -p "$HOME/tmp"
 cd "$HOME/tmp"
-curl -L "https://chip-atlas.dbcls.jp/data/share/pic_test.tar.gz" | tar zx
+curl -L "https://github.com/zouzhaonan/pic-analysis-toolkit/releases/download/v1.4.0/pic_test.tar.gz" | tar zx
 
 wd="$HOME/tmp/pic_test"
 ```
+
+The hg38 reference must be installed (see the [Installation Guide](INSTALLATION_GUIDE.md)).
 
 ## 2. Activate the conda environment
 
@@ -33,9 +36,9 @@ pic all \
   --run-name test
 ```
 
-The run is finished when `pic all: 完了しました` ("completed") is printed.
+The run is finished when `pic all: 完了しました` ("completed") is printed. It takes about 10-15 minutes on an Apple Silicon Mac (mapping about 3 minutes; the rest is enrichment and the report).
 
-Check `mapping_sum`: both `brain` and `ovary` should be listed with 2 samples each.
+Check `mapping_sum`: all 10 samples should be listed, each with roughly 80,000-150,000 reads in `total`.
 
 ```bash
 cat "$wd/summary/mapping_sum__test.tsv"
@@ -44,18 +47,19 @@ cat "$wd/summary/mapping_sum__test.tsv"
 ## 4. Open the report
 
 ```bash
-open "$wd/report_test_mm10.html"
+open "$wd/report_test_hg38.html"
 ```
 
-The report embeds all of its data in a single HTML file, so you can share just this file.
-The main outputs are (`<run>_<genome>` = `test_mm10`):
+The report embeds all of its data in a single HTML file, so you can share just this file (about 85 MB for this dataset).
+`R6_CTRL` vs `Lig_CTRL` gives a few dozen DEGs.
+The main outputs are (`<run>_<genome>` = `test_hg38`):
 
 | Location | Contents |
 | --- | --- |
-| `$wd/summary/` | `mapping_sum__test.tsv`, `deftable_test_mm10.tsv`, etc. |
-| `$wd/deseq2/` | `stats_test_mm10.csv`, `normalizedCountTable_test_mm10.csv`, `DEG_test_mm10/`, etc. |
+| `$wd/summary/` | `mapping_sum__test.tsv`, `deftable_test_hg38.tsv`, etc. |
+| `$wd/deseq2/` | `stats_test_hg38.csv`, `normalizedCountTable_test_hg38.csv`, `DEG_test_hg38/`, etc. |
 | `$wd/enrich/` | `GSEA/<method>/*.csv`, `ORA/<method>/*.csv` |
-| `$wd/report_test_mm10.html` | HTML report |
+| `$wd/report_test_hg38.html` | HTML report |
 
 ## 5. Advanced: run subcommands individually
 
@@ -65,9 +69,9 @@ To change the FDR or enrichment methods, or to run ChIP-Atlas analysis or per-ge
 
 ```bash
 pic deseq2 \
-  --deftable "$wd/summary/deftable_test_mm10.tsv" \
+  --deftable "$wd/summary/deftable_test_hg38.tsv" \
   --count-dir "$wd/counts" \
-  --genome mm10 \
+  --genome hg38 \
   --fdr 0.05 \
   --out-dir "$wd/custom/deseq2"
 ```
@@ -76,11 +80,11 @@ pic deseq2 \
 
 ```bash
 pic enrich \
-  --stats "$wd/custom/deseq2/stats_test_mm10.csv" \
-  --genome mm10 \
+  --stats "$wd/custom/deseq2/stats_test_hg38.csv" \
+  --genome hg38 \
   --methods GO_BP,KEGG \
   --out-dir "$wd/custom/enrich" \
-  --deg-clusters "$wd/custom/deseq2/DEG_test_mm10/DEGCluster_test_mm10/DEGCluster_gene_for_ora_test_mm10.csv"
+  --deg-clusters "$wd/custom/deseq2/DEG_test_hg38/DEGCluster_test_hg38/DEGCluster_gene_for_ora_test_hg38.csv"
 ```
 
 If `GSEA/<method>/*.csv` and `ORA/<method>/*.csv` are generated under `$wd/custom/enrich/`, the run succeeded.
@@ -89,10 +93,10 @@ If `GSEA/<method>/*.csv` and `ORA/<method>/*.csv` are generated under `$wd/custo
 
 ```bash
 pic chipatlas \
-  --deftable "$wd/summary/deftable_test_mm10.tsv" \
-  --umi "$wd/deseq2/UMI_count_test_mm10.csv" \
-  --deg-list-dir "$wd/deseq2/DEG_test_mm10/DEGList_test_mm10" \
-  --genome mm10 \
+  --deftable "$wd/summary/deftable_test_hg38.tsv" \
+  --umi "$wd/deseq2/UMI_count_test_hg38.csv" \
+  --deg-list-dir "$wd/deseq2/DEG_test_hg38/DEGList_test_hg38" \
+  --genome hg38 \
   --out-dir "$wd/chipatlas"
 ```
 
@@ -104,15 +108,15 @@ This step plots normalized counts by group for selected genes.
 
 ```bash
 cat > "$wd/genes.txt" <<'EOF'
-Map2
-Gfap
-Ddx4
-Kit
+PKM
+PEG10
+APOH
+KRT18
 EOF
 
 pic plot-expression \
-  --count "$wd/deseq2/normalizedCountTable_test_mm10.csv" \
-  --deftable "$wd/summary/deftable_test_mm10.tsv" \
+  --count "$wd/deseq2/normalizedCountTable_test_hg38.csv" \
+  --deftable "$wd/summary/deftable_test_hg38.tsv" \
   --gene-list "$wd/genes.txt" \
   --out "$wd/plot_expression_test.pdf"
 ```
