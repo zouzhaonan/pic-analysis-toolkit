@@ -5,12 +5,17 @@ If you complete this guide, you will install the toolkit and set up hg38/mm10 re
 
 ## 1. Prerequisites
 
-### 1-1. Install Miniconda (only if not installed)
+### 1-1. Install conda (only if not installed)
 
-Skip this step if `conda` is already available.
+Skip this step if `conda` (Miniforge / Miniconda / Anaconda) is already available.
+For a new installation, [Miniforge](https://github.com/conda-forge/miniforge) is recommended.
 
-- [Download the installer](https://www.anaconda.com/download/success)
-- Install it like a normal application.
+```bash
+curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+bash "Miniforge3-$(uname)-$(uname -m).sh"
+```
+
+Answer `yes` to all prompts, then reopen Terminal.
 
 ### 1-2. Check that `conda` works in Terminal
 
@@ -55,10 +60,9 @@ The solver may appear to be stuck for tens of minutes.
 This is normal, so please wait.
 
 ```bash
-conda config --set channel_priority strict
-
 conda create -n pic -y \
   --override-channels \
+  --strict-channel-priority \
   -c "file://$channel_dir" \
   -c conda-forge -c bioconda \
   pic
@@ -86,7 +90,7 @@ If help is displayed, installation is complete.
 
 ## 5. Prepare references for human (hg38) and mouse (mm10)
 
-For other species/genomes, see [Add New Genome](docs/add_new_genome.md).
+For other species/genomes, see [Add New Genome](ADD_NEW_GENOME.md).
 Here, we place hg38 and mm10 so that analysis can start immediately.
 
 ```bash
