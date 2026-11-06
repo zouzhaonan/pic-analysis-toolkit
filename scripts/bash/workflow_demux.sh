@@ -178,7 +178,12 @@ collect_demux_parts() {
       continue
     fi
     dest="$(demux_fastq_path "$s")"
-    cat "${parts[@]}" >"${dest}.tmp"
+    # part が 1 つだけなら、写さずにハードリンクする (中身は同じ。part は最後に消すので、途中で
+    # 止まってもやり直せる)。別のファイルシステムなどでリンクできなければ cat で写す。
+    rm -f "${dest}.tmp"
+    if [[ "${#parts[@]}" -ne 1 ]] || ! ln "${parts[0]}" "${dest}.tmp" 2>/dev/null; then
+      cat "${parts[@]}" >"${dest}.tmp"
+    fi
     mv "${dest}.tmp" "$dest"
   done < <(demux_sheet_rows | cut -f4 | sort -u)
 
