@@ -284,8 +284,12 @@ run_hisat2_alignment() {
     hisat2_args+=(--score-min "$HISAT2_SCORE_MIN")
   fi
 
+  # --mm: 索引をメモリマップで読む。同時に走る hisat2 (--jobs や --sample を並べたとき) が
+  # 索引をページキャッシュで共有するので、1 本ごとに索引分 (mm10 で約 4 GB) を持たなくなる。
+  # 実測 (mm10, 4.9M reads, -p 8): RssAnon 3971 -> 97 MB/本、4 本同時で 15.9 -> 0.4 GB。
+  # 時間は同等以下 (4 本同時 74 -> 66 秒)、整列結果 (並べ替えた SAM 本体) は同一。
   {
-    hisat2 -p "$THREADS" \
+    hisat2 -p "$THREADS" --mm \
       -x "$hisat2_index_prefix" \
       "${hisat2_args[@]}" \
       -U "${MAPPING_JOB_PREFIX}_trimmed.fq.gz" \
