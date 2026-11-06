@@ -9,10 +9,12 @@ parse_pic_common_long_options() {
   local allow_simulation=0
   local allow_hisat2_very_sensitive=0
   local allow_jobs=0
+  local allow_sample_mode=0
 
   case "$subcommand" in
   mapping)
     allow_jobs=1
+    allow_sample_mode=1
     allow_run_name=1
     allow_demux_fastq=1
     allow_simulation=1
@@ -35,6 +37,11 @@ parse_pic_common_long_options() {
   PIC_RAW_FASTQ_DIR="$PIC_DEFAULT_RAW_FASTQ_DIR"
   PIC_DEMUX_LAYOUT=""
   PIC_RUN_NAME="$(pic_default_run_name)"
+  # pic mapping の動き方。bulk = 従来の一括 (既定)。
+  # sample = --sample <S> (1 サンプルだけ)、collect = --collect (集計だけ)、
+  # resume = --resume (済んだサンプルを飛ばして一括)。
+  PIC_MAPPING_MODE="bulk"
+  PIC_MAPPING_SAMPLE=""
 
   case "$subcommand" in
   mapping) PIC_DEMUX_LAYOUT="nested" ;;
@@ -114,6 +121,27 @@ parse_pic_common_long_options() {
       PIC_BARCODE_FIRST=1
       shift
       ;;
+    --sample|--collect|--resume)
+      if [[ "$allow_sample_mode" != 1 ]]; then
+        handle_error "$1 is not supported for ${subcommand}."
+        exit 1
+      fi
+      if [[ "$PIC_MAPPING_MODE" != "bulk" ]]; then
+        handle_error "--sample, --collect and --resume cannot be combined."
+        exit 1
+      fi
+      PIC_MAPPING_MODE="${1#--}"
+      if [[ "$1" = "--sample" ]]; then
+        PIC_MAPPING_SAMPLE="${2:-}"
+        if [[ -z "$PIC_MAPPING_SAMPLE" ]]; then
+          handle_error "--sample requires a sample name."
+          exit 1
+        fi
+        shift 2
+      else
+        shift
+      fi
+      ;;
     --help)
       PIC_WANT_HELP=1
       return 0
@@ -124,6 +152,11 @@ parse_pic_common_long_options() {
       ;;
     esac
   done
+
+  if [[ "$PIC_MAPPING_MODE" != "bulk" ]]; then
+    validate_sample_mode_arguments \
+      "$PIC_MAPPING_MODE" "$PIC_SKIP_DEMUX" "$PIC_SIMULATION_MODE" "$PIC_MAPPING_SAMPLE"
+  fi
 
   validate_common_arguments \
     "$PIC_THREADS" \
@@ -167,7 +200,14 @@ run_primary_family_subcommand() {
   fi
 
   case "$subcommand" in
-  mapping) run_primary_command ;;
+  mapping)
+    case "$PIC_MAPPING_MODE" in
+    sample) run_sample_mapping_command "$PIC_MAPPING_SAMPLE" ;;
+    collect) run_collect_mapping_command ;;
+    resume) run_resume_mapping_command ;;
+    *) run_primary_command ;;
+    esac
+    ;;
   demux) run_demux_command ;;
   *)
     handle_error "Unsupported subcommand: ${subcommand}"

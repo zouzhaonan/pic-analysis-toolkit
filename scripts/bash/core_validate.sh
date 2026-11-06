@@ -49,6 +49,34 @@ validate_common_arguments() {
   fi
 }
 
+# pic mapping --sample / --collect / --resume の引数を確かめる。
+# どれも demux 済みの FASTQ (--demux-fastq-dir) を入力にする。raw FASTQ からの demux は
+# プロジェクト全体の読みを一度に振り分けるので、サンプル単位には分けられない。
+validate_sample_mode_arguments() {
+  local mode="$1"
+  local skip_demux="$2"
+  local simulation_mode="$3"
+  local sample="$4"
+
+  if [[ "$skip_demux" != 1 ]]; then
+    handle_error "--${mode} requires --demux-fastq-dir (run pic demux first)."
+    exit 1
+  fi
+
+  if [[ "$simulation_mode" = 1 ]]; then
+    handle_error "--${mode} cannot be used with --simulation."
+    exit 1
+  fi
+
+  if [[ "$mode" = "sample" ]]; then
+    # tmp/<sample>/ と log/<sample>.done に使うので、パスとして安全な名前に限る。
+    if [[ "$sample" == */* || "$sample" == .* ]]; then
+      handle_error "Invalid sample name for --sample: ${sample}"
+      exit 1
+    fi
+  fi
+}
+
 validate_inputs() {
   if [[ -z "${OUTPUT_DIR:-}" || -z "${SAMPLE_SHEET:-}" ]]; then
     handle_error "Configuration is not initialized."

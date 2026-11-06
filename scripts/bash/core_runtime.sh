@@ -80,9 +80,12 @@ init_config() {
   declare -gr RUN_NAME="$run_name"
   declare -gr BAM_DIR="$output_dir/bam"
   # umi_bam は bw 生成後は不要なので専用フォルダを作らず tmp 扱い (finalize で破棄)。
-  declare -gr UMI_BAM_DIR="$output_dir/tmp/umi_bam"
+  # TMP_DIR とその下を指す変数 (UMI_BAM_DIR / META_FOR_CHUNK / FORMATTED_SAMPLE_SHEET /
+  # JOB_QUEUE) は読み取り専用にしない。pic mapping --sample / --collect が
+  # tmp/<sample>/ などに付け替える (use_sample_workspace)。
+  declare -g UMI_BAM_DIR="$output_dir/tmp/umi_bam"
   declare -gr BIGWIG_DIR="$output_dir/bw"
-  declare -gr TMP_DIR="$output_dir/tmp"
+  declare -g TMP_DIR="$output_dir/tmp"
   declare -gr COUNTS_DIR="$output_dir/counts"
   declare -gr LOG_DIR="$output_dir/log"
   # 集計/中間テーブル (mapping_sum, deftable, aggregate_profile) の集約先。
@@ -93,9 +96,9 @@ init_config() {
   declare -gr RAW_FASTQ_DIR="$raw_fastq_dir"
   declare -gr MAP_SUMMARY="${SUMMARY_DIR}/mapping_sum__${run_name}.tsv"
   declare -gr DEFTABLE_DIR="${SUMMARY_DIR}"
-  declare -gr META_FOR_CHUNK="${TMP_DIR}/meta_for_chunk"
-  declare -gr FORMATTED_SAMPLE_SHEET="${TMP_DIR}/formatted_sample"
-  declare -gr JOB_QUEUE="${TMP_DIR}/job_queue"
+  declare -g META_FOR_CHUNK="${TMP_DIR}/meta_for_chunk"
+  declare -g FORMATTED_SAMPLE_SHEET="${TMP_DIR}/formatted_sample"
+  declare -g JOB_QUEUE="${TMP_DIR}/job_queue"
 
   declare -gr FORMAT_SAMPLE_AWK="${PIC_DIR}/scripts/awk/format_sample.awk"
   declare -gr SPLIT_FASTQ_AWK="${PIC_DIR}/scripts/awk/split_to_chunks.awk"

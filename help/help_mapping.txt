@@ -54,9 +54,35 @@ Optional options:
                              Preferred over --hisat2-very-sensitive: same yield at
                              ~1/4 the runtime and half the multi-mapping reads.
 
+Per-sample mode (requires --demux-fastq-dir; not with --simulation):
+  --sample <name>            Process only this sample: filter -> trim -> map ->
+                             count -> UMI count -> dedup -> BigWig. Scratch files
+                             go to <out-dir>/tmp/<name>/; existing bam/, counts/,
+                             log/ of other samples are kept. Writes
+                             <out-dir>/log/<name>.done when finished; if that
+                             file already exists, does nothing. Several
+                             processes may run different samples in the same
+                             --out-dir at the same time (never the same sample).
+  --collect                  After every sample has log/<name>.done, write
+                             summary/analysis_params.tsv, the deftables and
+                             mapping_sum, and gzip counts/. The outputs are the
+                             same as a normal `pic mapping`. Fails (exit 1) and
+                             lists the samples without .done otherwise.
+  --resume                   Like a normal run, but keep finished samples
+                             (log/<name>.done) and process only the rest
+                             (--jobs at a time), then --collect. Use it to
+                             restart a stopped run without losing finished
+                             samples.
+
 Examples:
   pic mapping \
     --sample-sheet /path/sample.tsv \
     --raw-fastq-dir /path/raw_fastq \
     --out-dir /path/mapping \
     --run-name test
+
+  # one sample at a time (e.g. from a scheduler), then the summary
+  pic mapping --sample-sheet sample.tsv --demux-fastq-dir out/demux \
+    --out-dir out --sample brain_1
+  pic mapping --sample-sheet sample.tsv --demux-fastq-dir out/demux \
+    --out-dir out --run-name test --collect
