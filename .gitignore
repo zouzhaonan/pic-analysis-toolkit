@@ -2,3 +2,4 @@
 .claude/settings.json
 .claude/settings.local.json
 src/pic-demux/target/
+bin/pic-demux

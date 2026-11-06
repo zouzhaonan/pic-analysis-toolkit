@@ -84,6 +84,11 @@ demux_single_prefix() {
   barcodes="$(printf "%s\n" "$rows" | awk -F"\t" '{ printf "%s%s", (NR > 1 ? "," : ""), $3 }')"
   samples="$(printf "%s\n" "$rows" | awk -F"\t" '{ printf "%s%s", (NR > 1 ? "," : ""), $4 }')"
 
+  if ! command -v "${PIC_DEMUX_BIN:-pic-demux}" >/dev/null 2>&1; then
+    handle_error "pic-demux not found. Build it with: bash ${PIC_ROOT:-<toolkit>}/src/pic-demux/install.sh"
+    return 1
+  fi
+
   local fq
   for fq in "${fq_prefix}_R1_001.fastq.gz" "${fq_prefix}_R2_001.fastq.gz"; do
     if [[ ! -f "$fq" ]]; then
@@ -109,7 +114,7 @@ demux_single_prefix() {
   # gzip をスレッドで並べて圧縮する。中身は旧 demux_prefix.awk (paste | awk) と同じ。
   # 入力の不正 (gzip の破損・途中切れ、R1 と R2 の行数違い、4 行単位でない) は 0 以外で終わる。
   [[ "${PIC_BARCODE_FIRST:-0}" = 1 ]] && barcode_first_opt=(--barcode-first)
-  pic-demux \
+  "${PIC_DEMUX_BIN:-pic-demux}" \
     --r1 "${fq_prefix}_R1_001.fastq.gz" --r2 "${fq_prefix}_R2_001.fastq.gz" \
     --barcodes "$barcodes" --samples "$samples" \
     --out-dir "$part_dir" --suffix "$suffix" --nread-file "${marker}.nread.tmp" \

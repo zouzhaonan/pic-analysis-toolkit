@@ -13,6 +13,14 @@ PIC_BASH_DIR="${PIC_ROOT}/scripts/bash"
 PIC_R_DIR="${PIC_ROOT}/scripts/r"
 PIC_HELP_DIR="${PIC_ROOT}/help"
 
+# pic demux の振り分けのプログラム。この toolkit の bin/pic-demux (src/pic-demux/install.sh が置く) を
+# 最初に使い、無ければ PATH の pic-demux (conda パッケージは環境の bin に置く)。版の写しごとに持てるように。
+if [[ -x "${PIC_BIN_DIR}/pic-demux" ]]; then
+  PIC_DEMUX_BIN="${PIC_BIN_DIR}/pic-demux"
+else
+  PIC_DEMUX_BIN="pic-demux"
+fi
+
 # shellcheck source=/dev/null
 source "${PIC_BASH_DIR}/core_common.sh"
 # shellcheck source=/dev/null
