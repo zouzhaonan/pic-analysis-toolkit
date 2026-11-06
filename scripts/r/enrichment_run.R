@@ -26,14 +26,20 @@ run_jobs_parallel <- function(jobs, parallel_threads, fn = NULL) {
     threads <- 1L
   }
 
+  # 子は job の前と後に親が生きているかを見て、親が殺されていたら自分も終わる (analysis_runtime.R)。
+  master_pid <- Sys.getpid()
+  in_child <- function() !identical(Sys.getpid(), master_pid)
   worker <- function(i) {
-    tryCatch(
+    if (in_child()) pic_exit_if_orphaned(master_pid)
+    res <- tryCatch(
       {
         if (is.null(fn)) jobs[[i]]$run() else fn(jobs[[i]])
         list(ok = TRUE, idx = i, error = NULL)
       },
       error = function(err) list(ok = FALSE, idx = i, error = conditionMessage(err))
     )
+    if (in_child()) pic_exit_if_orphaned(master_pid)
+    res
   }
 
   results <- if (.Platform$OS.type == "unix" && threads > 1 && length(jobs) > 1) {
