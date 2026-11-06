@@ -24,7 +24,7 @@ save_deg_normalized_count <- function(stats, normalized_count_table, out_dir, pr
   if (nrow(deg_normalized_count) == 0) {
     return(invisible(NULL))
   }
-  readr::write_csv(
+  pic_write_csv_atomic(
     deg_normalized_count,
     file.path(out_dir, sprintf("DEG_normalizedCountTable_%s.csv", project_name))
   )
@@ -32,13 +32,22 @@ save_deg_normalized_count <- function(stats, normalized_count_table, out_dir, pr
 
 # readr::write_lines と同じ中身 (1 行 1 要素、NA は "NA"、末尾に改行) を base で書く。
 # readr は呼ぶたびに vroom を起こすので、比較 × 2 本のファイルで数秒かかっていた。
+# 一時ファイルに書いてから rename する (書きかけを残さない。deseq2_common.R)。
 pic_write_lines <- function(x, path) {
-  con <- file(path, open = "wb")
-  on.exit(close(con))
+  tmp <- pic_tmp_path(path)
+  con <- file(tmp, open = "wb")
   x <- as.character(x)
   x[is.na(x)] <- "NA"
-  if (length(x) > 0) writeLines(enc2utf8(x), con, sep = "\n", useBytes = TRUE)
-  invisible(x)
+  ok <- FALSE
+  tryCatch({
+    if (length(x) > 0) writeLines(enc2utf8(x), con, sep = "\n", useBytes = TRUE)
+    ok <- TRUE
+  }, finally = {
+    close(con)
+    if (!ok) unlink(tmp)
+  })
+  pic_commit_tmp(tmp, path)
+  invisible(path)
 }
 
 save_deg_lists <- function(stats, contrasts, out_dir, project_name, fdr) {
@@ -46,6 +55,7 @@ save_deg_lists <- function(stats, contrasts, out_dir, project_name, fdr) {
   dir.create(deg_list_dir, recursive = TRUE, showWarnings = FALSE)
   has_ext_gene <- "ext_gene" %in% colnames(stats)
 
+  written <- character(0)
   purrr::iwalk(contrasts, function(contrast_values, contrast_name) {
     numerator <- as.character(contrast_values[[2]])
     denominator <- as.character(contrast_values[[3]])
@@ -78,22 +88,20 @@ save_deg_lists <- function(stats, contrasts, out_dir, project_name, fdr) {
       dplyr::distinct(.data$gene_label) |>
       dplyr::pull(.data$gene_label)
 
-    pic_write_lines(
-      numerator_genes,
-      file.path(deg_list_dir, sprintf("%s__%s.txt", file_label, numerator))
-    )
-    pic_write_lines(
-      denominator_genes,
-      file.path(deg_list_dir, sprintf("%s__%s.txt", file_label, denominator))
-    )
+    f_num <- file.path(deg_list_dir, sprintf("%s__%s.txt", file_label, numerator))
+    f_den <- file.path(deg_list_dir, sprintf("%s__%s.txt", file_label, denominator))
+    pic_write_lines(numerator_genes, f_num)
+    pic_write_lines(denominator_genes, f_den)
+    written <<- c(written, f_num, f_den)
   })
+  invisible(written)
 }
 
-# contrast 関連の DEG データ (CSV / リスト) を出力する。
+# contrast 関連の DEG データ (CSV / リスト) を出力する。書いたファイルのパスを返す。
 # dds / label / contrast_plot_dir は旧・静的画像出力用の名残で、現在は使用しない
 # (呼び出し側の互換のため引数は維持)。
 save_contrast_plots <- function(dds, label, stats, contrasts, normalized_count_table, out_dir, project_name, fdr, contrast_plot_dir = out_dir) {
-  save_deg_normalized_count(
+  f_norm <- save_deg_normalized_count(
     stats = stats,
     normalized_count_table = normalized_count_table,
     out_dir = out_dir,
@@ -101,11 +109,12 @@ save_contrast_plots <- function(dds, label, stats, contrasts, normalized_count_t
     fdr = fdr
   )
 
-  save_deg_lists(
+  f_lists <- save_deg_lists(
     stats = stats,
     contrasts = contrasts,
     out_dir = out_dir,
     project_name = project_name,
     fdr = fdr
   )
+  invisible(c(if (is.character(f_norm)) f_norm, f_lists))
 }

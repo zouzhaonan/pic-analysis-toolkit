@@ -200,16 +200,14 @@ pic_write_analysis_param <- function(out_dir, key, value) {
   rows <- rows[rows$key != key, , drop = FALSE]
   rows <- rbind(rows, data.frame(key = key, value = as.character(value),
                                  stringsAsFactors = FALSE))
-  utils::write.table(rows, f, sep = "\t", quote = FALSE, row.names = FALSE)
+  tmp <- pic_tmp_path(f)   # 一時ファイル -> rename (書きかけを残さない。deseq2_common.R)
+  utils::write.table(rows, tmp, sep = "\t", quote = FALSE, row.names = FALSE)
+  pic_commit_tmp(tmp, f)
 }
 
-# threads > 1 のとき:
-#   - rlog (blind = TRUE) を fork した子で DESeq() と同時に回す (rlog は design を ~1 にして分散を
-#     推定し直すので、DESeq() の前の dds から作っても後の dds から作っても同じ行列になる)。
-#     返り値の rlog_job を collect_rlog_job() で受け取る。
-#   - results() を比較ごとに fork して並べる (比較どうしは独立。1 比較 1〜2 秒かかる)。
-# DESeq() 自体の parallel = TRUE は使わない (36 サンプルで試すと、子に dds を渡す手間で 1 本より遅い)。
-run_deseq <- function(mat, def, contrasts, threads = 1L) {
+# カウント行列 (UMI_count の表) から DESeqDataSet を作り、サイズ因子を確定させる。
+# fit と rlog の両方がこれから始める (同じ入力なら同じ dds・同じサイズ因子になる)。
+build_deseq_dds <- function(mat, def) {
   mat_filtered <- mat |>
     dplyr::filter(.data$chr != "MT" | is.na(.data$chr)) |>
     dplyr::filter(dplyr::if_any(-(1:4), ~ .x > 0))
@@ -241,10 +239,30 @@ run_deseq <- function(mat, def, contrasts, threads = 1L) {
   # 設定済みなら DESeq() は再推定しないため sfType は渡さない。
   dds <- pic_set_size_factors(dds)
 
-  rlog_job <- if (threads > 1L && .Platform$OS.type == "unix") {
-    parallel::mcparallel(compute_rlog_matrix(dds), silent = TRUE)
-  } else NULL
+  list(dds = dds, label = label_df)
+}
 
+# rlog (blind = TRUE) を fork した子で回し始める (--part all で threads > 1 のとき、DESeq() と同時に)。
+# rlog は design を ~1 にして分散を推定し直すので、DESeq() の前の dds から作っても後の dds から
+# 作っても同じ行列になる。返り値を collect_rlog_matrix() に渡して受け取る。
+start_rlog_job <- function(dds, master_pid = Sys.getpid()) {
+  force(master_pid)   # 既定値の評価を fork の前に (子の中で評価すると子の pid になる)
+  parallel::mcparallel({
+    pic_start_child_guard(master_pid)   # 親が殺されたら、rlog の途中でもこの子を止める (deseq2_common.R)
+    r <- compute_rlog_matrix(dds)
+    pic_exit_if_orphaned(master_pid)    # 親が殺されていたら結果を送らずに終わる (analysis_runtime.R)
+    r
+  }, silent = TRUE)
+}
+
+# DESeq() と比較ごとの results()。
+#   - results() は比較ごとに fork して並べる (比較どうしは独立。1 比較 1〜2 秒かかる)。
+#     worker の数は pic_n_workers (threads・比較の数・メモリ) で決める。busy は同時に走っている
+#     ほかの子 (rlog) の分: threads と mem_gb からその分を引く。
+#   - DESeq() 自体の parallel = TRUE は使わない (36 サンプルで試すと、子に dds を渡す手間で 1 本より遅い)。
+fit_deseq <- function(dds, contrasts, threads = 1L, mem_gb = Inf, master_pid = Sys.getpid(),
+                      busy_threads = 0L, busy_gb = 0) {
+  force(master_pid)   # 既定値の評価を fork の前に (子の中で評価すると子の pid になる)
   deseq_fit <- tryCatch(
     DESeq2::DESeq(dds),
     error = function(err) err
@@ -284,8 +302,17 @@ run_deseq <- function(mat, def, contrasts, threads = 1L) {
       cooksCutoff = FALSE
     )
   }
-  results_list <- if (threads > 1L && length(contrasts) > 1L && .Platform$OS.type == "unix") {
-    res <- parallel::mclapply(contrasts, one_result, mc.cores = min(threads, length(contrasts)))
+  mem <- deseq2_mem_estimate_gb(nrow(dds), ncol(dds))
+  workers <- pic_n_workers(max(1L, threads - busy_threads), length(contrasts),
+                           per_worker_gb = mem$results_worker, mem_gb = mem_gb - busy_gb, main_gb = mem$main)
+  results_list <- if (workers > 1L && .Platform$OS.type == "unix") {
+    message(sprintf("[INFO] results(): %d contrasts on %d workers", length(contrasts), workers))
+    res <- parallel::mclapply(contrasts, function(cv) {
+      pic_exit_if_orphaned(master_pid)
+      r <- one_result(cv)
+      pic_exit_if_orphaned(master_pid)
+      r
+    }, mc.cores = workers)
     bad <- vapply(res, function(r) !inherits(r, "DESeqResults"), logical(1))
     if (any(bad)) stop(sprintf("DESeq2::results failed for: %s (%s)", paste(names(contrasts)[bad], collapse = ", "),
                                paste(unique(vapply(res[bad], function(r) paste(as.character(r), collapse = " "), character(1))), collapse = " | ")),
@@ -295,13 +322,7 @@ run_deseq <- function(mat, def, contrasts, threads = 1L) {
     lapply(contrasts, one_result)
   }
 
-  list(
-    dds = dds,
-    label = label_df,
-    mat = mat,
-    stats = results_list,
-    rlog_job = rlog_job
-  )
+  list(dds = dds, stats = results_list)
 }
 
 build_stats_tables <- function(results_list, contrasts, e2g, fdr) {
@@ -412,7 +433,7 @@ compute_rlog_matrix <- function(dds) {
   )
 }
 
-# run_deseq が子で回した rlog を受け取る。子が無い・落ちたときはここで計算する (同じ行列)。
+# start_rlog_job が子で回した rlog を受け取る。子が無い・落ちたときはここで計算する (同じ行列)。
 collect_rlog_matrix <- function(dds, rlog_job = NULL) {
   if (!is.null(rlog_job)) {
     res <- parallel::mccollect(rlog_job, wait = TRUE)[[1]]
@@ -441,10 +462,6 @@ build_degpattern_outputs <- function(
   min_cluster_size = 5L,
   rlog_mat = NULL
 ) {
-  if (!requireNamespace("ggbeeswarm", quietly = TRUE)) {
-    stop("Missing required R package: ggbeeswarm", call. = FALSE)
-  }
-
   deg_genes <- stats |>
     dplyr::filter(
       !is.na(.data$ens_gene),
@@ -732,54 +749,12 @@ build_degpattern_outputs <- function(
   cluster_profile <- profile_long |>
     dplyr::mutate(group = factor(.data$group, levels = group_levels))
 
-  vcfg <- pic_plot_spec()$plot$violin
-  palette_name <- pic_plot_spec()$plot$palette_d3
-
-  cluster_plot <- ggplot2::ggplot(
-    cluster_profile,
-    ggplot2::aes(
-      x = .data$group,
-      y = .data$rlog_expr,
-      color = .data$group,
-      fill = .data$group
-    )
-  ) +
-    ggplot2::geom_boxplot(
-      width = vcfg$box_width,
-      outlier.shape = NA,
-      alpha = vcfg$box_alpha,
-      linewidth = vcfg$box_linewidth
-    ) +
-    ggbeeswarm::geom_quasirandom(
-      method = "pseudorandom",
-      size = 0.2,
-      alpha = vcfg$point_alpha
-    ) +
-    ggplot2::facet_wrap(~cluster_id, scales = "free_y") +
-    ggsci::scale_color_d3(palette_name, name = "Group") +
-    ggsci::scale_fill_d3(palette_name, name = "Group") +
-    ggplot2::theme_classic() +
-    ggplot2::theme(
-      axis.title.x = ggplot2::element_blank(),
-      axis.text.x = ggplot2::element_blank(),
-      axis.ticks.x = ggplot2::element_blank(),
-      legend.position = "right",
-      legend.title = ggplot2::element_text(size = vcfg$legend_title_size),
-      legend.text = ggplot2::element_text(size = vcfg$legend_text_size),
-      strip.background = ggplot2::element_blank(),
-      panel.border = ggplot2::element_rect(
-        color = "black",
-        fill = NA,
-        linewidth = vcfg$box_linewidth
-      )
-    ) +
-    ggplot2::labs(y = "rlog expression")
-
+  # 注: 図 (ggplot) はレポートが DEGCluster_profile から描くので、ここでは作らない。
   list(
     cluster_gene = cluster_gene,
     cluster_summary = cluster_summary,
     cluster_profile = cluster_profile,
-    plot = cluster_plot,
+    plot = NULL,
     merge_map = merge_map
   )
 }
