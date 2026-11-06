@@ -195,9 +195,11 @@ collect_demux_parts() {
 }
 
 # 全 prefix を並べて振り分け、まとめる (pic demux / pic mapping / pic all の既定)。
-# pic-demux 1 本は --threads のぶんのコアを使い切れる (圧縮をスレッドで並べる)。1 本あたり
-# 解凍と突き合わせに約 2 コアを使うので、1 本に 8 コア以上を割り当て、同時に回す prefix の数は
-# floor(THREADS / 8) (1 以上、prefix の数まで)、1 本の --threads は THREADS / その数。
+# pic-demux 1 本は --threads のぶんのコアを使う (解凍と突き合わせに約 2、残りで圧縮を並べる)。
+# 1 本が速くなるのは約 12 コアまで (R2 の解凍と突き合わせが 1 本ずつなので)。1 本に 6 コア以上を
+# 割り当て、同時に回す prefix の数は floor(THREADS / 6) (1 以上、prefix の数まで)。回る順番の
+# 段の数を変えない範囲で同時の数を減らして揃え、1 本の --threads は THREADS / 同時の数。
+# 例: THREADS=40・6 prefix → 6 本 × 6、THREADS=8 → 1 本 × 8 を 6 回、THREADS=24 → 3 本 × 8 を 2 回。
 split_fq_by_barcode() {
   local part_dir="${TMP_DIR}/demux_parts"
   local status_dir="${TMP_DIR}/demux_status"
@@ -211,9 +213,13 @@ split_fq_by_barcode() {
     prefixes+=("$p")
   done < <(list_demux_prefixes)
 
-  max_jobs=$(( THREADS / 8 ))
+  local n_prefix=${#prefixes[@]} waves
+  max_jobs=$(( THREADS / 6 ))
+  (( max_jobs > n_prefix )) && max_jobs=$n_prefix
   (( max_jobs < 1 )) && max_jobs=1
-  (( max_jobs > ${#prefixes[@]} )) && max_jobs=${#prefixes[@]}
+  waves=$(( (n_prefix + max_jobs - 1) / max_jobs ))
+  (( waves < 1 )) && waves=1
+  max_jobs=$(( (n_prefix + waves - 1) / waves ))
   (( max_jobs < 1 )) && max_jobs=1
   job_threads=$(( THREADS / max_jobs ))
   debug_kv "arg.parallel_prefixes" "$max_jobs"

@@ -22,7 +22,8 @@ Optional options:
                            pair (prefix) is read once and split on the fly by
                            pic-demux, which uses about <threads> cores
                            (decompression ~2 + parallel gzip compression).
-                           floor(threads / 8) prefixes (at least 1) run at the
+                           One prefix speeds up to about 12 cores.
+                           floor(threads / 6) prefixes (at least 1) run at the
                            same time, each with threads / that number. With
                            --prefix, the one prefix uses all <threads>.
                            Output gzip level: env PIC_DEMUX_LEVEL (1-12,

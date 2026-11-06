@@ -323,14 +323,13 @@ fn nth_field<'a>(a: &'a [u8], b: &'a [u8], mut n: usize) -> &'a [u8] {
             if i >= len {
                 break;
             }
-            let st = i;
-            while i < len && !is_ws(line[i]) {
-                i += 1;
-            }
+            // 欄の終わりは SIMD で探す (配列・品質の行は長い)
+            let end = memchr::memchr2(b' ', b'\t', &line[i..]).map_or(len, |k| i + k);
             if n == 0 {
-                return &line[st..i];
+                return &line[i..end];
             }
             n -= 1;
+            i = end;
         }
     }
     &[]
