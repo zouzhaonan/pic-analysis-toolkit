@@ -6,110 +6,14 @@
 format_sample_sheet() {
   debug_log "STEP=format_sample_sheet"
   debug_kv "input.sample_sheet" "$SAMPLE_SHEET"
-  debug_kv "input.raw_fastq_dir" "${RAW_FASTQ_DIR:-}"
-  debug_kv "input.awk" "$FORMAT_SAMPLE_AWK"
   debug_kv "output.formatted_sample_sheet" "$FORMATTED_SAMPLE_SHEET"
-  debug_kv "output.meta_for_chunk" "$META_FOR_CHUNK"
   {
     printf "%s\t%s\t%s\t%s\t%s\n" "fastq_prefix" "genome" "barcode" "sample" "group"
     tr -d "\015" <"$SAMPLE_SHEET" | awk -F"\t" 'NR==1{
       if (tolower($1)=="fastq_prefix" && tolower($2)=="genome" && tolower($3)=="barcode" && tolower($4)=="sample" && tolower($5)=="group") next
     } {print}'
   } >"$FORMATTED_SAMPLE_SHEET"
-
-  if [[ "$SKIP_DEMUX" = 1 ]]; then
-    : >"$META_FOR_CHUNK"
-  else
-    awk -F"\t" -v OFS="\t" -v threads="$THREADS" -v raw_fastq_dir="$RAW_FASTQ_DIR" \
-      -f "$FORMAT_SAMPLE_AWK" "$FORMATTED_SAMPLE_SHEET" >"$META_FOR_CHUNK"
-  fi
-  debug_kv "result.meta_rows" "$(wc -l <"$META_FOR_CHUNK")"
-}
-
-chunk_single_fq() {
-  local job_id="$1"
-  local chunk fq_prefix range barcodes samples
-  local fq_files chunk_tmp_dir
-
-  read -r chunk fq_prefix range barcodes samples < <(
-    sed -n "${job_id}p" "$META_FOR_CHUNK"
-  )
-
-  fq_files=("${fq_prefix}_R1_001.fastq.gz" "${fq_prefix}_R2_001.fastq.gz")
-  chunk_tmp_dir="${TMP_DIR}/chunks/$(basename "$fq_prefix")"
-  mkdir -p "$chunk_tmp_dir"
-
-  awk -v barcodes="$barcodes" -v samples="$samples" -v chunk="$chunk" \
-    -v tmp_dir="$chunk_tmp_dir" -v barcode_first="${PIC_BARCODE_FIRST:-0}" \
-    -f "$SPLIT_FASTQ_AWK" <(
-      paste \
-        <(seqkit range -r "$range" "${fq_files[0]}") \
-        <(seqkit range -r "$range" "${fq_files[1]}")
-    )
-}
-
-chunk_all_input_fq() {
-  local total_jobs
-
-  total_jobs="$(wc -l <"$META_FOR_CHUNK")"
-  debug_log "STEP=chunk_all_input_fq"
-  debug_kv "input.meta_for_chunk" "$META_FOR_CHUNK"
-  debug_kv "arg.threads" "$THREADS"
-  debug_kv "arg.total_jobs" "$total_jobs"
-  run_numbered_jobs_in_parallel "$THREADS" "$total_jobs" chunk_single_fq
-  debug_log "RESULT=chunk_all_input_fq done"
-}
-
-gather_single_sample_fq() {
-  local sample="$1"
-  local sample_total_reads_file fastq_chunks nread_chunks
-
-  sample_total_reads_file="${TMP_DIR}/total_reads.${sample}"
-  fastq_chunks=("${TMP_DIR}"/chunks/*/"${sample}.fastq".*)
-  nread_chunks=("${TMP_DIR}"/chunks/*/"${sample}.nread".*)
-
-  if [[ ! -e "${fastq_chunks[0]}" ]]; then
-    printf "%s\t0\n" "$sample" >"$sample_total_reads_file"
-    return 0
-  fi
-
-  cat "${fastq_chunks[@]}" | pigz -p 1 >"$(demux_fastq_path "$sample")"
-  awk -v sample="$sample" '{sum += $1} END {print sample "\t" sum}' \
-    "${nread_chunks[@]}" >"$sample_total_reads_file"
-
-  rm -f "${fastq_chunks[@]}" "${nread_chunks[@]}"
-}
-
-gather_all_samples_fq() {
-  local samples=()
-  local sample
-
-  while IFS= read -r sample; do
-    samples+=("$sample")
-  done < <(tail -n +2 "$FORMATTED_SAMPLE_SHEET" | cut -f4 | sort -u)
-
-  run_list_jobs_in_parallel "$THREADS" gather_single_sample_fq "${samples[@]}"
-}
-
-merge_total_reads() {
-  cat "${TMP_DIR}"/total_reads.* >"$TOTAL_READS"
-  rm -f "${TMP_DIR}"/total_reads.*
-}
-
-gather_chunked_fq() {
-  debug_log "STEP=gather_chunked_fq"
-  debug_kv "input.chunk_dir" "${TMP_DIR}/chunks"
-  debug_kv "output.total_reads" "$TOTAL_READS"
-  : >"$TOTAL_READS"
-  gather_all_samples_fq
-  merge_total_reads
-  rm -rf "${TMP_DIR}/chunks" "$META_FOR_CHUNK"
-  debug_kv "result.total_reads_rows" "$(wc -l <"$TOTAL_READS")"
-}
-
-split_fq_by_barcode() {
-  chunk_all_input_fq
-  gather_chunked_fq
+  debug_kv "result.rows" "$(($(wc -l <"$FORMATTED_SAMPLE_SHEET") - 1))"
 }
 
 demux_fastq_path() {
@@ -623,21 +527,6 @@ bam_to_cpm_bw() {
   bam_to_bw
 }
 
-run_demux_command() {
-  log_info "Validating inputs"
-  validate_inputs
-  log_info "Preparing demux workspace"
-  prepare_workspace_for_demux
-  log_info "Formatting sample sheet"
-  format_sample_sheet
-  if [[ "$SKIP_DEMUX" = 0 ]]; then
-    log_info "Running demux by barcode"
-    split_fq_by_barcode
-  fi
-  rm -rf "$TMP_DIR"
-  debug_log "RESULT=run_demux_command status=ok"
-}
-
 run_primary_command() {
   debug_log "STEP=run_primary_command"
   debug_kv "arg.output_dir" "$OUTPUT_DIR"
@@ -715,7 +604,6 @@ use_sample_workspace() {
 
   TMP_DIR="${OUTPUT_DIR}/tmp/${sample_name}"
   UMI_BAM_DIR="${TMP_DIR}/umi_bam"
-  META_FOR_CHUNK="${TMP_DIR}/meta_for_chunk"
   FORMATTED_SAMPLE_SHEET="${TMP_DIR}/formatted_sample"
   JOB_QUEUE="${TMP_DIR}/job_queue"
 }

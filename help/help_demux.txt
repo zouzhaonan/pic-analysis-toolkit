@@ -18,10 +18,32 @@ Required options:
   --raw-fastq-dir <dir>    Common directory containing FASTQ prefixes from column 1
 
 Optional options:
-  --threads <int>          Number of parallel threads (default: 8)
+  --threads <int>          Number of parallel threads (default: 8). Each FASTQ
+                           pair (prefix) is read once and split on the fly,
+                           using about 5-6 cores; ceil(threads / 4) prefixes
+                           run at the same time.
+
+Per-prefix mode (for schedulers; run each prefix, then --collect):
+  --prefix <prefix>        Split only this FASTQ pair (column 1 of the sample
+                           sheet, or its basename). Writes
+                           <out-dir>/<sample>.part.<prefix>.fastq.gz and, last,
+                           <out-dir>/total_reads.part.<prefix>. Does nothing if
+                           that file already exists. Other files in --out-dir
+                           are kept, so different prefixes may run at the same
+                           time in the same --out-dir.
+  --collect                After every prefix has total_reads.part.<prefix>,
+                           join the parts into <out-dir>/<sample>.fastq.gz and
+                           write <out-dir>/total_reads (same as a normal run),
+                           then remove the parts. Fails (exit 1) and lists the
+                           unfinished prefixes otherwise.
 
 Example:
   pic demux \
     --sample-sheet /path/sample.tsv \
     --raw-fastq-dir /path/raw_fastq \
     --out-dir /path/mapping
+
+  # one prefix at a time, then join
+  pic demux --sample-sheet sample.tsv --raw-fastq-dir raw --out-dir out/demux --prefix brain
+  pic demux --sample-sheet sample.tsv --raw-fastq-dir raw --out-dir out/demux --prefix ovary
+  pic demux --sample-sheet sample.tsv --raw-fastq-dir raw --out-dir out/demux --collect
