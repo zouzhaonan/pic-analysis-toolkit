@@ -629,12 +629,12 @@ build_tabs <- function(tabs, extra_nav = "") {
 
 # HTML ページを組み立てて書き出す (plotly を内包)。
 render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_html, extra_nav = "") {
-  plots_json <- jsonlite::toJSON(reg$plots, auto_unbox = TRUE, null = "null", na = "null", digits = 6)
-  expr_json <- jsonlite::toJSON(if (length(reg$expr) > 0) reg$expr else stats::setNames(list(), character(0)),
-                                auto_unbox = TRUE, null = "null", na = "null", digits = 6)
+  # pic_to_json は jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", na = "null", digits = d) と
+  # 同じ文字列を返す (長さ 1 の値のリストをまとめて書くので数十倍速い。report_json.R)。
+  plots_json <- pic_to_json(reg$plots, digits = 6)
+  expr_json <- pic_to_json(if (length(reg$expr) > 0) reg$expr else stats::setNames(list(), character(0)), digits = 6)
   # 部分集合 PCA 用の rlog 行列 (群を選び直して主成分を引き直すために使う)
-  pca_json <- jsonlite::toJSON(if (length(reg$pca) > 0) reg$pca else stats::setNames(list(), character(0)),
-                               auto_unbox = TRUE, null = "null", na = "null", digits = 4)
+  pca_json <- pic_to_json(if (length(reg$pca) > 0) reg$pca else stats::setNames(list(), character(0)), digits = 4)
   # 埋め込みファイル (gzip+base64) — DL 用に {id:{n:name, gz:base64}} だけを出力
   files_min <- if (!is.null(reg$files)) lapply(reg$files, function(f) list(n = f$name, gz = f$gz)) else list()
   files_json <- jsonlite::toJSON(if (length(files_min) > 0) files_min else stats::setNames(list(), character(0)),
