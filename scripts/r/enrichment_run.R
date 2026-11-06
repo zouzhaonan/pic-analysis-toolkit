@@ -1,4 +1,22 @@
-run_jobs_parallel <- function(jobs, parallel_threads, fn) {
+# 役割:
+#   DESeq2 stats から ORA (degPatterns のクラスタ) と GSEA (比較ごと) を回し、CSV を書く。
+# 並べ方:
+#   method × cluster (ORA) と method × 比較 (GSEA) をすべて 1 つの job の並びにし、
+#   重いもの (GSEA、遺伝子セットの多い method) から順に --threads 本ずつ fork で回す。
+#   gson は method ごとに親で 1 回だけ読み、子は fork で共有する。
+#   fgsea の中の並列 (BiocParallel の既定は全コア) は使わない。job の並列だけで機械を埋める。
+# 再現性:
+#   GSEA は job ごとに同じ seed (PIC_GSEA_SEED、既定 42) を置いてから回すので、
+#   並べ方・--threads・分け方にかかわらず、同じ入力から同じ表が出る。
+
+pic_gsea_seed <- function() {
+  s <- suppressWarnings(as.integer(Sys.getenv("PIC_GSEA_SEED", "42")))
+  if (is.na(s)) 42L else s
+}
+
+# job は list(kind, method, label, cost, run = function() ...)。
+# 子の失敗は集めて最後にまとめて止める (ほかの job は最後まで回す)。
+run_jobs_parallel <- function(jobs, parallel_threads, fn = NULL) {
   if (length(jobs) == 0) {
     return(invisible(NULL))
   }
@@ -11,40 +29,42 @@ run_jobs_parallel <- function(jobs, parallel_threads, fn) {
   worker <- function(i) {
     tryCatch(
       {
-        fn(jobs[[i]])
+        if (is.null(fn)) jobs[[i]]$run() else fn(jobs[[i]])
         list(ok = TRUE, idx = i, error = NULL)
       },
       error = function(err) list(ok = FALSE, idx = i, error = conditionMessage(err))
     )
   }
 
-  results <- if (.Platform$OS.type == "unix" && threads > 1) {
+  results <- if (.Platform$OS.type == "unix" && threads > 1 && length(jobs) > 1) {
+    # job ごとに fork し、空いた子から次の job を渡す (重さの違う job を偏りなく詰める)。
     parallel::mclapply(
       seq_along(jobs),
       worker,
-      mc.cores = min(threads, length(jobs))
+      mc.cores = min(threads, length(jobs)),
+      mc.preschedule = FALSE
     )
   } else {
     lapply(seq_along(jobs), worker)
   }
 
   failed <- Filter(function(x) !isTRUE(x$ok), results)
+  # mclapply は子が落ちると (メモリ不足で殺されたなど) try-error や NULL を返す。
+  crashed <- which(vapply(results, function(x) !is.list(x) || is.null(x$ok), logical(1)))
+  for (i in crashed) {
+    failed[[length(failed) + 1]] <- list(ok = FALSE, idx = i, error = paste(as.character(results[[i]]), collapse = " "))
+  }
+  failed <- Filter(function(x) is.list(x) && !isTRUE(x$ok), failed)
   if (length(failed) > 0) {
     details <- vapply(
       failed,
       function(x) {
         job <- jobs[[x$idx]]
-        label <- if (!is.null(job$contrast_name) && length(job$contrast_name) > 0) {
-          as.character(job$contrast_name)
-        } else if (!is.null(job$cluster_id) && length(job$cluster_id) > 0) {
-          as.character(job$cluster_id)
-        } else {
-          sprintf("job_%d", as.integer(x$idx))
-        }
         sprintf(
-          "method=%s contrast=%s error=%s",
+          "%s method=%s label=%s error=%s",
+          as.character(job$kind %||% ""),
           as.character(job$method),
-          label,
+          as.character(job$label %||% sprintf("job_%d", as.integer(x$idx))),
           as.character(x$error)
         )
       },
@@ -62,6 +82,15 @@ run_jobs_parallel <- function(jobs, parallel_threads, fn) {
   }
 
   invisible(NULL)
+}
+
+`%||%` <- function(a, b) if (is.null(a)) b else a
+
+# 書きかけの CSV を残さない (止められたときに、レポートが半端な表を読まないように)。
+write_csv_atomic <- function(tbl, path) {
+  tmp <- paste0(path, ".tmp", Sys.getpid())
+  readr::write_csv(tbl, tmp)
+  file.rename(tmp, path)
 }
 
 strip_kegg_species_suffix <- function(description_vec) {
@@ -114,244 +143,191 @@ reset_method_dir <- function(method_dir, project_name) {
 }
 
 
-run_ora_enrichment <- function(stats, genome, out_dir, project_name,
-                               methods = c("GO_BP"), parallel_threads = 1,
-                               enrichment_lib_dir = NULL,
-                               genome_map_file = NULL,
-                               deg_cluster_file = NULL) {
-  methods <- validate_ora_methods(methods)
-  if (length(methods) == 0) {
-    return(invisible(NULL))
+ora_result_table <- function(method, cluster_id, cluster_genes, universe_genes, gson_obj, anno_env = NULL) {
+  display_label <- cluster_id
+  if (length(cluster_genes) == 0) {
+    empty_cols <- c(
+      "method", "cluster", "ID", "Description", "GeneRatio", "BgRatio",
+      "RichFactor", "FoldEnrichment", "zScore", "pvalue", "p.adjust", "qvalue", "geneID", "Count"
+    )
+    empty_tbl <- as.data.frame(setNames(rep(list(character()), length(empty_cols)), empty_cols), stringsAsFactors = FALSE)
+    return(tibble::as_tibble(empty_tbl))
   }
+
+  cluster_res <- safe_as_tibble(run_local_ora(cluster_genes, universe_genes, gson_obj, anno_env)) |>
+    dplyr::mutate(direction = cluster_id)
+
+  required_ora_cols <- c(
+    "ID", "Description", "GeneRatio", "BgRatio",
+    "RichFactor", "FoldEnrichment", "zScore", "pvalue", "p.adjust", "qvalue", "geneID", "Count", "direction"
+  )
+  numeric_ora_cols <- c("RichFactor", "FoldEnrichment", "zScore", "pvalue", "p.adjust", "qvalue", "Count")
+  missing <- setdiff(required_ora_cols, colnames(cluster_res))
+  for (col_name in missing) {
+    if (col_name %in% numeric_ora_cols) {
+      cluster_res[[col_name]] <- NA_real_
+    } else {
+      cluster_res[[col_name]] <- NA_character_
+    }
+  }
+  for (col_name in required_ora_cols) {
+    if (col_name %in% numeric_ora_cols) {
+      cluster_res[[col_name]] <- suppressWarnings(as.numeric(cluster_res[[col_name]]))
+    } else {
+      cluster_res[[col_name]] <- as.character(cluster_res[[col_name]])
+    }
+  }
+
+  result_cols <- c(
+    "cluster", "ID", "Description", "GeneRatio", "BgRatio",
+    "RichFactor", "FoldEnrichment", "zScore", "pvalue", "p.adjust", "qvalue", "geneID", "Count"
+  )
+  is_kegg_method <- identical(as.character(method), "KEGG")
+  cluster_res |>
+    dplyr::filter(!is.na(.data$pvalue)) |>
+    dplyr::arrange(.data$pvalue) |>
+    dplyr::mutate(
+      cluster = display_label,
+      method = method,
+      Description = if (is_kegg_method) strip_kegg_species_suffix(.data$Description) else as.character(.data$Description)
+    ) |>
+    dplyr::select(dplyr::any_of(c("method", result_cols)))
+}
+
+gsea_result_table <- function(method, numerator, denominator, display_label, gene_list, gson_obj) {
+  gsea_table_raw <- safe_as_tibble(run_local_gsea(gene_list, gson_obj, seed = pic_gsea_seed()))
+
+  required_gsea_cols <- c(
+    "ID", "Description", "setSize", "enrichmentScore", "NES",
+    "pvalue", "p.adjust", "qvalue", "rank", "leading_edge", "core_enrichment"
+  )
+  for (col_name in setdiff(required_gsea_cols, colnames(gsea_table_raw))) {
+    gsea_table_raw[[col_name]] <- NA
+  }
+
+  is_kegg_method <- identical(as.character(method), "KEGG")
+  gsea_table_raw |>
+    dplyr::mutate(
+      method = method,
+      contrast = display_label,
+      Description = if (is_kegg_method) strip_kegg_species_suffix(.data$Description) else as.character(.data$Description),
+      direction = dplyr::case_when(
+        !is.na(.data$NES) & .data$NES > 0 ~ numerator,
+        !is.na(.data$NES) & .data$NES < 0 ~ denominator,
+        TRUE ~ "neutral"
+      )
+    ) |>
+    dplyr::select(dplyr::any_of(c(
+      "method", "contrast", "direction", "ID", "Description", "setSize", "enrichmentScore", "NES",
+      "pvalue", "p.adjust", "qvalue", "rank", "leading_edge", "core_enrichment"
+    )))
+}
+
+# gson の中で minGSSize..maxGSSize に入る遺伝子セットの数 (job の重さの目安)。
+gson_set_count <- function(gson_obj) {
+  if (is.null(gson_obj)) return(0L)
+  g2 <- tryCatch(gson_obj@gsid2gene, error = function(e) NULL)
+  if (is.null(g2) || nrow(g2) == 0) return(0L)
+  n <- table(g2[[1]])
+  sum(n >= 10 & n <= 500)
+}
+
+# ORA の job (method × cluster) を作る。method の gson と universe は親で 1 回だけ用意する。
+build_ora_jobs <- function(stats, genome, out_dir, project_name, methods,
+                           genome_map_file, deg_cluster_file, gson_cache) {
+  methods <- validate_ora_methods(methods)
+  # ORA の引き表は method ごとに親で 1 回だけ作る (子は fork で共有する)。
+  anno_cache <- stats::setNames(lapply(methods, function(m) gson_to_anno_env(gson_cache[[m]])), methods)
+  if (length(methods) == 0) return(list())
   if (is.null(deg_cluster_file) || !nzchar(as.character(deg_cluster_file))) {
     stop("ORA requires --deg-clusters.", call. = FALSE)
   }
 
-  purrr::walk(methods, function(method) {
-    reset_method_dir(ora_csv_dir(out_dir, method), project_name)
-  })
+  for (method in methods) reset_method_dir(ora_csv_dir(out_dir, method), project_name)
 
-  build_method_clusters <- function(method_gene_col, method_precomputed_clusters = NULL) {
-    method_precomputed_clusters
-  }
-
-  first_method_gene_col <- resolve_enrichment_gene_column(
-    genome = genome,
-    method = methods[[1]],
-    genome_map_file = genome_map_file
-  )
-  first_precomputed_clusters <- load_precomputed_deg_clusters(
+  first_clusters <- load_precomputed_deg_clusters(
     cluster_file = deg_cluster_file,
     stats = stats,
-    gene_col = first_method_gene_col
-  )
-  first_clusters <- build_method_clusters(
-    method_gene_col = first_method_gene_col,
-    method_precomputed_clusters = first_precomputed_clusters
+    gene_col = resolve_enrichment_gene_column(genome = genome, method = methods[[1]], genome_map_file = genome_map_file)
   )
   message(sprintf("[INFO] ORA clustering by degPatterns: %d clusters", nrow(first_clusters)))
 
-  purrr::walk(methods, function(method) {
+  jobs <- list()
+  for (method in methods) {
     method_gene_col <- resolve_enrichment_gene_column(genome = genome, method = method, genome_map_file = genome_map_file)
     message(sprintf("[INFO] ORA %s uses gene column: %s", method, method_gene_col))
 
-    method_stats <- stats |>
-      dplyr::mutate(enrich_gene_symbol = as.character(.data[[method_gene_col]])) |>
-      dplyr::filter(!is.na(.data$enrich_gene_symbol), .data$enrich_gene_symbol != "")
-
-    method_precomputed_clusters <- load_precomputed_deg_clusters(
-      cluster_file = deg_cluster_file,
-      stats = stats,
-      gene_col = method_gene_col
-    )
-
-    clusters <- build_method_clusters(method_gene_col, method_precomputed_clusters = method_precomputed_clusters)
+    clusters <- load_precomputed_deg_clusters(cluster_file = deg_cluster_file, stats = stats, gene_col = method_gene_col)
     if (nrow(clusters) == 0) {
       message(sprintf("[INFO] ORA %s skipped: no clusters after mapping", method))
-      return(invisible(NULL))
+      next
     }
+    universe_genes <- stats |>
+      dplyr::mutate(enrich_gene_symbol = as.character(.data[[method_gene_col]])) |>
+      dplyr::filter(!is.na(.data$enrich_gene_symbol), .data$enrich_gene_symbol != "") |>
+      dplyr::pull(.data$enrich_gene_symbol) |>
+      unique()
+    meta <- method_output_meta(method, mode = "ora")
+    method_dir <- ora_csv_dir(out_dir, method)
 
-    jobs <- list()
     for (idx in seq_len(nrow(clusters))) {
-      jobs[[length(jobs) + 1]] <- list(
-        method = method,
-        cluster_id = as.character(clusters$cluster_id[[idx]]),
-        cluster_genes = as.character(clusters$genes[[idx]])
-      )
+      # local の中で値を束ねる (ループの変数は回るたびに上書きされるので、job から直に参照しない)。
+      local({
+        m <- method
+        univ <- universe_genes
+        cluster_id <- as.character(clusters$cluster_id[[idx]])
+        cluster_genes <- unique(as.character(clusters$genes[[idx]]))
+        out_csv <- file.path(method_dir, sprintf("%s_%s_%s.csv", meta$prefix, format_contrast_file_label(cluster_id), project_name))
+        jobs[[length(jobs) + 1]] <<- list(
+          kind = "ORA", method = m, label = cluster_id, cost = 1,
+          run = function() {
+            write_csv_atomic(ora_result_table(m, cluster_id, cluster_genes, univ, gson_cache[[m]], anno_cache[[m]]), out_csv)
+          }
+        )
+      })
     }
-
-    run_jobs_parallel(jobs, parallel_threads, function(job) {
-      cluster_id <- as.character(job$cluster_id)
-      cluster_genes <- unique(as.character(job$cluster_genes))
-      display_label <- cluster_id
-      file_label <- format_contrast_file_label(cluster_id)
-      meta <- method_output_meta(method, mode = "ora")
-      method_dir <- ora_csv_dir(out_dir, method)
-
-      if (length(cluster_genes) == 0) {
-        empty_cols <- c(
-          "method", "cluster", "ID", "Description", "GeneRatio", "BgRatio",
-          "RichFactor", "FoldEnrichment", "zScore", "pvalue", "p.adjust", "qvalue", "geneID", "Count"
-        )
-        empty_tbl <- as.data.frame(setNames(rep(list(character()), length(empty_cols)), empty_cols), stringsAsFactors = FALSE)
-        readr::write_csv(
-          tibble::as_tibble(empty_tbl),
-          file.path(method_dir, sprintf("%s_%s_%s.csv", meta$prefix, file_label, project_name))
-        )
-        return(invisible(NULL))
-      }
-
-      universe_genes <- method_stats |>
-        dplyr::pull(.data$enrich_gene_symbol) |>
-        unique()
-
-      cluster_res <- run_single_ora_enrichment(
-        method = method,
-        genes = cluster_genes,
-        universe = universe_genes,
-        genome = genome,
-        genome_map_file = genome_map_file,
-        enrichment_lib_dir = enrichment_lib_dir
-      ) |>
-        dplyr::mutate(direction = cluster_id)
-
-      required_ora_cols <- c(
-        "ID", "Description", "GeneRatio", "BgRatio",
-        "RichFactor", "FoldEnrichment", "zScore", "pvalue", "p.adjust", "qvalue", "geneID", "Count", "direction"
-      )
-      numeric_ora_cols <- c("RichFactor", "FoldEnrichment", "zScore", "pvalue", "p.adjust", "qvalue", "Count")
-      normalize_ora_result <- function(tbl) {
-        missing <- setdiff(required_ora_cols, colnames(tbl))
-        if (length(missing) > 0) {
-          for (col_name in missing) {
-            if (col_name %in% numeric_ora_cols) {
-              tbl[[col_name]] <- NA_real_
-            } else {
-              tbl[[col_name]] <- NA_character_
-            }
-          }
-        }
-        for (col_name in required_ora_cols) {
-          if (col_name %in% numeric_ora_cols) {
-            tbl[[col_name]] <- suppressWarnings(as.numeric(tbl[[col_name]]))
-          } else {
-            tbl[[col_name]] <- as.character(tbl[[col_name]])
-          }
-        }
-        tbl
-      }
-      cluster_res <- normalize_ora_result(cluster_res)
-
-      result_cols <- c(
-        "cluster", "ID", "Description", "GeneRatio", "BgRatio",
-        "RichFactor", "FoldEnrichment", "zScore", "pvalue", "p.adjust", "qvalue", "geneID", "Count"
-      )
-
-      is_kegg_method <- identical(as.character(method), "KEGG")
-      result_table <- cluster_res |>
-        dplyr::filter(!is.na(.data$pvalue)) |>
-        dplyr::arrange(.data$pvalue) |>
-        dplyr::mutate(
-          cluster = display_label,
-          method = method,
-          Description = if (is_kegg_method) strip_kegg_species_suffix(.data$Description) else as.character(.data$Description)
-        ) |>
-        dplyr::select(dplyr::any_of(c("method", result_cols)))
-
-      readr::write_csv(
-        result_table,
-        file.path(method_dir, sprintf("%s_%s_%s.csv", meta$prefix, file_label, project_name))
-      )
-
-    })
-  })
+  }
+  jobs
 }
 
-run_gsea_enrichment <- function(stats, contrasts, genome, out_dir, project_name,
-                                methods = c("GO_BP"), parallel_threads = 1,
-                                enrichment_lib_dir = NULL,
-                                genome_map_file = NULL) {
+# GSEA の job (method × 比較) を作る。
+build_gsea_jobs <- function(stats, contrasts, genome, out_dir, project_name, methods,
+                            genome_map_file, gson_cache) {
   methods <- validate_gsea_methods(methods)
-  if (length(methods) == 0) {
-    return(invisible(NULL))
-  }
+  if (length(methods) == 0) return(list())
 
-  purrr::walk(methods, function(method) {
-    reset_method_dir(gsea_csv_dir(out_dir, method), project_name)
-  })
+  for (method in methods) reset_method_dir(gsea_csv_dir(out_dir, method), project_name)
   message(sprintf("[INFO] GSEA contrasts: %d", length(contrasts)))
 
-  purrr::walk(methods, function(method) {
+  jobs <- list()
+  for (method in methods) {
+    method_gene_col <- resolve_enrichment_gene_column(genome = genome, method = method, genome_map_file = genome_map_file)
+    message(sprintf("[INFO] GSEA %s uses gene column: %s", method, method_gene_col))
     meta <- method_output_meta(method, mode = "gsea")
     method_dir <- gsea_csv_dir(out_dir, method)
-    method_gene_col <- resolve_enrichment_gene_column(
-      genome = genome,
-      method = method,
-      genome_map_file = genome_map_file
-    )
-    message(sprintf("[INFO] GSEA %s uses gene column: %s", method, method_gene_col))
+    cost <- max(1, gson_set_count(gson_cache[[method]]))
 
-    jobs <- lapply(contrasts, function(cv) {
-      list(
-        method = method,
-        numerator = cv[[2]],
-        denominator = cv[[3]],
-        display_label = format_contrast_label(cv[[2]], cv[[3]])
-      )
-    })
-
-    run_jobs_parallel(jobs, parallel_threads, function(job) {
-      numerator <- job$numerator
-      denominator <- job$denominator
-      display_label <- job$display_label
-      file_label <- format_contrast_file_label(display_label)
-
-      contrast_stats <- stats |>
-        dplyr::filter(.data$aspect == display_label)
-
-      gene_list <- build_ranked_gene_list(contrast_stats, gene_col = method_gene_col)
-      gsea_table_raw <- run_single_gsea_enrichment(
-        method = method,
-        gene_list = gene_list,
-        genome = genome,
-        genome_map_file = genome_map_file,
-        enrichment_lib_dir = enrichment_lib_dir
-      )
-
-      required_gsea_cols <- c(
-        "ID", "Description", "setSize", "enrichmentScore", "NES",
-        "pvalue", "p.adjust", "qvalue", "rank", "leading_edge", "core_enrichment"
-      )
-      missing_gsea_cols <- setdiff(required_gsea_cols, colnames(gsea_table_raw))
-      if (length(missing_gsea_cols) > 0) {
-        for (col_name in missing_gsea_cols) {
-          gsea_table_raw[[col_name]] <- NA
-        }
-      }
-
-      is_kegg_method <- identical(as.character(method), "KEGG")
-      gsea_table <- gsea_table_raw |>
-        dplyr::mutate(
-          method = method,
-          contrast = display_label,
-          Description = if (is_kegg_method) strip_kegg_species_suffix(.data$Description) else as.character(.data$Description),
-          direction = dplyr::case_when(
-            !is.na(.data$NES) & .data$NES > 0 ~ numerator,
-            !is.na(.data$NES) & .data$NES < 0 ~ denominator,
-            TRUE ~ "neutral"
-          )
-        ) |>
-        dplyr::select(dplyr::any_of(c(
-          "method", "contrast", "direction", "ID", "Description", "setSize", "enrichmentScore", "NES",
-          "pvalue", "p.adjust", "qvalue", "rank", "leading_edge", "core_enrichment"
-        )))
-
-      readr::write_csv(
-        gsea_table,
-        file.path(method_dir, sprintf("%s_%s_%s.csv", meta$prefix, file_label, project_name))
-      )
-    })
-  })
+    for (cv in contrasts) {
+      local({
+        m <- method
+        gene_col <- method_gene_col
+        numerator <- cv[[2]]
+        denominator <- cv[[3]]
+        display_label <- format_contrast_label(numerator, denominator)
+        out_csv <- file.path(method_dir, sprintf("%s_%s_%s.csv", meta$prefix, format_contrast_file_label(display_label), project_name))
+        jobs[[length(jobs) + 1]] <<- list(
+          kind = "GSEA", method = m, label = display_label, cost = cost,
+          run = function() {
+            contrast_stats <- stats |>
+              dplyr::filter(.data$aspect == display_label)
+            gene_list <- build_ranked_gene_list(contrast_stats, gene_col = gene_col)
+            write_csv_atomic(gsea_result_table(m, numerator, denominator, display_label, gene_list, gson_cache[[m]]), out_csv)
+          }
+        )
+      })
+    }
+  }
+  jobs
 }
 
 run_enrichment <- function(stats, genome, out_dir, project_name,
@@ -362,7 +338,8 @@ run_enrichment <- function(stats, genome, out_dir, project_name,
                            biomart_cache_dir = NULL,
                            biomart_ortholog_dir = NULL,
                            deg_cluster_file = NULL,
-                           parallel_threads = 1) {
+                           parallel_threads = 1,
+                           analyses = c("ORA", "GSEA")) {
   stats <- map_stats_to_human_symbols(
     stats = stats,
     genome = genome,
@@ -381,32 +358,45 @@ run_enrichment <- function(stats, genome, out_dir, project_name,
     stop("No valid contrasts were found in stats$aspect.", call. = FALSE)
   }
 
-  deg_cluster_path <- if (is.null(deg_cluster_file)) "" else as.character(deg_cluster_file)
-  if (nzchar(deg_cluster_path) && file.exists(deg_cluster_path)) {
-    run_ora_enrichment(
-      stats = stats,
-      genome = genome,
-      out_dir = out_dir,
-      project_name = project_name,
-      methods = methods,
-      parallel_threads = parallel_threads,
-      enrichment_lib_dir = enrichment_lib_dir,
-      genome_map_file = genome_map_file,
-      deg_cluster_file = deg_cluster_file
-    )
-  } else {
-    message(sprintf("[INFO] ORA skipped: deg-clusters file was not found (%s)", deg_cluster_path))
+  # GSEA の leading edge を同じ値の速い版にする (DOSE 4.0.0 のときだけ。enrichment_gsea_fast.R)。
+  if ("GSEA" %in% analyses && !pic_gsea_fast_install()) {
+    message("[INFO] GSEA leading edge: DOSE の元の計算を使います")
   }
 
-  run_gsea_enrichment(
-    stats = stats,
-    contrasts = contrasts,
-    genome = genome,
-    out_dir = out_dir,
-    project_name = project_name,
-    methods = methods,
-    parallel_threads = parallel_threads,
-    enrichment_lib_dir = enrichment_lib_dir,
-    genome_map_file = genome_map_file
-  )
+  # gson は method ごとに 1 回だけ読む (子は fork で共有する)。
+  all_methods <- unique(c(validate_ora_methods(methods), validate_gsea_methods(methods)))
+  gson_cache <- stats::setNames(lapply(all_methods, function(m) {
+    read_local_gson(genome = genome, method = m, genome_map_file = genome_map_file, enrichment_lib_dir = enrichment_lib_dir)
+  }), all_methods)
+
+  jobs <- list()
+  deg_cluster_path <- if (is.null(deg_cluster_file)) "" else as.character(deg_cluster_file)
+  if ("ORA" %in% analyses) {
+    if (nzchar(deg_cluster_path) && file.exists(deg_cluster_path)) {
+      jobs <- c(jobs, build_ora_jobs(
+        stats = stats, genome = genome, out_dir = out_dir, project_name = project_name,
+        methods = methods, genome_map_file = genome_map_file,
+        deg_cluster_file = deg_cluster_file, gson_cache = gson_cache
+      ))
+    } else {
+      message(sprintf("[INFO] ORA skipped: deg-clusters file was not found (%s)", deg_cluster_path))
+    }
+  }
+  if ("GSEA" %in% analyses) {
+    jobs <- c(jobs, build_gsea_jobs(
+      stats = stats, contrasts = contrasts, genome = genome, out_dir = out_dir,
+      project_name = project_name, methods = methods,
+      genome_map_file = genome_map_file, gson_cache = gson_cache
+    ))
+  }
+
+  # 重いものから回す (最後に重い job が 1 本だけ残るのを避ける)。GSEA は ORA よりずっと重い。
+  if (length(jobs) > 0) {
+    weight <- vapply(jobs, function(j) if (identical(j$kind, "GSEA")) 1e6 + j$cost else j$cost, numeric(1))
+    jobs <- jobs[order(-weight, seq_along(jobs))]
+  }
+  n_gsea <- sum(vapply(jobs, function(j) identical(j$kind, "GSEA"), logical(1)))
+  message(sprintf("[INFO] Enrichment jobs: %d (GSEA %d, ORA %d), threads=%d",
+                  length(jobs), n_gsea, length(jobs) - n_gsea, as.integer(parallel_threads)))
+  run_jobs_parallel(jobs, parallel_threads)
 }

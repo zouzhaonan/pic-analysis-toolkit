@@ -17,7 +17,9 @@ Optional options:
                            deseq2 output: DEG_<project>/DEGCluster_<project>/
                            DEGCluster_gene_for_ora_<project>.csv
   --project-name <name>    Output suffix (default: auto from --stats filename)
-  --threads <n>            Number of parallel threads (default: 8)
+  --threads <n>            Number of parallel jobs (default: 8). Each method x
+                           cluster (ORA) and method x comparison (GSEA) is one
+                           job; the heaviest run first. One job uses one core.
   --methods <csv>          Methods to run (comma-separated)
                            default: GO_BP,KEGG,REACTOME,WIKIPATHWAYS,HDO,HPO,MPO
                            choices: defaults + GO_CC, GO_MF
@@ -25,6 +27,11 @@ Optional options:
 Library preparation:
   --prepare-libs --genome <name>    Prepare local enrichment libraries for new genome assemblies
 
+
+Reproducibility:
+  GSEA permutations are seeded per job (environment variable PIC_GSEA_SEED,
+  default 42), so the same input gives the same tables whatever --threads or
+  --methods split is used.
 
 ID mapping behavior:
   - Libraries are gene symbol–based.
