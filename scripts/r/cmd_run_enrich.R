@@ -35,7 +35,9 @@ parse_enrichment_args <- function(args) {
     methods = cfg$enrich_methods_csv,
     deg_clusters = NULL,
     prepare_libs = FALSE,
-    categories = NULL
+    categories = NULL,
+    analyses = "ora,gsea",
+    mem_gb = NULL
   )
   provided_keys <- character()
 
@@ -142,6 +144,20 @@ parse_enrichment_args <- function(args) {
   }
 
   defaults$methods <- strsplit(as.character(defaults$methods), ",", fixed = TRUE)[[1]]
+
+  an <- toupper(trimws(strsplit(as.character(defaults$analyses), ",", fixed = TRUE)[[1]]))
+  an <- an[nzchar(an)]
+  if (length(an) == 0 || !all(an %in% c("ORA", "GSEA"))) {
+    stop("--analyses must be ora, gsea or ora,gsea.", call. = FALSE)
+  }
+  defaults$analyses <- an
+
+  # メモリの枠 (GB)。--mem-gb、無ければ PIC_MEM_GB、無ければ制限なし。
+  mem <- if (!is.null(defaults$mem_gb)) as.character(defaults$mem_gb) else Sys.getenv("PIC_MEM_GB", "")
+  defaults$mem_gb <- if (nzchar(mem)) suppressWarnings(as.numeric(mem)) else Inf
+  if (is.na(defaults$mem_gb) || defaults$mem_gb <= 0) {
+    stop("--mem-gb (or PIC_MEM_GB) must be a number > 0.", call. = FALSE)
+  }
   defaults
 }
 
@@ -176,7 +192,9 @@ main <- function() {
     biomart_cache_dir = biomart_cache_dir,
     biomart_ortholog_dir = biomart_ortholog_dir,
     deg_cluster_file = args$deg_clusters,
-    parallel_threads = args$threads
+    parallel_threads = args$threads,
+    analyses = args$analyses,
+    mem_gb = args$mem_gb
   )
   message("[INFO] Enrichment workflow completed")
 }

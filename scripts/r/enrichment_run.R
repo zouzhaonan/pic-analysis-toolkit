@@ -16,7 +16,41 @@ pic_gsea_seed <- function() {
 
 # job は list(kind, method, label, cost, run = function() ...)。
 # 子の失敗は集めて最後にまとめて止める (ほかの job は最後まで回す)。
-run_jobs_parallel <- function(jobs, parallel_threads, fn = NULL) {
+# 今のプロセスの常駐メモリ (GB)。Linux は /proc、ほかは ps。読めなければ NA。
+pic_self_rss_gb <- function() {
+  st <- "/proc/self/status"
+  if (file.exists(st)) {
+    l <- grep("^VmRSS:", readLines(st, warn = FALSE), value = TRUE)
+    if (length(l) == 1) return(as.numeric(sub("^VmRSS:\\s+([0-9]+).*$", "\\1", l)) / 2^20)
+  }
+  out <- tryCatch(system2("ps", c("-o", "rss=", "-p", Sys.getpid()), stdout = TRUE, stderr = FALSE), error = function(e) "")
+  suppressWarnings(as.numeric(trimws(out[[1]])) / 2^20)
+}
+
+# worker の数: --threads に従い、減らすのは (1) job の数より多くしない、(2) 親 + worker × 本数 が
+# mem_gb を超えない、の 2 つだけ。
+# worker 1 本あたりのメモリは、fork したときの親の常駐メモリの 0.5 倍と見積もる。根拠 (pic193_2 mm10、
+# 182 job、cgroup の memory.peak): --threads 3 → 3.6 GB、6 → 5.2 GB、8 → 7.1 GB で、1 本増えるごとに
+# 約 0.6〜0.7 GB 増え、親 (stats・gson・引き表を読んだあと) は約 1.3 GB。dev035 (hg38) も 8 本で 8.4 GB。
+# 子は親の表を書き換えないが、GSEA の途中の作業 (順位表、fgsea、leading edge) と R の GC で私有の
+# ページが増えるため、親の大きさに比例させる。
+pic_enrich_workers <- function(threads, n_jobs, mem_gb = Inf) {
+  n <- max(1L, min(as.integer(threads), as.integer(n_jobs)))
+  if (is.finite(mem_gb) && n > 1L) {
+    main <- pic_self_rss_gb()
+    if (is.na(main)) main <- 1.5
+    per <- max(0.25, 0.5 * main)
+    fit <- floor((mem_gb - main) / per)
+    if (fit < n) {
+      message(sprintf("[INFO] enrich: --mem-gb %.1f に収めるため worker を %d から %d に減らします (親 %.1f GB、1 本 %.2f GB と見積もり)",
+                      mem_gb, n, max(1L, fit), main, per))
+      n <- max(1L, fit)
+    }
+  }
+  n
+}
+
+run_jobs_parallel <- function(jobs, parallel_threads, fn = NULL, mem_gb = Inf) {
   if (length(jobs) == 0) {
     return(invisible(NULL))
   }
@@ -25,6 +59,7 @@ run_jobs_parallel <- function(jobs, parallel_threads, fn = NULL) {
   if (is.na(threads) || threads < 1) {
     threads <- 1L
   }
+  threads <- pic_enrich_workers(threads, length(jobs), mem_gb)
 
   # 子は job の前と後に親が生きているかを見て、親が殺されていたら自分も終わる (analysis_runtime.R)。
   master_pid <- Sys.getpid()
@@ -345,7 +380,8 @@ run_enrichment <- function(stats, genome, out_dir, project_name,
                            biomart_ortholog_dir = NULL,
                            deg_cluster_file = NULL,
                            parallel_threads = 1,
-                           analyses = c("ORA", "GSEA")) {
+                           analyses = c("ORA", "GSEA"),
+                           mem_gb = Inf) {
   stats <- map_stats_to_human_symbols(
     stats = stats,
     genome = genome,
@@ -404,5 +440,5 @@ run_enrichment <- function(stats, genome, out_dir, project_name,
   n_gsea <- sum(vapply(jobs, function(j) identical(j$kind, "GSEA"), logical(1)))
   message(sprintf("[INFO] Enrichment jobs: %d (GSEA %d, ORA %d), threads=%d",
                   length(jobs), n_gsea, length(jobs) - n_gsea, as.integer(parallel_threads)))
-  run_jobs_parallel(jobs, parallel_threads)
+  run_jobs_parallel(jobs, parallel_threads, mem_gb = mem_gb)
 }

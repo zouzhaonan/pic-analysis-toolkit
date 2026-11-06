@@ -20,6 +20,11 @@ Optional options:
   --threads <n>            Number of parallel jobs (default: 8). Each method x
                            cluster (ORA) and method x comparison (GSEA) is one
                            job; the heaviest run first. One job uses one core.
+  --analyses <csv>         ora, gsea or ora,gsea (default: ora,gsea). GSEA needs
+                           only --stats, so it can start before the DEG
+                           clusters exist; ORA needs --deg-clusters.
+  --mem-gb <gb>            Memory budget; fewer jobs run at once if needed
+                           (default: environment variable PIC_MEM_GB, else no limit)
   --methods <csv>          Methods to run (comma-separated)
                            default: GO_BP,KEGG,REACTOME,WIKIPATHWAYS,HDO,HPO,MPO
                            choices: defaults + GO_CC, GO_MF
