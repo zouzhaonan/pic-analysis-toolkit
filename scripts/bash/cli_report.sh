@@ -4,6 +4,8 @@
 #   解析出力ディレクトリから HTML レポートを生成する `pic report`。
 # 入力:
 #   --out-dir <dir>  : mapping / deseq2 / enrich の出力ベース (必須)
+#   --threads <n>    : 並べる worker の数 (任意。既定 1)
+#   --mem-gb <gb>    : worker のメモリの上限 (任意。既定は PIC_MEM_GB)
 # 出力:
 #   <out-dir>/report_<project>.html
 

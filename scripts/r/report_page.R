@@ -49,15 +49,79 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
   sid <- function(k) paste0(id_prefix, k)
   project <- desc$project
 
-  # 1. Mapping QC
+  # 節ごとの組み立てと GSEA / ORA の CSV 読み・spec 作りを並べて回す (report_parallel.R)。
+  # 各節は自分の新しいレジストリに登録し、下で 1 本のときと同じ順 (QC, Aggregation, RIN, Correlation,
+  # PCA, heatmap, MA/volcano, Expression, Enrichment) に入れ直す。
   msum_file <- { mf <- pic_list_summary(base_dir, "^mapping_sum__.*\\.tsv$"); if (length(mf) > 0) mf[[1]] else "" }
-  sec_qc <- if (!is.null(msum)) section_mapping_qc(msum, sid("qc"), "1. Mapping QC", report_rel_path(msum_file, out_dir), group_map, group_pal) else ""
+  sec_jobs <- list(
+    # 1. Mapping QC
+    qc = function(r) if (!is.null(msum)) section_mapping_qc(msum, sid("qc"), "1. Mapping QC", report_rel_path(msum_file, out_dir), group_map, group_pal) else "",
+    # Aggregation (TSS-TES)
+    agg = function(r) build_aggregate_html(r, base_dir, id_prefix, out_dir, sample_order, group_pal, project = project),
+    # RNA integrity (QC の節ができるときだけ作る。QC の節が空かどうかは、捨てるレジストリで QC を作って確かめる)
+    rin = function(r) {
+      if (is.null(msum)) return("")
+      q <- (function() {
+        old <- options(pic.report.reg = pic_report_registry()); on.exit(options(old))
+        section_mapping_qc(msum, sid("qc"), "1. Mapping QC", report_rel_path(msum_file, out_dir), group_map, group_pal)
+      })()
+      if (!nzchar(q)) return("")
+      build_rin_html(r, pic_report_run_name(out_dir), id_prefix, project = project, base_dir = base_dir)
+    },
+    # 2. Sample correlation
+    cor = function(r) build_correlation_html(r, desc$deseq2_dir, project, group_map, group_pal, sample_order, id_prefix, out_dir),
+    # 3. PCA (群/サンプルの選択パネルに使う samples / groups も返す)
+    pca = function(r) {
+      h <- build_pca_plots(r, desc$deseq2_dir, project, group_pal, id_prefix, out_dir)
+      pp <- r$pca[[sid("pca")]]
+      list(html = h, has_pp = !is.null(pp) && length(pp$samples) > 0,
+           samples = if (!is.null(pp)) unlist(pp$samples), groups = if (!is.null(pp)) unlist(pp$groups))
+    },
+    # 4. DEG (heatmap + MA/volcano)
+    hm = function(r) build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order, id_prefix, deg_counts),
+    contrast = function(r) build_contrast_plots(r, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir), group_order, group_pal),
+    # 5. Gene expression (normalized counts, interactive)
+    expr = function(r) build_expression_section(r, desc$deseq2_dir, project, group_map, group_pal, stats, sid("expr"), sid("expr"), "5. Gene Expression", out_dir, sample_order, group_order)
+  )
+  jobs <- lapply(sec_jobs, pic_report_section_job)
+  # 6. Enrichment の重い所 (CSV 1 本ずつの読みと spec) も同じ並びに入れる。GSEA は束にする。
+  gcsvs <- pic_gsea_csvs(desc$enrich_dir, project)
+  omdirs <- pic_ora_mdirs(desc$enrich_dir)
+  n_g <- length(gcsvs)
+  gbins <- if (n_g > 0) {
+    gsz <- as.numeric(file.info(vapply(gcsvs, function(g) g$csv, character(1)))$size); gsz[is.na(gsz)] <- 0
+    pic_report_chunks(gsz + 1e4, max(1L, pic_report_threads()))
+  } else list()
+  gjobs <- lapply(gbins, function(idx) { force(idx); function()
+    lapply(gcsvs[idx], function(g) pic_gsea_job(g$csv, g$method, group_pal, out_dir)) })
+  ojobs <- lapply(omdirs, function(m) { force(m); function() pic_ora_item(m, project) })
+  all_jobs <- c(jobs, gjobs, ojobs)
+  n_s <- length(jobs)
+  # 先に始める順: heatmap (行の hclust が一番長い)、Expression、MA/volcano、enrichment、残りの節
+  first <- match(c("hm", "expr", "contrast"), names(jobs))
+  start_order <- c(first, n_s + seq_along(c(gjobs, ojobs)), setdiff(seq_len(n_s), first))
+  res <- pic_report_run_jobs(all_jobs, order = start_order)
+  sec <- res[seq_len(n_s)]; names(sec) <- names(jobs)
+  pre <- list(gsea = vector("list", n_g), ora = res[n_s + length(gjobs) + seq_along(ojobs)])
+  gz_cache <- pic_report_gz_cache()
+  for (b in seq_along(gbins)) {
+    for (k in seq_along(gbins[[b]])) {
+      jr <- res[[n_s + b]][[k]]
+      pre$gsea[gbins[[b]][[k]]] <- list(jr$item)
+      if (!is.null(jr$gz)) assign(jr$gz$key, jr$gz$gz, envir = gz_cache)
+    }
+  }
+
+  # 1 本のときと同じ順にレジストリへ入れ直す
+  sec_qc <- sec$qc$value
+  merge_order <- c("qc", "agg", if (nzchar(sec_qc)) "rin", "cor", "pca", "hm", "contrast", "expr")
+  for (k in merge_order) pic_report_reg_merge(reg, sec[[k]]$reg)
 
   # Aggregation (TSS-TES) は QC タブ内の 3 つ目のサブタブとして提示する。
   # QC セクション末尾に sub_head 付きで差し込むと、pic_tab_panel の marker 分割が
   # そのままサブタブ化してくれる (Read distribution / Sequencing depth と同じ扱い)。
   # aggregate をスキップした genome では agg_html が空になり、サブタブも出ない。
-  agg_html <- build_aggregate_html(reg, base_dir, id_prefix, out_dir, sample_order, group_pal, project = project)
+  agg_html <- sec$agg$value
   qc_subs <- list(
     list(label = "Read distribution", id = sid("qc-readdist"), marker = ""),
     list(label = "Sequencing depth",  id = sid("qc-depth"),    marker = '<div class="pic-sub-hd"><h3>Sequencing depth'))
@@ -77,8 +141,7 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
   # RNA integrity (TapeStation RINe) は QC タブの先頭のサブタブ。RIN データセットのフォルダに
   # run 名で始まるデータがあるときだけ、QC セクションの見出し直後に差し込む。
   # 後ろの Read distribution は目印コメントで切り分ける (先頭 sub の marker は "")。
-  rin_html <- if (nzchar(sec_qc)) build_rin_html(reg, pic_report_run_name(out_dir), id_prefix,
-                                                         project = project, base_dir = base_dir) else ""
+  rin_html <- if (nzchar(sec_qc)) sec$rin$value else ""
   if (nzchar(rin_html)) {
     rin_end <- "<!--pic-qc-rin-end-->"
     m <- regexpr("</h2>", sec_qc, fixed = TRUE)
@@ -90,37 +153,37 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
   }
 
   # 2. Sample correlation
-  cor_html <- build_correlation_html(reg, desc$deseq2_dir, project, group_map, group_pal, sample_order, id_prefix, out_dir)
+  cor_html <- sec$cor$value
   sec_cor <- if (nzchar(cor_html)) paste0(sprintf('<section id="%s"><h2>2. Sample Correlation</h2>', sid("cor")), cor_html, '</section>') else ""
 
   # 3. PCA
-  pca_html <- build_pca_plots(reg, desc$deseq2_dir, project, group_pal, id_prefix, out_dir)
+  pca_html <- sec$pca$value$html
   sec_pca <- paste0(sprintf('<section id="%s"><h2>3. PCA</h2>', sid("pca")),
                     if (!is.null(pca_html)) pca_html else "<p>No PCA data.</p>",
                     '</section>')
 
   # 4. DEG (heatmap + MA/volcano)
-  hm_html <- build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order, id_prefix, deg_counts)
-  contrast_html <- build_contrast_plots(reg, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir), group_order, group_pal)
+  hm_html <- sec$hm$value
+  contrast_html <- sec$contrast$value
   sec_deg <- paste0(sprintf('<section id="%s"><h2>4. Differential Expression (FDR = %s)</h2>', sid("deg"), format(fdr, trim = TRUE)),
                     if (!is.null(hm_html)) hm_html else "",
                     contrast_html,
                     '</section>')
 
   # 5. Gene expression (normalized counts, interactive)
-  sec_expr <- build_expression_section(reg, desc$deseq2_dir, project, group_map, group_pal, stats, sid("expr"), sid("expr"), "5. Gene Expression", out_dir, sample_order, group_order)
+  sec_expr <- sec$expr$value
 
   # 6. Enrichment (section_enrichment は id="enrich" を埋め込むので prefix 付けは後処理)
-  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "6. Enrichment", out_dir, id_prefix, reg, group_order)
+  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "6. Enrichment", out_dir, id_prefix, reg, group_order, pre = pre)
   if (is.null(sec_enrich)) sec_enrich <- ""
   sec_enrich <- sub('<section id="enrich">', sprintf('<section id="%s">', sid("enrich")), sec_enrich, fixed = TRUE)
 
   grp_panel <- group_toggle_panel(group_pal)
   # PCA は group / sample の階層で計算対象を選べるようにする
   # (特定のサンプルを外れ値として除いたときの主成分を確かめられる)。
-  pca_pp <- reg$pca[[sid("pca")]]
-  pca_ctrl <- if (!is.null(pca_pp) && length(pca_pp$samples) > 0)
-    group_sample_tree_panel(unlist(pca_pp$samples), unlist(pca_pp$groups), group_pal, group_map)
+  pca_pp <- sec$pca$value
+  pca_ctrl <- if (isTRUE(pca_pp$has_pp))
+    group_sample_tree_panel(pca_pp$samples, pca_pp$groups, group_pal, group_map)
   else grp_panel
   list(
     list(html = sec_qc, label = "QC", shared_controls = grp_panel, subs = qc_subs),
@@ -199,6 +262,7 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   out_html <- file.path(out_dir, sprintf("report_%s.html", project))
   render_report_page(run, tb$bar, tb$panels, reg, asset_dir, out_html)
   unlink(tmp_dir, recursive = TRUE)
+  options(pic.report.gz_cache = NULL)
   out_html
 }
 
@@ -216,13 +280,53 @@ pic_pull_notes <- function(s) {
   list(desc = desc, html = gsub('<p class="pic-note">.*?</p>', '', s, perl = TRUE))
 }
 
+# 長い文字列 (heatmap の節は数十 MB) を、文字ではなくバイトの位置で切り出す。
+# UTF-8 の substr / substring は先頭から 1 文字ずつ数えるので 1 回に秒単位かかる。切る位置は ASCII の目印の
+# 前後だけなので、バイトで切っても文字で切ったのと同じ文字列になる。encoding の印は元のまま戻す。
+pic_bsubstr <- function(s, first, last) {
+  enc <- Encoding(s)
+  b <- s; Encoding(b) <- "bytes"
+  r <- substr(b, first, last)
+  Encoding(r) <- enc
+  r
+}
+
+# sub('^<section[^>]*><h2>.*?</h2>', '', s) と同じ結果を、正規表現を長い文字列に通さずに返す。
+# 「<section」で始まり、最初の「>」の直後が「<h2>」で、その後に「</h2>」があれば、最初の「</h2>」までを除く。
+pic_strip_section_head <- function(s) {
+  if (!startsWith(s, "<section")) return(s)
+  gt <- regexpr(">", s, fixed = TRUE, useBytes = TRUE)
+  if (gt < 0 || !identical(pic_bsubstr(s, gt, gt + 4L), "><h2>")) return(s)
+  rest <- pic_bsubstr(s, gt + 5L, nchar(s, type = "bytes"))
+  e <- regexpr("</h2>", rest, fixed = TRUE, useBytes = TRUE)
+  if (e < 0) return(s)
+  pic_bsubstr(rest, e + 5L, nchar(rest, type = "bytes"))
+}
+
+# sub('</section>[[:space:]]*$', '', s) と同じ結果を、末尾だけを見て返す。末尾 4096 バイト (文字の途中で切らない)
+# のうち 11 文字目より後に空白でない文字があれば、一致は必ずその末尾の中に収まるので、末尾だけに同じ sub をかける。
+pic_strip_section_tail <- function(s) {
+  nb <- nchar(s, type = "bytes")
+  if (nb <= 4096L) return(sub('</section>[[:space:]]*$', '', s))
+  cut <- nb - 4096L
+  # UTF-8 の続きのバイト (0x80-0xBF) から始めないよう、文字の頭まで進める
+  while (cut < nb && {
+    by <- as.integer(charToRaw(pic_bsubstr(s, cut + 1L, cut + 1L)))
+    length(by) == 1L && by >= 0x80 && by <= 0xBF
+  }) cut <- cut + 1L
+  tail <- pic_bsubstr(s, cut + 1L, nb)
+  if (!grepl("[^[:space:]]", substr(tail, 11L, nchar(tail)))) return(sub('</section>[[:space:]]*$', '', s))
+  tail2 <- sub('</section>[[:space:]]*$', '', tail)
+  if (identical(tail2, tail)) s else paste0(pic_bsubstr(s, 1L, cut), tail2)
+}
+
 # <section id><h2>title</h2>inner</section> から (id, title, inner) を取り出す。
 # 説明文・source は inner に残し pic_tab_panel 側で処理する。
 pic_extract_section <- function(sec_html) {
   id <- regmatches(sec_html, regexpr('(?<=<section id=")[^"]+', sec_html, perl = TRUE))
   title <- regmatches(sec_html, regexpr('(?<=<h2>).*?(?=</h2>)', sec_html, perl = TRUE))
-  inner <- sub('^<section[^>]*><h2>.*?</h2>', '', sec_html)
-  inner <- sub('</section>[[:space:]]*$', '', inner)
+  inner <- pic_strip_section_head(sec_html)
+  inner <- pic_strip_section_tail(inner)
   list(id = id, title = title, inner = inner)
 }
 
@@ -232,18 +336,20 @@ info_badge <- function(desc) {
 }
 
 # inner を markers (各 sub の開始文字列。先頭は "") で分割してチャンクを返す。
+# 位置はバイトで数える (目印は ASCII なので文字で数えたのと同じところで切れる。pic_bsubstr)。
 pic_split_inner <- function(inner, markers) {
   pos <- vapply(markers, function(mk) {
     if (!nzchar(mk)) return(1L)
-    p <- regexpr(mk, inner, fixed = TRUE)[[1]]; if (p < 0) NA_integer_ else as.integer(p)
+    p <- regexpr(mk, inner, fixed = TRUE, useBytes = TRUE)[[1]]; if (p < 0) NA_integer_ else as.integer(p)
   }, integer(1))
   n <- length(markers)
-  ends <- c(pos[-1], nchar(inner) + 1L)
+  nb <- nchar(inner, type = "bytes")
+  ends <- c(pos[-1], nb + 1L)
   vapply(seq_len(n), function(i) {
     s <- pos[[i]]; e <- ends[[i]]
     if (is.na(s)) return("")
-    if (is.na(e)) e <- nchar(inner) + 1L
-    substr(inner, s, e - 1L)
+    if (is.na(e)) e <- nb + 1L
+    pic_bsubstr(inner, s, e - 1L)
   }, character(1))
 }
 
@@ -511,6 +617,7 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL, geno_ma
     all <- all[!grepl("(^|/)enrich_old_backup/", all)]
     all <- all[!pic_belongs_to_other_project(all, getOption("pic.report.project"),
                                              getOption("pic.report.all_projects"))]
+    pic_report_prefetch_gz(all)   # gzip+base64 を並べて先に作る (登録の順は下の for のまま)
     for (rel in all) register_file(rel)
   }
   reg <- getOption("pic.report.reg")

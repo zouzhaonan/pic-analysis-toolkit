@@ -231,10 +231,10 @@ register_file <- function(rel) {
   if (!is.null(reg$files[[id]])) return(id)
   abs <- file.path(proj, rel)
   if (!file.exists(abs) || dir.exists(abs)) return(NULL)
-  gz <- tryCatch({
-    raw <- readBin(abs, "raw", n = file.info(abs)$size)
-    jsonlite::base64_enc(memCompress(raw, "gzip"))
-  }, error = function(e) NULL)
+  # 先に並べて作ってあればそれを使う (report_parallel.R の pic_report_prefetch_gz)
+  cache <- getOption("pic.report.gz_cache")
+  gz <- if (!is.null(cache) && exists(abs, envir = cache, inherits = FALSE)) get(abs, envir = cache, inherits = FALSE)
+        else pic_report_file_gz(abs)
   if (is.null(gz)) return(NULL)
   cat_i <- file_category(rel)
   reg$files[[id]] <- list(name = basename(rel), path = rel, desc = file_desc(rel),

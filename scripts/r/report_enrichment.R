@@ -2,8 +2,78 @@
 # 注記: report_build.R を責務別に分割したファイル。cmd_build_report.R が
 #       report_build.R (ローダ) 経由で source する。単体では動作しない。
 
+# GSEA の CSV の一覧 (method のフォルダ順、その中は名前順)。enrichment_blocks の読む順と同じ。
+pic_gsea_csvs <- function(enrich_dir, project) {
+  gsea_root <- file.path(enrich_dir, "GSEA")
+  if (is.null(enrich_dir) || is.na(enrich_dir) || !dir.exists(gsea_root)) return(list())
+  out <- list()
+  for (mdir in list.dirs(gsea_root, recursive = FALSE, full.names = TRUE)) {
+    csvs <- list.files(mdir, pattern = paste0(project, "\\.csv$"), full.names = TRUE)
+    for (csv in sort(csvs)) out[[length(out) + 1L]] <- list(csv = csv, method = basename(mdir))
+  }
+  out
+}
+
+# GSEA の CSV 1 本を読み、図の spec を作る。図にしないもの (空・除外・spec の失敗) は NULL。
+# plot は render と同じ JSON にしておく (並べた子から親へ渡すときに軽く、render でも書き直さない)。
+pic_gsea_item <- function(csv, method, group_pal) {
+  df <- suppressMessages(readr::read_csv(csv, show_col_types = FALSE, progress = FALSE))
+  if (nrow(df) == 0 || !("contrast" %in% colnames(df))) return(NULL)
+  contrast <- as.character(df$contrast[[1]])
+  # データ固有の除外: cntl_nega / cntl_posi の REACTOME プロットは表示しない
+  if (identical(tolower(contrast), "cntl_nega / cntl_posi") && identical(toupper(method), "REACTOME")) return(NULL)
+  sp <- strsplit(contrast, " / ", fixed = TRUE)[[1]]
+  numerator <- if (length(sp) >= 1) sp[[1]] else ""
+  denominator <- if (length(sp) >= 2) sp[[2]] else ""
+  spec <- tryCatch(build_gsea_plotly(df, numerator, denominator, group_pal), error = function(e) NULL)
+  if (is.null(spec)) return(NULL)
+  list(contrast = contrast, n_terms = spec$n_terms,
+       plot = pic_json_verbatim(list(data = spec$data, layout = spec$layout, config = spec$config), digits = 6))
+}
+
+# GSEA の CSV 1 本分の仕事 (並べる子で回す): 図の spec と、Download CSV で埋め込む gzip+base64。
+# gz は register_file が見る置き場の鍵 (projdir/<相対パス>) と一緒に返し、親が置き場に入れる。
+pic_gsea_job <- function(csv, method, group_pal, proj_dir) {
+  it <- pic_gsea_item(csv, method, group_pal)
+  gz <- NULL
+  proj <- getOption("pic.report.projdir")
+  if (!is.null(it) && !is.null(proj)) {
+    rel <- report_rel_path(csv, proj_dir)
+    abs <- file.path(proj, rel)
+    if (nzchar(rel) && !file_excluded(rel) && file.exists(abs) && !dir.exists(abs))
+      gz <- list(key = abs, gz = pic_report_file_gz(abs))
+  }
+  list(item = it, gz = gz)
+}
+
+# ORA の method のフォルダ (cluster ごとの CSV をまとめて読む)。
+pic_ora_mdirs <- function(enrich_dir) {
+  ora_root <- file.path(enrich_dir, "ORA")
+  if (is.null(enrich_dir) || is.na(enrich_dir) || !dir.exists(ora_root)) return(character(0))
+  list.dirs(ora_root, recursive = FALSE, full.names = TRUE)
+}
+
+# ORA の method 1 つ分: cluster の CSV を合わせて読み、図の spec と結合 CSV の中身を作る。図にしないものは NULL。
+pic_ora_item <- function(mdir, project) {
+  csvs <- list.files(mdir, pattern = paste0(project, "\\.csv$"), full.names = TRUE)
+  csvs <- csvs[!grepl("^ORA_", basename(csvs))]   # 結合 CSV は cluster から集計するため除外
+  if (length(csvs) == 0) return(NULL)
+  ora_all <- tryCatch(
+    purrr::map_dfr(csvs, function(fp) suppressMessages(readr::read_csv(fp, show_col_types = FALSE, progress = FALSE))),
+    error = function(e) NULL
+  )
+  if (is.null(ora_all) || nrow(ora_all) == 0) return(NULL)
+  spec <- tryCatch(build_ora_plotly(ora_all), error = function(e) NULL)
+  if (is.null(spec)) return(NULL)
+  list(n_terms = spec$n_terms,
+       content = tryCatch(readr::format_csv(ora_all), error = function(e) NULL),
+       plot = pic_json_verbatim(list(data = spec$data, layout = spec$layout, config = spec$config), digits = 6))
+}
+
 # enrichment セクションの中身 (h3 GSEA / ORA) を返す。<section> ラッパは付けない。
-enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, proj_dir = NULL, id_prefix = "", reg = NULL, group_order = NULL) {
+# pre: 先に (並べて) 作った list(gsea = pic_gsea_item の list (pic_gsea_csvs の順), ora = pic_ora_item の list
+#      (pic_ora_mdirs の順))。NULL ならここで順に作る。
+enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, proj_dir = NULL, id_prefix = "", reg = NULL, group_order = NULL, pre = NULL) {
   if (is.null(enrich_dir) || is.na(enrich_dir) || !dir.exists(enrich_dir)) return("")
   ecfg <- pic_plot_spec()$plot$enrichment
   parts <- character(0)
@@ -17,30 +87,20 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
   gsea_root <- file.path(enrich_dir, "GSEA")
   gsea_html <- ""
   if (dir.exists(gsea_root)) {
-    mdirs <- list.dirs(gsea_root, recursive = FALSE, full.names = TRUE)
     cellmap <- list()          # cellmap[[contrast]][[method]] = uri
     methods_seen <- character(0)
-    for (mdir in mdirs) {
-      method <- basename(mdir)
-      csvs <- list.files(mdir, pattern = paste0(project, "\\.csv$"), full.names = TRUE)
-      for (csv in sort(csvs)) {
-        df <- suppressMessages(readr::read_csv(csv, show_col_types = FALSE, progress = FALSE))
-        if (nrow(df) == 0 || !("contrast" %in% colnames(df))) next
-        contrast <- as.character(df$contrast[[1]])
-        # データ固有の除外: cntl_nega / cntl_posi の REACTOME プロットは表示しない
-        if (identical(tolower(contrast), "cntl_nega / cntl_posi") && identical(toupper(method), "REACTOME")) next
-        sp <- strsplit(contrast, " / ", fixed = TRUE)[[1]]
-        numerator <- if (length(sp) >= 1) sp[[1]] else ""
-        denominator <- if (length(sp) >= 2) sp[[2]] else ""
-        spec <- tryCatch(build_gsea_plotly(df, numerator, denominator, group_pal), error = function(e) NULL)
-        if (is.null(spec)) next
-        pid <- sprintf("%sgseaplot_%s_%s", id_prefix, method, format_contrast_file_label(contrast))
-        register_plot(reg, pid, list(data = spec$data, layout = spec$layout, config = spec$config))
-        if (is.null(cellmap[[contrast]])) cellmap[[contrast]] <- list()
-        cellmap[[contrast]][[method]] <- list(id = pid, h = enrich_plot_height(spec$n_terms),
-                                              csv = report_rel_path(csv, proj_dir))
-        methods_seen <- union(methods_seen, method)
-      }
+    gcsvs <- pic_gsea_csvs(enrich_dir, project)
+    gitems <- if (!is.null(pre)) pre$gsea else lapply(gcsvs, function(g) pic_gsea_item(g$csv, g$method, group_pal))
+    for (k in seq_along(gcsvs)) {
+      it <- gitems[[k]]
+      if (is.null(it)) next
+      csv <- gcsvs[[k]]$csv; method <- gcsvs[[k]]$method; contrast <- it$contrast
+      pid <- sprintf("%sgseaplot_%s_%s", id_prefix, method, format_contrast_file_label(contrast))
+      register_plot(reg, pid, it$plot)
+      if (is.null(cellmap[[contrast]])) cellmap[[contrast]] <- list()
+      cellmap[[contrast]][[method]] <- list(id = pid, h = enrich_plot_height(it$n_terms),
+                                            csv = report_rel_path(csv, proj_dir))
+      methods_seen <- union(methods_seen, method)
     }
     contrasts <- names(cellmap)
     if (length(contrasts) > 0) {
@@ -89,36 +149,30 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
   ora_root <- file.path(enrich_dir, "ORA")
   ora_items <- list()
   if (dir.exists(ora_root)) {
-    methods <- list.dirs(ora_root, recursive = FALSE, full.names = TRUE)
-    for (mdir in methods) {
-      method <- basename(mdir)
-      csvs <- list.files(mdir, pattern = paste0(project, "\\.csv$"), full.names = TRUE)
-      csvs <- csvs[!grepl("^ORA_", basename(csvs))]   # 結合 CSV は cluster から集計するため除外
-      if (length(csvs) == 0) next
-      ora_all <- tryCatch(
-        purrr::map_dfr(csvs, function(fp) suppressMessages(readr::read_csv(fp, show_col_types = FALSE, progress = FALSE))),
-        error = function(e) NULL
-      )
-      if (is.null(ora_all) || nrow(ora_all) == 0) next
-      spec <- tryCatch(build_ora_plotly(ora_all), error = function(e) NULL)
-      if (is.null(spec)) next
+    methods <- pic_ora_mdirs(enrich_dir)
+    oitems <- if (!is.null(pre)) pre$ora else lapply(methods, pic_ora_item, project = project)
+    for (k in seq_along(methods)) {
+      it <- oitems[[k]]
+      if (is.null(it)) next
+      method <- basename(methods[[k]])
       # method ごとに cluster をまとめた 1 本の CSV を仮想ファイルとして埋め込み (ワンクリック DL)
       # xenograft では id_prefix ("graft__" 等) から画分ディレクトリを付け、Downloads で画分を区別
       frac_dir <- if (nzchar(id_prefix)) paste0(sub("__$", "", id_prefix), "/") else ""
       vrel <- sprintf("%senrich/ORA/%s/ORA_%s_%s.csv", frac_dir, method, method, project)
-      vid <- tryCatch(register_virtual_file(vrel, readr::format_csv(ora_all),
-                                            desc = sprintf("ORA result — %s (all clusters combined).", method)),
-                      error = function(e) NULL)
+      vid <- if (is.null(it$content)) NULL else
+        tryCatch(register_virtual_file(vrel, it$content,
+                                       desc = sprintf("ORA result — %s (all clusters combined).", method)),
+                 error = function(e) NULL)
       dl <- if (!is.null(vid))
         sprintf('<span class="pic-src"><a class="pic-dlcsv" role="button" tabindex="0" data-file="%s">Download CSV</a></span>', vid)
         else ""
       pid <- sprintf("%soraplot_%s", id_prefix, method)
-      register_plot(reg, pid, list(data = spec$data, layout = spec$layout, config = spec$config))
+      register_plot(reg, pid, it$plot)
       ora_items[[length(ora_items) + 1L]] <- list(
         id = sprintf("%sora_%s", id_prefix, method),
         label = method,
         html = sprintf('<div class="pic-enrich-item">%s<div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
-                       sub_head(html_escape(method), dl), pid, enrich_plot_height(spec$n_terms)),
+                       sub_head(html_escape(method), dl), pid, enrich_plot_height(it$n_terms)),
         checked = (length(ora_items) == 0L)
       )
     }
@@ -175,8 +229,8 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
 }
 
 # 通常レポート用の enrichment セクション (<section id="enrich"> でラップ)。
-section_enrichment <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, heading = "4. Enrichment", proj_dir = NULL, id_prefix = "", reg = NULL, group_order = NULL) {
-  inner <- enrichment_blocks(enrich_dir, project, tmp_dir, deg_counts, deseq2_dir, group_pal, proj_dir, id_prefix, reg, group_order)
+section_enrichment <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, heading = "4. Enrichment", proj_dir = NULL, id_prefix = "", reg = NULL, group_order = NULL, pre = NULL) {
+  inner <- enrichment_blocks(enrich_dir, project, tmp_dir, deg_counts, deseq2_dir, group_pal, proj_dir, id_prefix, reg, group_order, pre)
   if (!nzchar(inner)) inner <- '<p>No enrichment plots were generated.</p>'
   sprintf('<section id="enrich"><h2>%s</h2>%s</section>', heading, inner)
 }

@@ -680,13 +680,16 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
   }, character(1))
   header <- sprintf('<tr><th class="corner"></th>%s</tr>', paste(ths, collapse = ""))
 
-  rows <- vapply(seq_len(nrow(z)), function(i) {
-    tds <- vapply(seq_len(ncol(z)), function(j) sprintf(
-      '<td class="%s" data-gcol="%s" style="background:%s" title="Gene: %s&#10;Sample: %s&#10;Z: %.2f"></td>',
-      if (gstart[[j]]) "gsep" else "", html_escape(gvec[[j]]), colmat[i, j], html_escape(labels[[i]]), html_escape(scols[[j]]), z[i, j]
-    ), character(1))
-    sprintf('<tr><th class="g">%s</th>%s</tr>', html_escape(labels[[i]]), paste(tds, collapse = ""))
-  }, character(1))
+  # セル (行 × 列) の <td> をまとめて sprintf で作り、行ごとにつなぐ (1 セルずつ作るのと同じ文字列)。
+  nr <- nrow(z); nc <- ncol(z)
+  jj <- rep(seq_len(nc), each = nr); ii <- rep(seq_len(nr), times = nc)
+  e_lab <- html_escape(labels); e_g <- html_escape(gvec); e_s <- html_escape(scols)
+  cls <- ifelse(gstart, "gsep", "")
+  cells <- matrix(sprintf(
+    '<td class="%s" data-gcol="%s" style="background:%s" title="Gene: %s&#10;Sample: %s&#10;Z: %.2f"></td>',
+    cls[jj], e_g[jj], as.vector(colmat), e_lab[ii], e_s[jj], as.vector(z)), nrow = nr)
+  tds <- do.call(paste0, lapply(seq_len(nc), function(j) cells[, j]))
+  rows <- sprintf('<tr><th class="g">%s</th>%s</tr>', e_lab, tds)
 
   cap_id <- paste0(id_prefix, "heatmap_cap")
   # 左 = group 表示切替 / 右 = ヒートマップ本体 (タイトル右に Download csv + PNG ボタン)
