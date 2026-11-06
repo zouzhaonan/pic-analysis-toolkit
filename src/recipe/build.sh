@@ -12,6 +12,9 @@ cp -R "${pkg_root}/scripts" "${install_root}/"
 cp -R "${pkg_root}/help" "${install_root}/"
 cp "${pkg_root}/VERSION" "${install_root}/"
 
+# pic demux の振り分けのプログラム (Rust)。環境の bin に置く。
+CARGO_TARGET_DIR="${SRC_DIR}/target-pic-demux" bash "${pkg_root}/src/pic-demux/install.sh" "${PREFIX}/bin"
+
 cat > "${PREFIX}/bin/pic" <<'WRAP'
 #!/usr/bin/env bash
 set -euo pipefail

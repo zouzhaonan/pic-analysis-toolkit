@@ -99,7 +99,6 @@ init_config() {
   declare -g FORMATTED_SAMPLE_SHEET="${TMP_DIR}/formatted_sample"
   declare -g JOB_QUEUE="${TMP_DIR}/job_queue"
 
-  declare -gr DEMUX_PREFIX_AWK="${PIC_DIR}/scripts/awk/demux_prefix.awk"
   declare -gr MAP_SUMMARY_AWK="${PIC_DIR}/scripts/awk/mapping_sum.awk"
   declare -gr PREPARE_JOB_QUEUE_AWK="${PIC_DIR}/scripts/awk/map_prepare_job_queue.awk"
   declare -gr GENERATE_DEFTABLES_AWK="${PIC_DIR}/scripts/awk/summarize_generate_deftables.awk"

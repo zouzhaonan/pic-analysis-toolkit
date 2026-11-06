@@ -55,13 +55,15 @@ validate_demux_prefix_names() {
 }
 
 # 1 つの prefix を振り分け、part と済んだ印を part_dir に書く。
-# 引数の prefix は sheet の 1 列目の値か、その basename。
+# 引数の prefix は sheet の 1 列目の値か、その basename。threads は pic-demux に渡すスレッド数。
 # 戻り値: 0 = 済んだ (もともと済んでいた場合も含む)、1 = 失敗。
 demux_single_prefix() {
   local prefix_arg="$1"
   local part_dir="$2"
+  local threads="${3:-$THREADS}"
   local rows sheet_prefix name fq_prefix barcodes samples marker suffix
-  local r2_status_file r2_status s rc=0
+  local s rc=0
+  local barcode_first_opt=()
 
   rows="$(demux_sheet_rows | awk -F"\t" -v OFS="\t" -v p="$prefix_arg" '{ n = $1; sub(/.*\//, "", n) } $1 == p || n == p')"
   if [[ -z "$rows" ]]; then
@@ -103,20 +105,18 @@ demux_single_prefix() {
   debug_kv "arg.barcodes" "$barcodes"
   debug_kv "arg.samples" "$samples"
 
-  # R1 は pipefail で、R2 (プロセス置換) は終了コードをファイルに書いて確かめる。
-  r2_status_file="${marker}.r2.tmp"
-  pigz -dc "${fq_prefix}_R1_001.fastq.gz" |
-    paste - <(pigz -dc "${fq_prefix}_R2_001.fastq.gz"; echo $? >"$r2_status_file") |
-    LC_ALL=C awk \
-      -v barcodes="$barcodes" -v samples="$samples" \
-      -v part_suffix="$suffix" -v out_dir="$part_dir" \
-      -v nread_file="${marker}.nread.tmp" -v zthreads="${PIC_DEMUX_ZTHREADS:-2}" \
-      -v barcode_first="${PIC_BARCODE_FIRST:-0}" \
-      -f "$DEMUX_PREFIX_AWK" || rc=$?
-  r2_status="$(cat "$r2_status_file" 2>/dev/null || echo 1)"
-  rm -f "$r2_status_file"
-  if [[ "$rc" != 0 || "$r2_status" != 0 ]]; then
-    handle_error "Demux failed for ${name} (status: R1/awk=${rc}, R2=${r2_status})."
+  # pic-demux (src/pic-demux): R1 と R2 を別々のスレッドで解凍して突き合わせ、サンプルごとの
+  # gzip をスレッドで並べて圧縮する。中身は旧 demux_prefix.awk (paste | awk) と同じ。
+  # 入力の不正 (gzip の破損・途中切れ、R1 と R2 の行数違い、4 行単位でない) は 0 以外で終わる。
+  [[ "${PIC_BARCODE_FIRST:-0}" = 1 ]] && barcode_first_opt=(--barcode-first)
+  pic-demux \
+    --r1 "${fq_prefix}_R1_001.fastq.gz" --r2 "${fq_prefix}_R2_001.fastq.gz" \
+    --barcodes "$barcodes" --samples "$samples" \
+    --out-dir "$part_dir" --suffix "$suffix" --nread-file "${marker}.nread.tmp" \
+    --threads "$threads" --level "${PIC_DEMUX_LEVEL:-6}" \
+    "${barcode_first_opt[@]}" || rc=$?
+  if [[ "$rc" != 0 ]]; then
+    handle_error "Demux failed for ${name} (pic-demux status: ${rc})."
     while IFS= read -r s; do
       rm -f "${part_dir}/${s}${suffix}.tmp"
     done < <(printf "%s\n" "$rows" | cut -f4 | sort -u)
@@ -195,29 +195,36 @@ collect_demux_parts() {
 }
 
 # 全 prefix を並べて振り分け、まとめる (pic demux / pic mapping / pic all の既定)。
-# 1 つの prefix は gawk 1 本 (律速) + 解凍 + サンプルごとの pigz で約 5〜6 コアを使うので、
-# 同時に回す prefix の数は THREADS / 4 (切り上げ)。
+# pic-demux 1 本は --threads のぶんのコアを使い切れる (圧縮をスレッドで並べる)。1 本あたり
+# 解凍と突き合わせに約 2 コアを使うので、1 本に 8 コア以上を割り当て、同時に回す prefix の数は
+# floor(THREADS / 8) (1 以上、prefix の数まで)、1 本の --threads は THREADS / その数。
 split_fq_by_barcode() {
   local part_dir="${TMP_DIR}/demux_parts"
   local status_dir="${TMP_DIR}/demux_status"
-  local max_jobs=$(( (THREADS + 3) / 4 ))
-  local prefixes=() p i=0 failed=0
+  local prefixes=() p i=0 failed=0 max_jobs job_threads
 
   validate_demux_prefix_names
   debug_log "STEP=split_fq_by_barcode"
-  debug_kv "arg.parallel_prefixes" "$max_jobs"
   mkdir -p "$part_dir" "$status_dir"
 
   while IFS= read -r p; do
     prefixes+=("$p")
   done < <(list_demux_prefixes)
 
+  max_jobs=$(( THREADS / 8 ))
+  (( max_jobs < 1 )) && max_jobs=1
+  (( max_jobs > ${#prefixes[@]} )) && max_jobs=${#prefixes[@]}
+  (( max_jobs < 1 )) && max_jobs=1
+  job_threads=$(( THREADS / max_jobs ))
+  debug_kv "arg.parallel_prefixes" "$max_jobs"
+  debug_kv "arg.threads_per_prefix" "$job_threads"
+
   for p in "${prefixes[@]}"; do
     i=$((i + 1))
     while (( $(jobs -pr | wc -l) >= max_jobs )); do
       wait -n || true
     done
-    ( rc=0; demux_single_prefix "$p" "$part_dir" || rc=$?; echo "$rc" >"${status_dir}/${i}" ) &
+    ( rc=0; demux_single_prefix "$p" "$part_dir" "$job_threads" || rc=$?; echo "$rc" >"${status_dir}/${i}" ) &
   done
   wait || true
 
