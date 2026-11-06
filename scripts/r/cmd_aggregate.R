@@ -3,13 +3,16 @@
 # 役割:
 #   遺伝子全体 (TSS→TES) のメタジーン集計プロファイルを計算する。
 #   pic の CPM 正規化 bigwig (bw/<count_prefix>_umi.cpm.bw) を、各遺伝子を N
-#   分割したビンに対して UCSC bigWigAverageOverBed で平均取得し、全遺伝子で
-#   平均してサンプルごとのプロファイルにする (deepTools 非依存で高速・省メモリ)。
+#   分割したビンに対して平均取得し、全遺伝子で平均してサンプルごとのプロファイルにする
+#   (deepTools 非依存で高速・省メモリ)。
+#   計算は pic-aggregate (src/pic-aggregate、Rust) が PATH にあればそれで行い、無ければ
+#   UCSC bigWigAverageOverBed + data.table で行う。どちらでも CSV は同じ (ビット単位で一致)。
+#   環境変数 PIC_AGGREGATE_ENGINE=bwaob で bigWigAverageOverBed の道を強制できる (確かめ用)。
 # 入力:
 #   --out-dir <dir>   pic mapping/all の出力 (bw/ と summary/deftable_<run>_<genome>.tsv)
 #   --run-name <name> 省略時は summary/mapping_sum__<run>.tsv から推定
 #   --genome <g>      特定 genome のみ (省略時は全 genome)
-#   --threads <int>   サンプルごとの bigWigAverageOverBed を mclapply で並列実行
+#   --threads <int>   同時に処理するサンプルの数 (1 サンプル 1 スレッド)
 #   --bins <int>      遺伝子本体の分割数 (default: 100)
 # 出力:
 #   <out>/summary/aggregate_profile_<run>_<genome>.csv (PNG は生成しない)
@@ -61,19 +64,18 @@ resolve_gtf <- function(genome) {
 }
 
 # GTF から遺伝子本体 (chr,start,end,strand,gene) を取り出す。
+# feature == "gene" の行があればそれだけを使う。先に awk で gene の行だけに絞ってから読む
+# (全行を読んで正規表現を掛けるより 20 倍余り速い。結果は同じ)。gene の行が 1 つも無い GTF
+# では全行 (コメント行を除く) の gene_id ごとの範囲を使う。
 read_gene_bodies <- function(gtf) {
-  reader <- if (grepl("\\.gz$", gtf)) "gzcat" else "cat"
-  dt <- fread(cmd = sprintf("%s '%s' | grep -v '^#'", reader, gtf),
-              sep = "\t", header = FALSE, quote = "", showProgress = FALSE,
-              select = c(1, 3, 4, 5, 7, 9),
-              col.names = c("chr", "feature", "start", "end", "strand", "attr"))
+  reader <- if (grepl("\\.gz$", gtf)) sprintf("gzip -dc '%s'", gtf) else sprintf("cat '%s'", gtf)
+  rd <- function(cmd) fread(cmd = cmd, sep = "\t", header = FALSE, quote = "", showProgress = FALSE,
+                            select = c(1, 3, 4, 5, 7, 9), colClasses = list(character = 1),
+                            col.names = c("chr", "feature", "start", "end", "strand", "attr"))
+  dt <- rd(sprintf("%s | LC_ALL=C awk -F'\\t' '$3 == \"gene\" && substr($1, 1, 1) != \"#\"'", reader))
+  if (nrow(dt) == 0) dt <- rd(sprintf("%s | grep -v '^#'", reader))
   dt[, gene := sub('.*gene_id "?([^";]+)"?.*', "\\1", attr)]
-  g <- dt[feature == "gene"]
-  if (nrow(g) == 0) {
-    g <- dt[, .(chr = chr[1], start = min(start), end = max(end), strand = strand[1]), by = gene]
-  } else {
-    g <- g[, .(chr = chr[1], start = min(start), end = max(end), strand = strand[1]), by = gene]
-  }
+  g <- dt[, .(chr = chr[1], start = min(start), end = max(end), strand = strand[1]), by = gene]
   g[!is.na(chr) & end > start & strand %in% c("+", "-")]
 }
 
@@ -95,7 +97,9 @@ position_map <- function(nbins, fbins) {
 # 遺伝子本体 (N ビン, TSS→TES で scale) + 上流/下流フランク (flank bp, fbins) を
 # タイル化した BED を作る。name = "<gene index>|<globalpos>"。
 # globalpos は TSS→TES→下流の順 (strand 補正済み, 1..total)。
-build_flanked_bed <- function(g, nbins, flank, fbins, chrom_sizes, bedfile) {
+# format = "bins" では pic-aggregate 用に同じ行を chr, start0, end, gene index, globalpos の 5 列で書く。
+build_flanked_bed <- function(g, nbins, flank, fbins, chrom_sizes, bedfile, format = c("bed", "bins")) {
+  format <- match.arg(format)
   g <- g[(end - start + 1) >= nbins]
   if (nrow(g) == 0) return(0L)
   g[, gi := .I]
@@ -129,8 +133,12 @@ build_flanked_bed <- function(g, nbins, flank, fbins, chrom_sizes, bedfile) {
   }
   dt[, bstart := pmax(0L, bstart)]
   dt <- dt[bend > bstart]
-  fwrite(dt[, .(chr, bstart, bend, name = paste0(gi, "|", globalpos))],
-         bedfile, sep = "\t", col.names = FALSE, quote = FALSE)
+  if (format == "bed") {
+    fwrite(dt[, .(chr, bstart, bend, name = paste0(gi, "|", globalpos))],
+           bedfile, sep = "\t", col.names = FALSE, quote = FALSE)
+  } else {
+    fwrite(dt[, .(chr, bstart, bend, gi, globalpos)], bedfile, sep = "\t", col.names = FALSE, quote = FALSE)
+  }
   N
 }
 
@@ -153,7 +161,31 @@ sample_profile <- function(bwaob, bw, bed, nbins, tmp_dir) {
   prof[.(seq_len(nbins))]$value
 }
 
-aggregate_one_genome <- function(out_dir, genome, project, deftable, bwaob, nbins, flank, fbins, tmp_dir, threads = 1L, group_pat = NULL) {
+# pic-aggregate で全サンプルを 1 回で計算する。返り値: sample 名 -> 長さ total の値 (無い位置は NA) の list。
+# 読めなかったサンプルは入らない (pic-aggregate が [WARN] を出す)。pic-aggregate 自体が失敗したら stop。
+native_profiles <- function(exe, samples, bws, bed, total, threads, tmp_dir) {
+  lst <- tempfile(tmpdir = tmp_dir, fileext = ".bw.tsv")
+  out <- tempfile(tmpdir = tmp_dir, fileext = ".prof.tsv")
+  on.exit(unlink(c(lst, out)), add = TRUE)
+  fwrite(data.table(samples, bws), lst, sep = "\t", col.names = FALSE, quote = FALSE)
+  st <- system2(exe, c("--bins", shQuote(bed), "--bigwigs", shQuote(lst), "--out", shQuote(out),
+                       "--threads", max(1L, min(threads, length(samples))), "--total", total))
+  if (!identical(as.integer(st), 0L) || !file.exists(out))
+    stop(sprintf("pic-aggregate が失敗しました (終了コード %s)", st), call. = FALSE)
+  # value = mant * 2^exp2 で読むと丸め無しで pic-aggregate の double と同じになる。
+  p <- fread(out, sep = "\t", header = TRUE, showProgress = FALSE, integer64 = "double",
+             colClasses = list(character = "sample", numeric = c("mant", "exp2")))
+  p[, v := mant * 2^exp2]
+  res <- list()
+  for (s in unique(p$sample)) {
+    x <- p[sample == s]
+    v <- rep(NA_real_, total); v[x$globalpos] <- x$v
+    res[[s]] <- v
+  }
+  res
+}
+
+aggregate_one_genome <- function(out_dir, genome, project, deftable, engine, nbins, flank, fbins, tmp_dir, threads = 1L, group_pat = NULL) {
   def <- fread(deftable, sep = "\t", header = TRUE, showProgress = FALSE)
   # 期待列: count_prefix, barcode, sample, group
   setnames(def, tolower(names(def)))
@@ -190,24 +222,39 @@ aggregate_one_genome <- function(out_dir, genome, project, deftable, bwaob, nbin
   pmap <- position_map(nbins, fbins)
 
   bed <- tempfile(tmpdir = tmp_dir, fileext = ".bed")
-  n_used <- build_flanked_bed(genes, nbins, flank, fbins, chrom_sizes, bed)
+  n_used <- build_flanked_bed(genes, nbins, flank, fbins, chrom_sizes, bed,
+                              format = if (engine$kind == "native") "bins" else "bed")
   message(sprintf("[INFO] aggregate: %d 遺伝子 × %d bins (body %d + flank %d×2, ±%dbp)", n_used, total, nbins, fbins, flank))
 
   bw_dir <- file.path(out_dir, "bw")
-  # サンプルは互いに独立 (各自の bigwig を read-only の bed に対して集計) なので、
-  # bigWigAverageOverBed 呼び出しを mclapply で並列化する (bwaob 自体は 1 スレッド)。
-  ncore <- max(1L, min(threads, nrow(def)))
-  results <- parallel::mclapply(seq_len(nrow(def)), function(i) {
-    cp <- as.character(def$count_prefix[i]); sample <- as.character(def$sample[i]); group <- as.character(def$group[i])
-    bw <- file.path(bw_dir, paste0(cp, "_umi.cpm.bw"))
-    if (!file.exists(bw)) bw <- file.path(bw_dir, paste0(sample, "_umi.cpm.bw"))
-    if (!file.exists(bw)) { message(sprintf("[WARN] aggregate: bigwig なし (skip): %s", sample)); return(NULL) }
-    v <- sample_profile(bwaob, bw, bed, total, tmp_dir)
+  bw_of <- function(i) {
+    bw <- file.path(bw_dir, paste0(as.character(def$count_prefix[i]), "_umi.cpm.bw"))
+    if (!file.exists(bw)) bw <- file.path(bw_dir, paste0(as.character(def$sample[i]), "_umi.cpm.bw"))
+    if (file.exists(bw)) bw else NA_character_
+  }
+  one_row <- function(i, v) {
+    sample <- as.character(def$sample[i]); group <- as.character(def$group[i])
     if (is.null(v)) { message(sprintf("[WARN] aggregate: プロファイル取得失敗 (skip): %s", sample)); return(NULL) }
     v[!is.finite(v)] <- 0
     message(sprintf("[INFO] aggregate: %s 完了", sample))
     data.table(sample = sample, group = group, globalpos = seq_len(total), value = v)
-  }, mc.cores = ncore)
+  }
+  bws <- vapply(seq_len(nrow(def)), bw_of, character(1))
+  for (i in which(is.na(bws))) message(sprintf("[WARN] aggregate: bigwig なし (skip): %s", def$sample[i]))
+  todo <- which(!is.na(bws))
+  if (engine$kind == "native") {
+    # pic-aggregate 1 本で全サンプル (サンプルを --threads 本ずつ並べる)。
+    profs <- if (length(todo) > 0)
+      native_profiles(engine$exe, as.character(def$sample[todo]), bws[todo], bed, total, threads, tmp_dir) else list()
+    results <- lapply(todo, function(i) one_row(i, profs[[as.character(def$sample[i])]]))
+  } else {
+    # サンプルは互いに独立 (各自の bigwig を read-only の bed に対して集計) なので、
+    # bigWigAverageOverBed 呼び出しを mclapply で並列化する (bwaob 自体は 1 スレッド)。
+    ncore <- max(1L, min(threads, length(todo)))
+    results <- parallel::mclapply(todo, function(i) {
+      one_row(i, sample_profile(engine$exe, bws[i], bed, total, tmp_dir))
+    }, mc.cores = ncore)
+  }
   rows <- results[vapply(results, data.table::is.data.table, logical(1))]
   unlink(bed)
   if (length(rows) == 0) { message("[WARN] aggregate: 出力なし"); return(invisible(NULL)) }
@@ -233,12 +280,26 @@ list_from_summary <- function(out_dir, pattern) {
   hits
 }
 
+# 計算の道を選ぶ: pic-aggregate (PATH にあれば) か bigWigAverageOverBed。
+# PIC_AGGREGATE_ENGINE=native|bwaob で固定できる (既定 auto)。
+pick_engine <- function() {
+  want <- tolower(Sys.getenv("PIC_AGGREGATE_ENGINE", "auto"))
+  if (!want %in% c("auto", "native", "bwaob"))
+    stop(sprintf("PIC_AGGREGATE_ENGINE は auto / native / bwaob のどれか: %s", want), call. = FALSE)
+  pa <- Sys.which("pic-aggregate")
+  if (want != "bwaob" && nzchar(pa)) return(list(kind = "native", exe = unname(pa)))
+  if (want == "native") stop("pic-aggregate が見つかりません (src/pic-aggregate/install.sh)", call. = FALSE)
+  bwaob <- Sys.which("bigWigAverageOverBed")
+  if (!nzchar(bwaob)) stop("pic-aggregate も bigWigAverageOverBed も見つかりません (pic の conda 環境を確認)", call. = FALSE)
+  list(kind = "bwaob", exe = unname(bwaob))
+}
+
 main <- function() {
   args <- parse_args(commandArgs(trailingOnly = TRUE))
   out_dir <- normalizePath(args$out_dir, mustWork = TRUE)
 
-  bwaob <- Sys.which("bigWigAverageOverBed")
-  if (!nzchar(bwaob)) stop("bigWigAverageOverBed が見つかりません (pic の conda 環境を確認)", call. = FALSE)
+  engine <- pick_engine()
+  message(sprintf("[INFO] aggregate: engine=%s (%s)", engine$kind, engine$exe))
 
   run_name <- args$run_name
   if (is.null(run_name)) {
@@ -258,7 +319,7 @@ main <- function() {
     if (!is.null(args$genome) && genome != args$genome) next
     message(sprintf("[INFO] aggregate: genome=%s", genome))
     project <- sprintf("%s_%s", run_name, genome)
-    aggregate_one_genome(out_dir, genome, project, df, bwaob, args$bins, args$flank, args$flank_bins, tmp_dir, args$threads, args$group)
+    aggregate_one_genome(out_dir, genome, project, df, engine, args$bins, args$flank, args$flank_bins, tmp_dir, args$threads, args$group)
   }
   unlink(tmp_dir, recursive = TRUE)
   message(sprintf("[INFO] aggregate: 完了 (out-dir=%s)", out_dir))
