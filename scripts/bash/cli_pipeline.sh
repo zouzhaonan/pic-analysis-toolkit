@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 
 # 役割:
-#   mapping -> deseq2 -> enrich を 1 コマンドで一括実行する `pic all`。
+#   mapping -> aggregate / deseq2 / enrich -> report を 1 コマンドで一括実行する `pic all`。
+#   mapping の後は依存関係の順に、待たなくてよい部分を同時に走らせる (pipeline_downstream_genome)。
 # 入力:
 #   --sample-sheet / --raw-fastq-dir / --run-name / --out-dir が基本。
-#   --threads / --jobs は threads を受ける段 (mapping / aggregate / deseq2 / enrich) に渡す。
-#   レポートは threads を受けないので渡さない。
+#   --threads / --jobs は mapping に、--threads は aggregate / deseq2 / enrich / report にも渡す。
+#   同時に走る部分はそれぞれ --threads を受ける (メモリの枠は環境変数 PIC_MEM_GB)。
 # 出力:
 #   <out-dir>/            : mapping 成果物 (counts, bam, bw ...) と report_*.html / sample_sheet.tsv
 #   <out-dir>/summary/    : 集計/中間テーブル (mapping_sum, deftable, aggregate_profile)
@@ -26,6 +27,133 @@ pipeline_list_genomes() {
     genome="${base#deftable_"${RUN_NAME}"_}"
     printf "%s\n" "$genome"
   done
+}
+
+# pic all が背後で走らせた R を止める (pic all が止められたとき・失敗したとき)。
+# R の fork した子は、親がいなくなると自分で終わる (analysis_runtime.R)。
+pipeline_kill_children() {
+  local p
+  for p in "${PIPELINE_PIDS[@]:-}"; do
+    [[ -n "$p" ]] && kill -TERM "$p" 2>/dev/null || true
+  done
+}
+
+# 1 genome の deseq2 と enrich を依存関係の順に流す。失敗したら 1 を返す。
+pipeline_downstream_genome() {
+  local g="$1"
+  local project="${RUN_NAME}_${g}"
+  local deftable="${DEFTABLE_DIR}/deftable_${project}.tsv"
+  local deseq2_out="${OUTPUT_DIR}/deseq2"
+  local enrich_out="${OUTPUT_DIR}/enrich"
+  local stats_csv="${deseq2_out}/stats_${project}.csv"
+  # 平坦化後の DEG サブフォルダは suffix 付き (DEG_<proj>/DEGCluster_<proj>/)。
+  local deg_clusters="${deseq2_out}/DEG_${project}/DEGCluster_${project}/DEGCluster_gene_for_ora_${project}.csv"
+  local de_args=(--deftable "$deftable" --count-dir "$COUNTS_DIR" --genome "$g" --out-dir "$deseq2_out" --threads "$THREADS")
+  local fit_pid rlog_pid gsea_pid rc=0
+
+  log_info "pic all: deseq2 (fit と rlog を同時に) を始めます (genome=${g})"
+  Rscript "${PIC_R_DIR}/cmd_run_deseq2.R" "${de_args[@]}" --part fit &
+  fit_pid=$!
+  Rscript "${PIC_R_DIR}/cmd_run_deseq2.R" "${de_args[@]}" --part rlog &
+  rlog_pid=$!
+  PIPELINE_PIDS+=("$fit_pid" "$rlog_pid")
+
+  if ! wait "$fit_pid"; then
+    handle_error "pic all: deseq2 --part fit に失敗しました (genome=${g})"
+    kill -TERM "$rlog_pid" 2>/dev/null || true
+    wait "$rlog_pid" 2>/dev/null || true
+    return 1
+  fi
+
+  log_info "pic all: enrich (GSEA) を始めます (genome=${g})"
+  Rscript "${PIC_R_DIR}/cmd_run_enrich.R" --stats "$stats_csv" --genome "$g" --out-dir "$enrich_out" \
+    --threads "$THREADS" --analyses gsea &
+  gsea_pid=$!
+  PIPELINE_PIDS+=("$gsea_pid")
+
+  if ! wait "$rlog_pid"; then
+    handle_error "pic all: deseq2 --part rlog に失敗しました (genome=${g})"
+    rc=1
+  elif ! Rscript "${PIC_R_DIR}/cmd_run_deseq2.R" "${de_args[@]}" --part cluster; then
+    handle_error "pic all: deseq2 --part cluster に失敗しました (genome=${g})"
+    rc=1
+  elif [[ -f "$deg_clusters" ]]; then
+    log_info "pic all: enrich (ORA) を始めます (genome=${g})"
+    if ! Rscript "${PIC_R_DIR}/cmd_run_enrich.R" --stats "$stats_csv" --genome "$g" --out-dir "$enrich_out" \
+      --threads "$THREADS" --analyses ora --deg-clusters "$deg_clusters"; then
+      handle_error "pic all: enrich (ORA) に失敗しました (genome=${g})"
+      rc=1
+    fi
+  else
+    log_info "pic all: DEG クラスタが無いので ORA は行いません (genome=${g})"
+  fi
+
+  if [[ "$rc" != 0 ]]; then
+    kill -TERM "$gsea_pid" 2>/dev/null || true
+    wait "$gsea_pid" 2>/dev/null || true
+    return 1
+  fi
+  if ! wait "$gsea_pid"; then
+    handle_error "pic all: enrich (GSEA) に失敗しました (genome=${g})"
+    return 1
+  fi
+  return 0
+}
+
+# mapping の後 (aggregate / deseq2 / enrich / report) を流す。pic all と試験の両方から呼ぶ。
+#   pipeline_run_downstream <no_aggregate 0|1> <no_report 0|1> <genome...>
+# OUTPUT_DIR・RUN_NAME・DEFTABLE_DIR・COUNTS_DIR・THREADS・PIC_R_DIR を使う。
+pipeline_run_downstream() {
+  # --- Step 2-5: aggregate / deseq2 / enrich / report を依存関係の順に流す ---
+  # 1 本で回る段が続かないよう、待たなくてよいものは同時に走らせる:
+  #   aggregate ............................................. (ほかと独立。失敗しても続ける)
+  #   deseq2 --part fit ──┬─> enrich --analyses gsea
+  #   deseq2 --part rlog ─┴─> deseq2 --part cluster ─> enrich --analyses ora
+  #   すべて済んだら report
+  # どの部分も --threads を受け、worker は仕事の数とメモリの枠 (PIC_MEM_GB) でだけ減らす。
+  # 出力は 1 本ずつ順に回したときと同じ。
+  local no_aggregate="$1" no_report="$2"
+  shift 2
+  local genomes=("$@") g
+  PIPELINE_PIDS=()
+  trap 'pipeline_kill_children' TERM INT HUP
+
+  local agg_pid=""
+  if [[ "$no_aggregate" = 1 ]]; then
+    log_info "pic all: --no-aggregate により aggregate をスキップします"
+  else
+    log_info "pic all: aggregate を始めます"
+    run_aggregate_subcommand --out-dir "$OUTPUT_DIR" --run-name "$RUN_NAME" --threads "$THREADS" &
+    agg_pid=$!
+    PIPELINE_PIDS+=("$agg_pid")
+  fi
+
+  local failed=0
+  for g in "${genomes[@]}"; do
+    pipeline_downstream_genome "$g" || failed=1
+    [[ "$failed" = 0 ]] || break
+  done
+
+  if [[ -n "$agg_pid" ]]; then
+    if ! wait "$agg_pid"; then
+      handle_error "pic all: aggregate に失敗しました (解析は継続します)"
+    fi
+  fi
+  if [[ "$failed" != 0 ]]; then
+    pipeline_kill_children
+    handle_error "pic all: deseq2 / enrich に失敗しました (out-dir=${OUTPUT_DIR})"
+    exit 1
+  fi
+  trap - TERM INT HUP
+
+  if [[ "$no_report" = 1 ]]; then
+    log_info "pic all: --no-report によりレポート生成をスキップします"
+  else
+    log_info "pic all: HTML レポートを生成します"
+    if ! Rscript "${PIC_R_DIR}/cmd_build_report.R" --out-dir "$OUTPUT_DIR" --threads "$THREADS"; then
+      handle_error "pic all: レポート生成に失敗しました (解析結果は ${OUTPUT_DIR} に保存済み)"
+    fi
+  fi
 }
 
 run_pipeline_subcommand() {
@@ -159,64 +287,7 @@ run_pipeline_subcommand() {
 
   log_info "pic all: 解析対象 genome: ${genomes[*]}"
 
-  # --- Step 2: aggregate (遺伝子全体 TSS→TES 集計) ---
-  # cDNA / 3'断片リファレンス (遺伝子本体がフランク幅より短い genome) は
-  # aggregate 側が自動でスキップする。--no-aggregate は明示的に全体を止める。
-  if [[ "$no_aggregate" = 1 ]]; then
-    log_info "pic all: [2/5] --no-aggregate により aggregate をスキップします"
-  else
-    log_info "pic all: [2/5] aggregate を実行します"
-    if ! run_aggregate_subcommand --out-dir "$OUTPUT_DIR" --run-name "$RUN_NAME" --threads "$THREADS"; then
-      handle_error "pic all: aggregate に失敗しました (解析は継続します)"
-    fi
-  fi
-
-  # --- Step 3/4: genome ごとに deseq2 -> enrich ---
-  local project deftable deseq2_out stats_csv enrich_out deg_clusters
-  for g in "${genomes[@]}"; do
-    project="${RUN_NAME}_${g}"
-    deftable="${DEFTABLE_DIR}/deftable_${project}.tsv"
-    deseq2_out="${OUTPUT_DIR}/deseq2"
-
-    log_info "pic all: [3/5] deseq2 を実行します (genome=${g})"
-    Rscript "${PIC_R_DIR}/cmd_run_deseq2.R" \
-      --deftable "$deftable" \
-      --count-dir "$COUNTS_DIR" \
-      --genome "$g" \
-      --out-dir "$deseq2_out" \
-      --threads "$THREADS"
-
-    stats_csv="${deseq2_out}/stats_${project}.csv"
-    # 平坦化後の DEG サブフォルダは suffix 付き (DEG_<proj>/DEGCluster_<proj>/)。
-    deg_clusters="${deseq2_out}/DEG_${project}/DEGCluster_${project}/DEGCluster_gene_for_ora_${project}.csv"
-    enrich_out="${OUTPUT_DIR}/enrich"
-
-    log_info "pic all: [4/5] enrich を実行します (genome=${g})"
-    if [[ -f "$deg_clusters" ]]; then
-      Rscript "${PIC_R_DIR}/cmd_run_enrich.R" \
-        --stats "$stats_csv" \
-        --genome "$g" \
-        --out-dir "$enrich_out" \
-        --threads "$THREADS" \
-        --deg-clusters "$deg_clusters"
-    else
-      Rscript "${PIC_R_DIR}/cmd_run_enrich.R" \
-        --stats "$stats_csv" \
-        --genome "$g" \
-        --out-dir "$enrich_out" \
-        --threads "$THREADS"
-    fi
-  done
-
-  # --- Step 5: HTML レポート ---
-  if [[ "$no_report" = 1 ]]; then
-    log_info "pic all: [5/5] --no-report によりレポート生成をスキップします"
-  else
-    log_info "pic all: [5/5] HTML レポートを生成します"
-    if ! Rscript "${PIC_R_DIR}/cmd_build_report.R" --out-dir "$OUTPUT_DIR"; then
-      handle_error "pic all: レポート生成に失敗しました (解析結果は ${OUTPUT_DIR} に保存済み)"
-    fi
-  fi
+  pipeline_run_downstream "$no_aggregate" "$no_report" "${genomes[@]}"
 
   log_info "pic all: 完了しました (out-dir=${OUTPUT_DIR})"
 }
