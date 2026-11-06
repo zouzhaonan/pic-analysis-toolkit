@@ -286,9 +286,11 @@ pick_engine <- function() {
   want <- tolower(Sys.getenv("PIC_AGGREGATE_ENGINE", "auto"))
   if (!want %in% c("auto", "native", "bwaob"))
     stop(sprintf("PIC_AGGREGATE_ENGINE は auto / native / bwaob のどれか: %s", want), call. = FALSE)
-  pa <- Sys.which("pic-aggregate")
+  # bin/pic が自分の隣の bin/pic-aggregate を PIC_AGGREGATE_BIN で渡す (版の写しごとに持てる)。
+  pa <- Sys.getenv("PIC_AGGREGATE_BIN", "")
+  if (!nzchar(pa) || !file.exists(pa)) pa <- Sys.which("pic-aggregate")
   if (want != "bwaob" && nzchar(pa)) return(list(kind = "native", exe = unname(pa)))
-  if (want == "native") stop("pic-aggregate が見つかりません (src/pic-aggregate/install.sh)", call. = FALSE)
+  if (want == "native") stop("pic-aggregate が見つかりません (bash <toolkit>/src/install.sh で置けます)", call. = FALSE)
   bwaob <- Sys.which("bigWigAverageOverBed")
   if (!nzchar(bwaob)) stop("pic-aggregate も bigWigAverageOverBed も見つかりません (pic の conda 環境を確認)", call. = FALSE)
   list(kind = "bwaob", exe = unname(bwaob))
