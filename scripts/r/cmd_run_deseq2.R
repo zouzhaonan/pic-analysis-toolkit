@@ -41,7 +41,7 @@ main <- function() {
   umi <- load_umi_tables(def, args$count_dir)
   mat <- build_count_matrix(umi, e2g)
   message("[INFO] Running DESeq2")
-  deseq_result <- run_deseq(mat, def, contrasts)
+  deseq_result <- run_deseq(mat, def, contrasts, threads = args$threads)
   # 採用したサイズ因子の方法をレポート用に記録する。
   # サンプルシートに複数 genome があると本関数は genome ごとに呼ばれるため、
   # キーに genome を含めないと後の genome が前の記録を上書きしてしまう。
@@ -62,13 +62,16 @@ main <- function() {
   normcount <- build_normalized_counts(deseq_result$dds, e2g)
   num_umi_gene <- build_num_umi_gene(mat)
   deg_count_summary <- build_deg_count_summary(stats_tables$stats, contrasts, args$fdr)
+  message("[INFO] Computing rlog (blind) once for DEG clustering and PCA")
+  rlog_mat <- collect_rlog_matrix(deseq_result$dds, deseq_result$rlog_job)
   message("[INFO] Running DEG clustering on rlog matrix")
   degpattern <- build_degpattern_outputs(
     dds = deseq_result$dds,
     label = deseq_result$label,
     stats = stats_tables$stats,
     e2g = e2g,
-    fdr = args$fdr
+    fdr = args$fdr,
+    rlog_mat = rlog_mat
   )
 
   # 注: deftable のコピー / Num_UMIs_genes は下流・レポートのいずれからも参照されないため書き出さない
@@ -120,7 +123,8 @@ main <- function() {
     label = deseq_result$label,
     out_dir = args$out_dir,
     project_name = args$project_name,
-    ntop = args$ntop
+    ntop = args$ntop,
+    rlog_mat = rlog_mat
   )
 
   message("[INFO] DESeq2 workflow completed")

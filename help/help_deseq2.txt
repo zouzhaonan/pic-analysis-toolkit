@@ -36,6 +36,9 @@ Required options:
 
 Optional options:
   --fdr <value>         FDR threshold for DEG calling (default: 0.1)
+  --threads <n>         Run rlog alongside the DESeq2 fit and extract the
+                        contrasts in parallel (default: 1). Results are the
+                        same as with 1.
 
 Example:
   pic deseq2 \

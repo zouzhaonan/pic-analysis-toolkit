@@ -4,8 +4,8 @@
 #   mapping -> deseq2 -> enrich を 1 コマンドで一括実行する `pic all`。
 # 入力:
 #   --sample-sheet / --raw-fastq-dir / --run-name / --out-dir が基本。
-#   --threads / --jobs は threads を受ける段 (mapping / aggregate / enrich) に渡す。
-#   deseq2 とレポートは threads を受けないので渡さない。
+#   --threads / --jobs は threads を受ける段 (mapping / aggregate / deseq2 / enrich) に渡す。
+#   レポートは threads を受けないので渡さない。
 # 出力:
 #   <out-dir>/            : mapping 成果物 (counts, bam, bw ...) と report_*.html / sample_sheet.tsv
 #   <out-dir>/summary/    : 集計/中間テーブル (mapping_sum, deftable, aggregate_profile)
@@ -183,7 +183,8 @@ run_pipeline_subcommand() {
       --deftable "$deftable" \
       --count-dir "$COUNTS_DIR" \
       --genome "$g" \
-      --out-dir "$deseq2_out"
+      --out-dir "$deseq2_out" \
+      --threads "$THREADS"
 
     stats_csv="${deseq2_out}/stats_${project}.csv"
     # 平坦化後の DEG サブフォルダは suffix 付き (DEG_<proj>/DEGCluster_<proj>/)。

@@ -25,7 +25,8 @@ parse_deseq2_args <- function(args) {
     count_dir = NULL,
     genome = NULL,
     out_dir = NULL,
-    fdr = cfg$fdr
+    fdr = cfg$fdr,
+    threads = 1L
   )
 
   i <- 1
@@ -105,6 +106,10 @@ parse_deseq2_args <- function(args) {
   defaults$out_dir <- normalizePath(defaults$out_dir, winslash = "/", mustWork = FALSE)
   defaults$genome <- as.character(defaults$genome)
   defaults$fdr <- as.numeric(defaults$fdr)
+  defaults$threads <- suppressWarnings(as.integer(defaults$threads))
+  if (is.na(defaults$threads) || defaults$threads < 1) {
+    stop("--threads must be an integer >= 1.", call. = FALSE)
+  }
   defaults$ntop <- as.integer(cfg$ntop)
 
   if (is.na(defaults$fdr) || defaults$fdr <= 0 || defaults$fdr >= 1) {

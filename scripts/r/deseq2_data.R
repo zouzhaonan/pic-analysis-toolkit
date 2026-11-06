@@ -54,28 +54,23 @@ load_umi_tables <- function(def, count_dir) {
 }
 
 build_count_matrix <- function(umi, e2g) {
-  sample_mat <- umi |>
-    dplyr::transmute(
-      ens_gene = as.character(.data$ens_gene),
-      sample = as.character(.data$sample),
-      count = as.numeric(.data$count)
-    ) |>
-    dplyr::filter(
-      !is.na(.data$ens_gene),
-      .data$ens_gene != "",
-      !is.na(.data$sample),
-      .data$sample != ""
-    ) |>
-    dplyr::group_by(.data$ens_gene, .data$sample) |>
-    dplyr::summarise(
-      count = sum(.data$count, na.rm = TRUE),
-      .groups = "drop"
-    ) |>
-    tidyr::pivot_wider(
-      names_from = "sample",
-      values_from = "count",
-      values_fill = 0
-    )
+  # 遺伝子 × サンプルに足し上げて横に広げる。data.table で行う (dplyr の group_by + pivot_wider と
+  # 同じ表: 行は ens_gene を C ロケールで並べた順、列はその並びで最初に出てくるサンプルの順、無い組は 0)。
+  dt <- data.table::data.table(
+    ens_gene = as.character(umi$ens_gene),
+    sample = as.character(umi$sample),
+    count = as.numeric(umi$count)
+  )
+  dt <- dt[!is.na(ens_gene) & ens_gene != "" & !is.na(sample) & sample != ""]
+  agg <- dt[, list(count = sum(count, na.rm = TRUE)), keyby = c("ens_gene", "sample")]
+  if (nrow(agg) == 0) {
+    sample_mat <- tibble::tibble(ens_gene = character())
+  } else {
+    sample_cols <- unique(agg$sample)
+    wide <- data.table::dcast(agg, ens_gene ~ sample, value.var = "count", fill = 0)
+    data.table::setcolorder(wide, c("ens_gene", sample_cols))
+    sample_mat <- tibble::as_tibble(as.data.frame(wide, stringsAsFactors = FALSE))
+  }
 
   if (nrow(sample_mat) == 0) {
     return(tibble::tibble(
@@ -98,30 +93,28 @@ build_count_matrix <- function(umi, e2g) {
     )
   }
 
-  e2g_uniq <- e2g |>
-    dplyr::transmute(
-      ens_gene = as.character(.data$ens_gene),
-      ext_gene = as.character(.data$ext_gene),
-      biotype = as.character(.data$biotype),
-      chr = as.character(.data$chr)
-    ) |>
-    dplyr::filter(!is.na(.data$ens_gene), .data$ens_gene != "") |>
-    dplyr::group_by(.data$ens_gene) |>
-    dplyr::summarise(
-      ext_gene = {
-        v <- .data$ext_gene[!is.na(.data$ext_gene) & .data$ext_gene != ""]
-        if (length(v) == 0) NA_character_ else v[[1]]
-      },
-      biotype = {
-        v <- .data$biotype[!is.na(.data$biotype) & .data$biotype != ""]
-        if (length(v) == 0) NA_character_ else v[[1]]
-      },
-      chr = {
-        v <- .data$chr[!is.na(.data$chr) & .data$chr != ""]
-        if (length(v) == 0) NA_character_ else v[[1]]
-      },
-      .groups = "drop"
-    )
+  # ens_gene ごとに、空でない最初の ext_gene / biotype / chr (左結合に使うだけなので行の順は問わない)。
+  e <- data.table::data.table(
+    ens_gene = as.character(e2g$ens_gene),
+    ext_gene = as.character(e2g$ext_gene),
+    biotype = as.character(e2g$biotype),
+    chr = as.character(e2g$chr)
+  )
+  e <- e[!is.na(ens_gene) & ens_gene != ""]
+  ids <- unique(e$ens_gene)
+  first_nonempty <- function(col) {
+    v <- e[[col]]
+    ok <- !is.na(v) & v != ""
+    hit <- e$ens_gene[ok]
+    keep <- !duplicated(hit)
+    v[ok][keep][match(ids, hit[keep])]
+  }
+  e2g_uniq <- tibble::tibble(
+    ens_gene = ids,
+    ext_gene = first_nonempty("ext_gene"),
+    biotype = first_nonempty("biotype"),
+    chr = first_nonempty("chr")
+  )
 
   sample_mat |>
     dplyr::left_join(e2g_uniq, by = "ens_gene") |>
@@ -210,7 +203,13 @@ pic_write_analysis_param <- function(out_dir, key, value) {
   utils::write.table(rows, f, sep = "\t", quote = FALSE, row.names = FALSE)
 }
 
-run_deseq <- function(mat, def, contrasts) {
+# threads > 1 のとき:
+#   - rlog (blind = TRUE) を fork した子で DESeq() と同時に回す (rlog は design を ~1 にして分散を
+#     推定し直すので、DESeq() の前の dds から作っても後の dds から作っても同じ行列になる)。
+#     返り値の rlog_job を collect_rlog_job() で受け取る。
+#   - results() を比較ごとに fork して並べる (比較どうしは独立。1 比較 1〜2 秒かかる)。
+# DESeq() 自体の parallel = TRUE は使わない (36 サンプルで試すと、子に dds を渡す手間で 1 本より遅い)。
+run_deseq <- function(mat, def, contrasts, threads = 1L) {
   mat_filtered <- mat |>
     dplyr::filter(.data$chr != "MT" | is.na(.data$chr)) |>
     dplyr::filter(dplyr::if_any(-(1:4), ~ .x > 0))
@@ -242,6 +241,10 @@ run_deseq <- function(mat, def, contrasts) {
   # 設定済みなら DESeq() は再推定しないため sfType は渡さない。
   dds <- pic_set_size_factors(dds)
 
+  rlog_job <- if (threads > 1L && .Platform$OS.type == "unix") {
+    parallel::mcparallel(compute_rlog_matrix(dds), silent = TRUE)
+  } else NULL
+
   deseq_fit <- tryCatch(
     DESeq2::DESeq(dds),
     error = function(err) err
@@ -272,22 +275,32 @@ run_deseq <- function(mat, def, contrasts) {
     assign("pic_dispersion_method", "group", envir = globalenv())
   }
 
-  results_list <- purrr::imap(
-    contrasts,
-    ~ DESeq2::results(
+  one_result <- function(cv) {
+    DESeq2::results(
       dds,
-      contrast = .x,
+      contrast = cv,
       lfcThreshold = log2(1),
       independentFiltering = FALSE,
       cooksCutoff = FALSE
     )
-  )
+  }
+  results_list <- if (threads > 1L && length(contrasts) > 1L && .Platform$OS.type == "unix") {
+    res <- parallel::mclapply(contrasts, one_result, mc.cores = min(threads, length(contrasts)))
+    bad <- vapply(res, function(r) !inherits(r, "DESeqResults"), logical(1))
+    if (any(bad)) stop(sprintf("DESeq2::results failed for: %s (%s)", paste(names(contrasts)[bad], collapse = ", "),
+                               paste(unique(vapply(res[bad], function(r) paste(as.character(r), collapse = " "), character(1))), collapse = " | ")),
+                       call. = FALSE)
+    res
+  } else {
+    lapply(contrasts, one_result)
+  }
 
   list(
     dds = dds,
     label = label_df,
     mat = mat,
-    stats = results_list
+    stats = results_list,
+    rlog_job = rlog_job
   )
 }
 
@@ -390,11 +403,27 @@ build_deg_count_summary <- function(stats, contrasts, fdr) {
   })
 }
 
-build_rlog_matrix_for_degpatterns <- function(dds) {
-  rlog_try <- tryCatch(
+# rlog (blind = TRUE) の行列。DEG のクラスタ分けと PCA が同じものを使うので、main で 1 回だけ
+# 計算して両方に渡す (rlog はサンプルが多いと DESeq2 の段で一番重い)。失敗したら NULL。
+compute_rlog_matrix <- function(dds) {
+  tryCatch(
     SummarizedExperiment::assay(DESeq2::rlog(dds, blind = TRUE)),
     error = function(err) NULL
   )
+}
+
+# run_deseq が子で回した rlog を受け取る。子が無い・落ちたときはここで計算する (同じ行列)。
+collect_rlog_matrix <- function(dds, rlog_job = NULL) {
+  if (!is.null(rlog_job)) {
+    res <- parallel::mccollect(rlog_job, wait = TRUE)[[1]]
+    if (is.null(res) || is.matrix(res)) return(res)
+    message("[WARN] rlog の子が失敗したので、計算し直します")
+  }
+  compute_rlog_matrix(dds)
+}
+
+build_rlog_matrix_for_degpatterns <- function(dds, rlog_mat = NULL) {
+  rlog_try <- if (is.null(rlog_mat)) compute_rlog_matrix(dds) else rlog_mat
   if (!is.null(rlog_try)) {
     return(rlog_try)
   }
@@ -409,7 +438,8 @@ build_degpattern_outputs <- function(
   stats,
   e2g,
   fdr,
-  min_cluster_size = 5L
+  min_cluster_size = 5L,
+  rlog_mat = NULL
 ) {
   if (!requireNamespace("ggbeeswarm", quietly = TRUE)) {
     stop("Missing required R package: ggbeeswarm", call. = FALSE)
@@ -434,7 +464,7 @@ build_degpattern_outputs <- function(
     ))
   }
 
-  rlog_mat <- build_rlog_matrix_for_degpatterns(dds)
+  rlog_mat <- build_rlog_matrix_for_degpatterns(dds, rlog_mat)
   deg_genes <- intersect(deg_genes, rownames(rlog_mat))
   if (length(deg_genes) == 0) {
     return(list(

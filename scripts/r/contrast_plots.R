@@ -30,6 +30,17 @@ save_deg_normalized_count <- function(stats, normalized_count_table, out_dir, pr
   )
 }
 
+# readr::write_lines と同じ中身 (1 行 1 要素、NA は "NA"、末尾に改行) を base で書く。
+# readr は呼ぶたびに vroom を起こすので、比較 × 2 本のファイルで数秒かかっていた。
+pic_write_lines <- function(x, path) {
+  con <- file(path, open = "wb")
+  on.exit(close(con))
+  x <- as.character(x)
+  x[is.na(x)] <- "NA"
+  if (length(x) > 0) writeLines(enc2utf8(x), con, sep = "\n", useBytes = TRUE)
+  invisible(x)
+}
+
 save_deg_lists <- function(stats, contrasts, out_dir, project_name, fdr) {
   deg_list_dir <- file.path(out_dir, sprintf("DEGList_%s", project_name))
   dir.create(deg_list_dir, recursive = TRUE, showWarnings = FALSE)
@@ -67,11 +78,11 @@ save_deg_lists <- function(stats, contrasts, out_dir, project_name, fdr) {
       dplyr::distinct(.data$gene_label) |>
       dplyr::pull(.data$gene_label)
 
-    readr::write_lines(
+    pic_write_lines(
       numerator_genes,
       file.path(deg_list_dir, sprintf("%s__%s.txt", file_label, numerator))
     )
-    readr::write_lines(
+    pic_write_lines(
       denominator_genes,
       file.path(deg_list_dir, sprintf("%s__%s.txt", file_label, denominator))
     )

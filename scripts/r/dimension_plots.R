@@ -24,9 +24,11 @@ save_correlation_outputs <- function(correlation_matrix, out_dir, project_name) 
 # ブラウザ側で改めて上位 ntop を選び直せる余地が要る。
 PCA_POOL_GENES <- 2000L
 
-run_dimension_reduction <- function(dds, label, out_dir, project_name, ntop) {
-  rld <- DESeq2::rlog(dds)
-  rld_df <- as.data.frame(SummarizedExperiment::assay(rld))
+run_dimension_reduction <- function(dds, label, out_dir, project_name, ntop, rlog_mat = NULL) {
+  # rlog_mat は main で 1 回だけ計算した rlog(dds, blind = TRUE) の行列 (rlog の既定も blind = TRUE)。
+  # 無ければ (rlog が失敗したときなど) ここで計算し直し、失敗ならそのまま止める (前と同じ)。
+  if (is.null(rlog_mat)) rlog_mat <- SummarizedExperiment::assay(DESeq2::rlog(dds))
+  rld_df <- as.data.frame(rlog_mat)
   label_tbl <- tibble::as_tibble(label) |>
     dplyr::select("sample", "group")
 
