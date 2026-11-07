@@ -28,6 +28,9 @@
     if (!spec) return;
     var layout = spec.layout || {};
     layout.autosize = true;
+    // hover の箱の中の文字はいつも左揃え (既定の "auto" だと点が図の左右どちらにあるかで揃えが変わる)。
+    // 箱が点の左右どちらに出るかは plotly に任せたまま (align は文字の揃えだけを変える)
+    layout.hoverlabel = Object.assign({}, layout.hoverlabel || {}, { align: "left" });
     var cfg = spec.config || { responsive: true, displaylogo: false };
     try {
       Plotly.newPlot(el, spec.data, layout, cfg);
@@ -1021,6 +1024,16 @@
         });
       });
       tbl.addEventListener("mouseleave", clear);
+      // 選ばれているマス (ラジオは画面に出さない) に内側の枠 (pic-cmx-sel) を付ける。
+      // マスそのものを押すと、マスを埋める label がラジオを選ぶ (キーボードは今どおりラジオの矢印キー)
+      function syncSel() {
+        tbl.querySelectorAll("td.pic-cmx-cell").forEach(function (td) {
+          var inp = td.querySelector("input");
+          td.classList.toggle("pic-cmx-sel", !!(inp && inp.checked));
+        });
+      }
+      tbl.addEventListener("change", syncSel);
+      syncSel();
     });
     // 遺伝子発現 UI を初期化
     document.querySelectorAll(".pic-expr").forEach(initExpr);

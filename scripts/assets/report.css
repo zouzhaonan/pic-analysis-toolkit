@@ -360,3 +360,18 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 :is(.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side) :is(.pic-tree,.pic-tgl-list)+.pic-expr-gsets{margin-top:16px}
 :is(.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side) .pic-expr-gsets>h4{margin-top:2px}
 @media(max-width:900px){.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side{position:static;max-height:none}}
+/* ---- Comparison の表 (DEG・GSEA。数を出さない版): ラジオは出さず、マスそのものを押して選ぶ (2026-11-07) ----
+   マスの幅は --cmx-w (既定 20px = 縦書きの列名の幅。25px にすると高さに合わせた正方形)。列名・行名の字の大きさは変えない。 */
+table.pic-cmatrix.pic-cmx-nocount{--cmx-w:20px;--cmx-h:25px}
+/* 行の高さは 25px (字の大きさはそのまま、上下の余白だけ詰める) */
+.pic-cmatrix.pic-cmx-nocount tbody th,.pic-cmatrix.pic-cmx-nocount tbody td{box-sizing:border-box;height:var(--cmx-h);padding-top:0;padding-bottom:0;line-height:1.2}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-h{box-sizing:border-box;width:var(--cmx-w);min-width:var(--cmx-w);max-width:var(--cmx-w);padding:4px 0}
+.pic-cmatrix.pic-cmx-nocount td.pic-cmx-cell,.pic-cmatrix.pic-cmx-nocount td.pic-cmx-empty{box-sizing:border-box;width:var(--cmx-w);min-width:var(--cmx-w);max-width:var(--cmx-w);padding:0;position:relative}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell label{position:absolute;inset:0;display:block;cursor:pointer}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell input:disabled+*,.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell:has(input:disabled) label{cursor:default}
+/* 選ばれているマスは内側の枠 (色の付いたマスでも分かる)。キーボードで選んでいるときは外側にも線 */
+.pic-cmatrix .pic-cmx-cell.pic-cmx-sel{box-shadow:inset 0 0 0 2px #17518f}
+.pic-cmatrix .pic-cmx-cell:hover{box-shadow:inset 0 0 0 2px rgba(23,81,143,.5)}
+.pic-cmatrix .pic-cmx-cell.pic-cmx-sel:hover{box-shadow:inset 0 0 0 2px #17518f}
+.pic-cmatrix .pic-cmx-cell:has(input:focus-visible){outline:2px solid #17518f;outline-offset:1px}

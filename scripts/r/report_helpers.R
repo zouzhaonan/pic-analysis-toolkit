@@ -490,19 +490,24 @@ build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = T
   }
   hcol <- function(g) group_color_or(g, group_pal)
   n <- length(groups)
-  ths <- paste(vapply(seq_len(n), function(j)
+  # 上三角 (row < col) だけに比較があるので、最初の群の列と最後の群の行は出さない (いつも空になるため)
+  col_idx <- seq_len(n)[-1L]
+  row_idx <- seq_len(n - 1L)
+  ths <- paste(vapply(col_idx, function(j)
     sprintf('<th class="pic-cmx-h"><span style="color:%s">%s</span></th>', hcol(groups[[j]]), html_escape(groups[[j]])),
     character(1)), collapse = "")
   header <- sprintf('<tr><th class="pic-cmx-corner"></th>%s</tr>', ths)
   rows_html <- character(0)
-  for (i in seq_len(n)) {
+  for (i in row_idx) {
     rh <- sprintf('<th class="pic-cmx-rh"><span style="color:%s">%s</span></th>', hcol(groups[[i]]), html_escape(groups[[i]]))
     cs <- character(0)
-    for (j in seq_len(n)) {
+    for (j in col_idx) {
       # 各比較は上三角 (row < col) の 1 セルにのみ表示し、重複を避ける
       e <- if (i < j) cellmap[[paste0(i, "_", j)]] else NULL
       if (is.null(e)) { cs <- c(cs, '<td class="pic-cmx-empty"></td>'); next }
       ck <- if (isTRUE(e$checked)) " checked" else ""
+      # 選ばれているマス (pic-cmx-sel) は内側の枠で示す。report.js が選び替えのたびに付け直す
+      sel_cls <- if (isTRUE(e$checked)) " pic-cmx-sel" else ""
       cnt <- if (show_count && !is.null(e$count) && is.finite(suppressWarnings(as.numeric(e$count))))
                sprintf('<span class="pic-cmx-n">%s</span>', fmt_int(e$count)) else ""
       inp <- if (!is.null(radio_name)) sprintf('type="radio" name="%s"', html_escape(radio_name)) else 'type="checkbox"'
@@ -511,8 +516,8 @@ build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = T
       hcls <- if (!is.na(col)) " pic-cmx-heat" else ""
       disp <- if (!is.null(e$aspect_disp)) e$aspect_disp else e$aspect
       ttl <- if (is.finite(cv)) sprintf("%s — %s DEGs", disp, fmt_int(cv)) else disp
-      cs <- c(cs, sprintf('<td class="pic-cmx-cell%s" title="%s"%s><label>%s<input %s %s%s></label></td>',
-                          hcls, html_escape(ttl), bg, cnt, inp, e$attr, ck))
+      cs <- c(cs, sprintf('<td class="pic-cmx-cell%s%s" title="%s"%s><label>%s<input %s %s%s aria-label="%s"></label></td>',
+                          hcls, sel_cls, html_escape(ttl), bg, cnt, inp, e$attr, ck, html_escape(disp)))
     }
     rows_html <- c(rows_html, sprintf('<tr>%s%s</tr>', rh, paste(cs, collapse = "")))
   }
