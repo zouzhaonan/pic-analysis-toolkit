@@ -34,6 +34,8 @@ source "${PIC_BASH_DIR}/cmd_xenograft.sh"
 source "${PIC_BASH_DIR}/cmd_aggregate.sh"
 # shellcheck source=/dev/null
 source "${PIC_BASH_DIR}/workflow_mapping.sh"
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/workflow_demux.sh"
 
 # shellcheck source=/dev/null
 source "${PIC_BASH_DIR}/cli_help.sh"

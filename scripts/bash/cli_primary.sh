@@ -1,5 +1,21 @@
 #!/usr/bin/env bash
 
+set_mapping_mode() {
+  if [[ "$PIC_MAPPING_MODE" != "bulk" ]]; then
+    handle_error "--sample, --collect and --resume cannot be combined."
+    exit 1
+  fi
+  PIC_MAPPING_MODE="$1"
+}
+
+set_demux_mode() {
+  if [[ "$PIC_DEMUX_MODE" != "all" ]]; then
+    handle_error "--prefix and --collect cannot be combined."
+    exit 1
+  fi
+  PIC_DEMUX_MODE="$1"
+}
+
 parse_pic_common_long_options() {
   local subcommand="${1:-}"
   shift || true
@@ -10,6 +26,7 @@ parse_pic_common_long_options() {
   local allow_hisat2_very_sensitive=0
   local allow_jobs=0
   local allow_sample_mode=0
+  local allow_demux_mode=0
 
   case "$subcommand" in
   mapping)
@@ -20,7 +37,7 @@ parse_pic_common_long_options() {
     allow_simulation=1
     allow_hisat2_very_sensitive=1
     ;;
-  demux) ;;
+  demux) allow_demux_mode=1 ;;
   esac
 
   PIC_WANT_HELP=0
@@ -42,6 +59,10 @@ parse_pic_common_long_options() {
   # resume = --resume (済んだサンプルを飛ばして一括)。
   PIC_MAPPING_MODE="bulk"
   PIC_MAPPING_SAMPLE=""
+  # pic demux の動き方。all = 全 prefix を振り分けてまとめる (既定)。
+  # prefix = --prefix <P> (1 つの prefix だけ part を書く)、collect = --collect (part をまとめる)。
+  PIC_DEMUX_MODE="all"
+  PIC_DEMUX_PREFIX=""
 
   case "$subcommand" in
   mapping) PIC_DEMUX_LAYOUT="nested" ;;
@@ -121,26 +142,51 @@ parse_pic_common_long_options() {
       PIC_BARCODE_FIRST=1
       shift
       ;;
-    --sample|--collect|--resume)
+    --prefix)
+      if [[ "$allow_demux_mode" != 1 ]]; then
+        handle_error "$1 is not supported for ${subcommand}."
+        exit 1
+      fi
+      PIC_DEMUX_PREFIX="${2:-}"
+      if [[ -z "$PIC_DEMUX_PREFIX" ]]; then
+        handle_error "--prefix requires a fastq_prefix (column 1 of the sample sheet)."
+        exit 1
+      fi
+      set_demux_mode prefix
+      shift 2
+      ;;
+    --collect)
+      # demux では part をまとめる、mapping では集計だけをする。
+      if [[ "$allow_demux_mode" = 1 ]]; then
+        set_demux_mode collect
+      elif [[ "$allow_sample_mode" = 1 ]]; then
+        set_mapping_mode collect
+      else
+        handle_error "$1 is not supported for ${subcommand}."
+        exit 1
+      fi
+      shift
+      ;;
+    --sample)
       if [[ "$allow_sample_mode" != 1 ]]; then
         handle_error "$1 is not supported for ${subcommand}."
         exit 1
       fi
-      if [[ "$PIC_MAPPING_MODE" != "bulk" ]]; then
-        handle_error "--sample, --collect and --resume cannot be combined."
+      PIC_MAPPING_SAMPLE="${2:-}"
+      if [[ -z "$PIC_MAPPING_SAMPLE" ]]; then
+        handle_error "--sample requires a sample name."
         exit 1
       fi
-      PIC_MAPPING_MODE="${1#--}"
-      if [[ "$1" = "--sample" ]]; then
-        PIC_MAPPING_SAMPLE="${2:-}"
-        if [[ -z "$PIC_MAPPING_SAMPLE" ]]; then
-          handle_error "--sample requires a sample name."
-          exit 1
-        fi
-        shift 2
-      else
-        shift
+      set_mapping_mode sample
+      shift 2
+      ;;
+    --resume)
+      if [[ "$allow_sample_mode" != 1 ]]; then
+        handle_error "$1 is not supported for ${subcommand}."
+        exit 1
       fi
+      set_mapping_mode resume
+      shift
       ;;
     --help)
       PIC_WANT_HELP=1
