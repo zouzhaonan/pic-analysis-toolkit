@@ -284,8 +284,12 @@ run_hisat2_alignment() {
     hisat2_args+=(--score-min "$HISAT2_SCORE_MIN")
   fi
 
+  # --mm: 索引をメモリマップで読む。同時に走る hisat2 (--jobs や --sample を並べたとき) が
+  # 索引をページキャッシュで共有するので、1 本ごとに索引分 (mm10 で約 4 GB) を持たなくなる。
+  # 実測 (mm10, 4.9M reads, -p 8): RssAnon 3971 -> 97 MB/本、4 本同時で 15.9 -> 0.4 GB。
+  # 時間は同等以下 (4 本同時 74 -> 66 秒)、整列結果 (並べ替えた SAM 本体) は同一。
   {
-    hisat2 -p "$THREADS" \
+    hisat2 -p "$THREADS" --mm \
       -x "$hisat2_index_prefix" \
       "${hisat2_args[@]}" \
       -U "${MAPPING_JOB_PREFIX}_trimmed.fq.gz" \
@@ -681,4 +685,239 @@ run_primary_command() {
   log_info "Finalizing outputs"
   finalize_outputs
   debug_log "RESULT=run_primary_command status=ok"
+}
+
+# ---------------------------------------------------------------------------
+# サンプル単位の mapping (pic mapping --sample / --collect / --resume)
+#
+# 1 サンプルの仕事 (除去 -> trim -> hisat2 -> featureCounts -> sort/index ->
+# UMI 数え -> dedup -> BigWig) を、ほかのサンプルと独立に回せるようにする。
+# 呼ぶコマンドと引数は一括の pic mapping と同じなので、出力も同じになる。
+#
+# - 作業ファイルは tmp/<sample>/ に分ける。一括の tmp/ は RETURN trap と
+#   finalize_outputs で丸ごと消えるので、同じ out-dir で別々のサンプルを
+#   同時に処理するには、サンプルごとの場所が要る。
+# - 済んだ印は log/<sample>.done。bam・bai・counts・bw ができたあと最後に書く。
+#   印があるサンプルは何もしない。無いサンプルは、途中の出力を消してからやり直す。
+# - 既存の bam/・counts/・log/ は消さない (prepare_workspace_for_run を呼ばない)。
+# - 集計 (deftable・mapping_sum・analysis_params・counts の圧縮) は --collect で 1 回だけ行う。
+# ---------------------------------------------------------------------------
+
+sample_done_marker() {
+  local sample_name="$1"
+  printf "%s/%s.done\n" "$LOG_DIR" "$sample_name"
+}
+
+# tmp/ の下を指す変数を、そのサンプル専用の場所に付け替える。
+# サブシェルの中で呼ぶこと (呼んだシェルの TMP_DIR などが変わる)。
+use_sample_workspace() {
+  local sample_name="$1"
+
+  TMP_DIR="${OUTPUT_DIR}/tmp/${sample_name}"
+  UMI_BAM_DIR="${TMP_DIR}/umi_bam"
+  META_FOR_CHUNK="${TMP_DIR}/meta_for_chunk"
+  FORMATTED_SAMPLE_SHEET="${TMP_DIR}/formatted_sample"
+  JOB_QUEUE="${TMP_DIR}/job_queue"
+}
+
+# --collect / --resume が sample sheet の整形と job_queue に使う場所。
+# sample 名は "." で始まれないので、サンプルの作業場所とはぶつからない。
+use_collect_workspace() {
+  use_sample_workspace ".collect"
+}
+
+# 印の無いサンプルの、途中で止まったかもしれない出力を消す。
+# 名前を 1 つずつ書き、ほかのサンプルのファイルには触れない。
+reset_sample_outputs() {
+  local sample_name="$1"
+
+  safe_rm_rf "$TMP_DIR"
+  rm -f "${BAM_DIR}/${sample_name}.bam" "${BAM_DIR}/${sample_name}.bam.bai" \
+    "${BAM_DIR}/${sample_name}.bam.tmp."*.bam \
+    "${COUNTS_DIR}/${sample_name}.txt" "${COUNTS_DIR}/${sample_name}.txt.gz" \
+    "${BIGWIG_DIR}/${sample_name}_umi.cpm.bw" \
+    "${LOG_DIR}/${sample_name}.mapping_tools.log" "${LOG_DIR}/${sample_name}.mapping.log" \
+    "${LOG_DIR}/${sample_name}.feature.tsv.summary" "$(sample_done_marker "$sample_name")"
+}
+
+# 整形した sample sheet から job_queue を作る (サンプルの並びは sample sheet の順)。
+prepare_sample_mode_queue() {
+  mkdir -p "$TMP_DIR"
+  format_sample_sheet
+  prepare_job_queue
+}
+
+list_samples_without_done_marker() {
+  local sample_name
+  while IFS= read -r sample_name; do
+    [[ -f "$(sample_done_marker "$sample_name")" ]] || printf "%s\n" "$sample_name"
+  done < <(cut -f4 "$JOB_QUEUE")
+}
+
+write_sample_done_marker() {
+  local sample_name="$1"
+  local genome_name="$2"
+  local marker
+
+  marker="$(sample_done_marker "$sample_name")"
+  {
+    printf "sample\t%s\n" "$sample_name"
+    printf "genome\t%s\n" "$genome_name"
+    printf "finished_at\t%s\n" "$(date '+%Y-%m-%dT%H:%M:%S%z')"
+    printf "pic_version\t%s\n" "$(cat "${PIC_ROOT}/VERSION" 2>/dev/null || echo unknown)"
+  } >"${marker}.tmp"
+  mv "${marker}.tmp" "$marker"
+}
+
+# 1 サンプル分を処理する。サブシェルで動くので、TMP_DIR の付け替えは呼び出し元に漏れない。
+# 戻り値: 0 = 済んだ (もともと済んでいた場合も含む)、1 = 失敗。
+process_single_sample() (
+  sample_name="$1"
+  use_sample_workspace "$sample_name"
+
+  if [[ -f "$(sample_done_marker "$sample_name")" ]]; then
+    log_info "Skipping ${sample_name}: already done ($(sample_done_marker "$sample_name"))"
+    exit 0
+  fi
+
+  reset_sample_outputs "$sample_name"
+  mkdir -p "$TMP_DIR" "$UMI_BAM_DIR" "$BAM_DIR" "$COUNTS_DIR" "$LOG_DIR" "$BIGWIG_DIR"
+  # 成功でも失敗でも、このサンプルの作業場所だけを消す。
+  trap 'safe_rm_rf "$TMP_DIR"' EXIT
+
+  prepare_sample_mode_queue
+  awk -F'\t' -v s="$sample_name" '$4 == s' "$JOB_QUEUE" >"${JOB_QUEUE}.one"
+  mv "${JOB_QUEUE}.one" "$JOB_QUEUE"
+  if [[ ! -s "$JOB_QUEUE" ]]; then
+    handle_error "Sample not found in sample sheet: ${sample_name}"
+    exit 1
+  fi
+
+  read -r genome_name _ read_limit < <(read_mapping_job 1)
+
+  run_single_mapping_job "$genome_name" "$sample_name" "$read_limit" || exit 1
+
+  log_info "Counting UMIs for ${sample_name}"
+  output_bam="${BAM_DIR}/${sample_name}.bam"
+  if ! run_umi_count_for_bam "$output_bam" "${COUNTS_DIR}/${sample_name}.txt" ||
+    [[ ! -s "${COUNTS_DIR}/${sample_name}.txt" ]]; then
+    handle_error "UMI counting failed for ${sample_name}."
+    exit 1
+  fi
+
+  if can_generate_bigwig; then
+    log_info "Generating BigWig for ${sample_name}"
+    if ! run_umi_dedup "$output_bam" "${UMI_BAM_DIR}/${sample_name}_umi.bam" ||
+      ! index_umi_bam "${UMI_BAM_DIR}/${sample_name}_umi.bam"; then
+      handle_error "UMI dedup failed for ${sample_name}."
+      exit 1
+    fi
+    single_bam_to_bw 1
+    if [[ ! -s "${BIGWIG_DIR}/${sample_name}_umi.cpm.bw" ]]; then
+      handle_error "BigWig generation failed for ${sample_name}."
+      exit 1
+    fi
+  else
+    handle_error "Skipping BigWig for ${sample_name} because the chrom size file is missing."
+  fi
+
+  write_sample_done_marker "$sample_name" "$genome_name"
+  log_info "Done ${sample_name}"
+)
+
+# pic mapping --sample <S>
+run_sample_mapping_command() {
+  local sample_name="$1"
+
+  debug_log "STEP=run_sample_mapping_command sample=${sample_name}"
+  validate_inputs
+  validate_sample_sheet_genome_registration
+  mkdir -p "$OUTPUT_DIR" "$LOG_DIR" "$BAM_DIR" "$COUNTS_DIR" "$BIGWIG_DIR"
+  process_single_sample "$sample_name"
+}
+
+# 全サンプルの印がそろっていれば集計する。一括の pic mapping が最後に作るもの
+# (summary/analysis_params.tsv・deftable・mapping_sum、counts の圧縮) を同じ形で作る。
+collect_mapping_outputs() {
+  local missing sample_name
+
+  missing="$(list_samples_without_done_marker)"
+  if [[ -n "$missing" ]]; then
+    handle_error "Samples not finished yet (no ${LOG_DIR}/<sample>.done):"
+    printf "%s\n" "$missing" >&2
+    return 1
+  fi
+
+  mkdir -p "$SUMMARY_DIR" "$DEFTABLE_DIR"
+  write_analysis_params
+
+  # 前に --collect を済ませていると counts は .txt.gz になっている。mapping_sum は .txt を読むので戻す。
+  while IFS= read -r sample_name; do
+    if [[ -f "${COUNTS_DIR}/${sample_name}.txt" ]]; then
+      rm -f "${COUNTS_DIR}/${sample_name}.txt.gz"
+    elif [[ -f "${COUNTS_DIR}/${sample_name}.txt.gz" ]]; then
+      pigz -d -p 1 "${COUNTS_DIR}/${sample_name}.txt.gz"
+    fi
+  done < <(cut -f4 "$JOB_QUEUE")
+
+  log_info "Generating deftables and mapping summary"
+  generate_deftables
+  mapping_sum
+
+  if ! can_generate_bigwig; then
+    handle_error "Skipping BigWig generation because one or more chrom size files are missing."
+    handle_error "Run mapping again after preparing the required chrom size files."
+  fi
+
+  log_info "Finalizing outputs"
+  finalize_outputs
+  # 一括と同じく tmp/ を残さない。--collect は全サンプルが済んでから呼ぶので、
+  # ほかのサンプルの作業場所を消すことはない。
+  safe_rm_rf "${OUTPUT_DIR}/tmp"
+}
+
+# pic mapping --collect
+run_collect_mapping_command() {
+  debug_log "STEP=run_collect_mapping_command"
+  validate_inputs
+  validate_sample_sheet_genome_registration
+  mkdir -p "$OUTPUT_DIR" "$LOG_DIR"
+  use_collect_workspace
+  prepare_sample_mode_queue
+  collect_mapping_outputs || {
+    safe_rm_rf "$TMP_DIR"
+    exit 1
+  }
+}
+
+# pic mapping --resume: 済んだサンプルを飛ばし、残りを --jobs 本ずつ並べてから集計する。
+# 失敗したサンプルがあっても、ほかのサンプルは最後まで回す (どれも次の --resume で再開できる)。
+run_resume_mapping_command() {
+  local sample_name failed
+
+  debug_log "STEP=run_resume_mapping_command"
+  validate_inputs
+  validate_sample_sheet_genome_registration
+  mkdir -p "$OUTPUT_DIR" "$LOG_DIR" "$BAM_DIR" "$COUNTS_DIR" "$BIGWIG_DIR"
+  use_collect_workspace
+  prepare_sample_mode_queue
+
+  while IFS= read -r sample_name; do
+    while (( $(jobs -pr | wc -l) >= MAPPING_JOBS )); do
+      wait -n || true
+    done
+    process_single_sample "$sample_name" &
+  done < <(list_samples_without_done_marker)
+  wait || true
+
+  failed="$(list_samples_without_done_marker)"
+  if [[ -n "$failed" ]]; then
+    handle_error "Mapping failed for:"
+    printf "%s\n" "$failed" >&2
+    handle_error "Run the same command again to retry only these samples."
+    safe_rm_rf "$TMP_DIR"
+    exit 1
+  fi
+
+  collect_mapping_outputs || exit 1
 }
