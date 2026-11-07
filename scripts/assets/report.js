@@ -520,7 +520,8 @@
     refresh();
   }
 
-  document.addEventListener("DOMContentLoaded", function () {
+  // 埋め込みデータ (図・発現・PCA・plotly・大きな表) の展開を待ってから始める (report_data.js)
+  picReady(function () {
     // タブ: ボタンで切替。初期は URL ハッシュ or 先頭タブ。
     // xenograft: グローバルゲノム切替 (graft/host)。initial タブ解決の前に設定する。
     var genobtns = document.querySelectorAll(".pic-genobtn");
@@ -1400,12 +1401,7 @@
         if (el) capturePng(el, (btn.dataset.name || "figure") + ".png", btn);
       });
     });
-    // 埋め込みファイル (gzip+base64) のダウンロード。DecompressionStream で展開
-    function b64ToBytes(b64) {
-      var bin = atob(b64), n = bin.length, a = new Uint8Array(n);
-      for (var i = 0; i < n; i++) a[i] = bin.charCodeAt(i);
-      return a;
-    }
+    // 埋め込みファイルのダウンロード。展開は report_data.js (picFileBlob) が DecompressionStream で行う
     function saveBlob(blob, name) {
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a"); a.href = url; a.download = name;
@@ -1413,19 +1409,10 @@
       setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
     }
     function downloadEmbedded(id) {
-      var f = (window.PIC_FILES || {})[id]; if (!f) return;
-      // R の memCompress(type="gzip") は実際には zlib/deflate 形式 (RFC1950) を出力する
-      var bytes = b64ToBytes(f.gz), name = f.n || "download";
-      if (typeof DecompressionStream !== "undefined") {
-        try {
-          var ds = new DecompressionStream("deflate");
-          new Response(new Blob([bytes]).stream().pipeThrough(ds)).blob()
-            .then(function (b) { saveBlob(b, name); })
-            .catch(function () { saveBlob(new Blob([bytes]), name + ".zz"); });
-          return;
-        } catch (e) {}
-      }
-      saveBlob(new Blob([bytes]), name + ".zz");  // 非対応環境は zlib のまま保存
+      picFileBlob(id).then(function (f) { saveBlob(f.blob, f.name); }, function () {
+        var r = picFileRaw(id);   // 展開できない環境は zlib のまま保存
+        if (r) saveBlob(new Blob([r.bytes]), r.name + ".zz");
+      });
     }
     document.querySelectorAll("[data-file]").forEach(function (el) {
       el.addEventListener("click", function (e) { e.preventDefault(); downloadEmbedded(el.dataset.file); });
