@@ -1,6 +1,11 @@
 // plotly のレンダリングを遅延実行する。
 // 多数のプロットを最初に描くと重いので、details が開いた時 / details 外なら即時に描く。
 (function () {
+  // 文言 (差し替えるときはここだけ直す)
+  // Expression の最初のグループ (pvalue 最小の 5 遺伝子) のタイトル
+  var PIC_TOP_GENES_TITLE = "Top 5 DEGs";
+  // サンプルを外しているときに DEG・Enrichment・Expression のタブの冒頭に出す 1 文
+  var PIC_EXCL_NOTE_TEXT = "Reference values computed with all samples. Re-analysis is required for accurate statistics.";
   // 描いた直後に呼ぶフック (サンプル除外を描いたばかりの図に当てる。DOMContentLoaded で設定)
   var picAfterRender = null;
   // サンプル除外の状態 (全タブ共通・1 つだけ)。excl: sample -> 1。残りは木 (.pic-tree) から作る。
@@ -248,38 +253,42 @@
     var data = window.PIC_EXPR && window.PIC_EXPR[id];
     if (!data || box.dataset.wired) return;
     box.dataset.wired = "1";
-    var input = box.querySelector(".pic-expr-input");
-    var tagbox = box.querySelector(".pic-expr-tagbox");
     var msg = box.querySelector(".pic-expr-msg");
     var plots = box.querySelector(".pic-expr-plots");
-    var ac = box.querySelector(".pic-expr-ac");
     var groups = uniqueInOrder(data.groups);
-    var selected = [];   // 選択中の遺伝子 index (タグの並び順)
 
     // lookup (exact) と候補用の配列
     // lut: 小文字 -> index (従来どおり 1 つ。タグ入力の Enter と既定の遺伝子)
     // lutAll: 小文字 -> index の配列 (貼り付け用。1 つの名前に複数の ID があれば全部)。
     //   遺伝子 ID は版 (ENSG...\.12) を除いた形でも引けるようにする。
-    var lut = {}, lutAll = {}, nameN = {};
-    var cand = [];   // {disp, low, i}
+    var lut = {}, lutAll = {}, nameN = {}, nm = [];
+    var cand = [];   // {disp, low, keys, i}
     function addKey(k, i) {
       if (!k) return;
       k = k.toLowerCase();
       var a = lutAll[k] || (lutAll[k] = []);
       if (a.indexOf(i) === -1) a.push(i);
     }
+    function noVer(x) { return String(x).replace(/\.\d+$/, ""); }
     for (var i = 0; i < data.ens.length; i++) {
       var ens = data.ens[i] ? String(data.ens[i]) : "";
       var ext = data.ext[i] ? String(data.ext[i]) : "";
+      // 名前の無い遺伝子は ID で埋めてある (ext == ens)。そのときは名前なしとして扱う
+      if (ext && ens && noVer(ext).toLowerCase() === noVer(ens).toLowerCase()) ext = "";
+      nm.push(ext);
       if (ens) lut[ens.toLowerCase()] = i;
       if (ext) lut[ext.toLowerCase()] = i;
       addKey(ens, i); addKey(ext, i);
-      if (/\.\d+$/.test(ens)) addKey(ens.replace(/\.\d+$/, ""), i);
+      if (/\.\d+$/.test(ens)) { addKey(noVer(ens), i); if (lut[noVer(ens).toLowerCase()] === undefined) lut[noVer(ens).toLowerCase()] = i; }
       if (ext) nameN[ext.toLowerCase()] = (nameN[ext.toLowerCase()] || 0) + 1;
-      var disp = ext ? (ext + " | " + ens) : ens;
-      cand.push({ disp: disp, low: (ext + " " + ens).toLowerCase(), tok: (ext || ens), i: i });
+      var keys = [ens.toLowerCase(), noVer(ens).toLowerCase()];
+      if (ext) keys.unshift(ext.toLowerCase());
+      cand.push({ disp: ext ? (ext + " (" + ens + ")") : ens, low: (ext + " " + ens).toLowerCase(), keys: keys, i: i });
     }
+    // 候補・タグの hover に出す「名前 (ID)」
+    function candLabel(gi) { return nm[gi] ? nm[gi] + " (" + data.ens[gi] + ")" : String(data.ens[gi]); }
     // 貼り付けたリストを index に引く: {idxs, missing, multi:[{tok, idxs}]}
+    // 名前でも ID でも (大文字小文字を問わず、ID の版 .N は付いていてもいなくても) 当たる。
     function resolveList(toks) {
       var idxs = [], missing = [], multi = [];
       toks.forEach(function (t) {
@@ -291,40 +300,17 @@
       });
       return { idxs: idxs, missing: missing, multi: multi };
     }
-    // 引いた結果の説明 (見つからない名前 / 複数の ID に当たった名前) を el に書く
-    function describeResolve(el, r, title) {
-      el.innerHTML = "";
-      if (title) {
-        var h = document.createElement("div"); h.className = "pic-expr-gtitle"; h.textContent = title; el.appendChild(h);
-      }
-      if (r.missing.length) {
-        var m = document.createElement("div"); m.className = "pic-expr-miss";
-        m.innerHTML = "<b>Not found (" + r.missing.length + "):</b> ";
-        m.appendChild(document.createTextNode(r.missing.join(", ")));
-        el.appendChild(m);
-      }
-      if (r.multi.length) {
-        var d = document.createElement("div"); d.className = "pic-expr-multi";
-        d.innerHTML = "<b>Matched several IDs (all are plotted):</b> ";
-        d.appendChild(document.createTextNode(r.multi.map(function (x) {
-          return x.tok + " → " + x.idxs.map(function (gi) { return data.ens[gi]; }).join(", ");
-        }).join("; ")));
-        el.appendChild(d);
-      }
-    }
 
     // 遺伝子ごとに独立した y 軸 (下端 0、各遺伝子で最適スケール) を持つ小パネルを並べる。
     // 列数はコンテナ幅から決め、幅が変わって列数が変わるときだけ描き直す。
-    // 図は複数 (上のタグの図 + 遺伝子のグループごとの図)。図ごとに状態 st = {el, idxs, ncol, shown, title} を持つ。
+    // 図は遺伝子のグループごとに 1 枚。図ごとに状態 st = {el, idxs, ncol, shown, title} を持つ。
     var PANEL_ROW_H = 260, PANEL_VGAP = 56, PANEL_HGAP = 56;
-    var plotState = { el: plots, idxs: [], ncol: 0 };
     var setStates = [];   // 遺伝子のグループの図の状態
     function panelCols(width, n) {
       var minW = Math.max(170, 70 + groups.length * 34);
       return Math.max(1, Math.min(n, Math.floor((width + PANEL_HGAP) / (minW + PANEL_HGAP))));
     }
     function axId(i) { return i === 0 ? "" : String(i + 1); }
-    function plotGenes(idxs) { plotInto(plotState, idxs); }
     function plotInto(st, idxs) {
       var target = st.el;
       st.idxs = idxs.slice();
@@ -418,7 +404,7 @@
       data.samples.forEach(function (sm, s) { on[sm] = !off[data.groups[s]]; });
       return on;
     }
-    function allStates() { return [plotState].concat(setStates); }
+    function allStates() { return setStates; }
     box._picRefilter = function () { allStates().forEach(function (st) { if (st.idxs.length) plotInto(st, st.idxs); }); };
     box._picRefit = function () {
       allStates().forEach(function (st) {
@@ -475,7 +461,7 @@
               return "<tr><td>" + escHtml(data.contrasts[ci]) + "</td><td>" + fmtLog(pp[ci]) + "</td><td" +
                 (sigq ? " class='pic-expr-tip-sig'" : "") + ">" + fmtLog(q) + "</td></tr>";
             }).join("");
-            var head = "<div class='pic-expr-tip-h'>" + escHtml(shortLabel(gi)) + "</div>";
+            var head = "<div class='pic-expr-tip-h'>" + escHtml(candLabel(gi)) + "</div>";
             tip.innerHTML = head + (rows
               ? "<table><tr><th>contrast</th><th>&minus;log<sub>10</sub> p</th><th>&minus;log<sub>10</sub> padj</th></tr>" + rows + "</table>"
               : "<div class='pic-expr-tip-none'>no comparison among the shown groups</div>");
@@ -502,142 +488,128 @@
 
     // パネルの見出し。同じ名前に複数の ID があるときは ID も付けて区別する
     function shortLabel(gi) {
-      var ext = data.ext[gi];
+      var ext = nm[gi];
       if (ext && nameN[String(ext).toLowerCase()] > 1) return ext + " (" + data.ens[gi] + ")";
       return ext || data.ens[gi];
     }
 
-    // 選択中の遺伝子タグを描画し、プロットを更新する
-    function renderChips() {
-      tagbox.querySelectorAll(".pic-expr-chip").forEach(function (c) { c.remove(); });
-      selected.forEach(function (gi) {
+    var SEP_RE = /[\s,;\/|　、，；／]/;
+
+    // ---- 遺伝子のグループ (グループごとに 1 枚の図) ----
+    // 左: グループごとにタイトルと遺伝子の入力欄 (タグ + 補完。区切りの混ざったリストの貼り付けも可)。
+    // 右: グループごとの図。最初は既定の遺伝子 (pvalue 最小の 5 つ) を 1 つのグループとして出す。
+    // 中身は localStorage にレポートごと (project@out_dir と expr の id) に保存する。
+    var gplots = plots;
+    var gside = document.createElement("div"); gside.className = "pic-expr-gsets";
+    gside.innerHTML = '<h4>Gene groups</h4><div class="pic-expr-gset-list"></div>';
+    var gaddBtn = document.createElement("button"); gaddBtn.type = "button"; gaddBtn.className = "pic-excl-btn pic-expr-gset-add";
+    gaddBtn.textContent = "Add group"; gside.appendChild(gaddBtn);
+    msg.parentNode.insertBefore(gside, msg);
+    var glist = gside.querySelector(".pic-expr-gset-list");
+    var meta = (typeof PIC_META !== "undefined" && PIC_META) ? PIC_META : null;
+    var gbase = (meta && meta.project ? meta.project + "@" + (meta.out_dir || "") : document.title) + ":" + id;
+    var gkey = "picExprSets2:" + gbase;      // {title, genes:[ID], miss:[入力のまま]}
+    var gkeyOld = "picExprSets:" + gbase;    // 旧版 (Genes の欄 + {title, text} のグループ)
+    var sets = [];
+    function gsave() {
+      try {
+        localStorage.setItem(gkey, JSON.stringify(sets.map(function (g) {
+          return { title: g.title, genes: g.idxs.map(function (gi) { return data.ens[gi]; }), miss: g.miss };
+        })));
+      } catch (e) {}
+    }
+    function gtitle(g) { return g.title && g.title.trim() ? g.title.trim() : "Group " + (sets.indexOf(g) + 1); }
+    function anyGenes() { return sets.some(function (g) { return g.idxs.length > 0; }); }
+    function gmsg() { msg.textContent = anyGenes() ? "" : "Add genes to a group to see their expression across groups."; }
+    // カードの下の 1 行: 遺伝子数 / 見つからない入力 / 複数の ID に当たった入力
+    function gsummary(g) {
+      g.sum.innerHTML = "";
+      var n = g.idxs.length;
+      if (n) g.sum.appendChild(document.createTextNode(n + " gene" + (n === 1 ? "" : "s")));
+      if (g.miss.length) {
+        var m = document.createElement("div"); m.className = "pic-expr-miss";
+        m.appendChild(document.createTextNode("Not found: " + g.miss.join(", ")));
+        var x = document.createElement("button"); x.type = "button"; x.className = "pic-expr-miss-x"; x.textContent = "×";
+        x.title = "Clear this message";
+        x.addEventListener("click", function () { g.miss = []; gsave(); gsummary(g); });
+        m.appendChild(x);
+        g.sum.appendChild(m);
+      }
+      if (g.multi && g.multi.length) {
+        var d = document.createElement("div"); d.className = "pic-expr-multi";
+        d.appendChild(document.createTextNode("Several IDs (all added): " + g.multi.map(function (x) {
+          return x.tok + " → " + x.idxs.map(function (gi) { return data.ens[gi]; }).join(", ");
+        }).join("; ")));
+        g.sum.appendChild(d);
+      }
+    }
+    function gplot(g) {
+      g.st.title = gtitle(g);
+      g.ti.placeholder = "Group " + (sets.indexOf(g) + 1);
+      g.blk.hidden = !g.idxs.length;
+      plotInto(g.st, g.idxs);
+      gmsg();
+    }
+    function gchips(g) {
+      g.tagbox.querySelectorAll(".pic-expr-chip").forEach(function (c) { c.remove(); });
+      g.idxs.forEach(function (gi) {
         var chip = document.createElement("span");
         chip.className = "pic-expr-chip";
+        chip.title = candLabel(gi);
         chip.appendChild(document.createTextNode(shortLabel(gi)));
         var b = document.createElement("button");
         b.type = "button"; b.textContent = "×"; b.title = "remove";
-        b.addEventListener("click", function () { removeGene(gi); });
+        b.addEventListener("click", function () { gremove(g, gi); g.input.focus(); });
         chip.appendChild(b);
-        tagbox.insertBefore(chip, input);
+        g.tagbox.insertBefore(chip, g.input);
       });
     }
-    function refresh() {
-      renderChips();
-      if (selected.length) { msg.textContent = ""; plotGenes(selected); }
-      else { plots.innerHTML = ""; plotState.idxs = []; msg.textContent = "Add a gene above to see its expression across groups."; }
+    function grefresh(g) { gchips(g); gsummary(g); gplot(g); gsave(); }
+    function gaddIdx(g, gi) {
+      if (gi === undefined || gi === null || g.idxs.indexOf(gi) !== -1) return;
+      g.idxs.push(gi); g.input.value = ""; hideAc(g); grefresh(g); g.input.focus();
     }
-    function addGene(gi) {
-      if (gi === undefined || gi === null || selected.indexOf(gi) !== -1) return;
-      selected.push(gi); input.value = ""; hideAc(); refresh(); input.focus();
-    }
-    function removeGene(gi) {
-      selected = selected.filter(function (x) { return x !== gi; });
-      pasteMsg.innerHTML = "";
-      refresh(); input.focus();
-    }
-    // タグの入力欄にリストを貼ったとき (区切りを含むとき) は、まとめてタグにする
-    var pasteMsg = document.createElement("div"); pasteMsg.className = "pic-expr-pastemsg";
-    msg.parentNode.insertBefore(pasteMsg, msg);
-    function addList(text) {
+    function gremove(g, gi) { g.idxs = g.idxs.filter(function (x) { return x !== gi; }); grefresh(g); }
+    // 区切りの混ざったリスト (貼り付け / Enter) をまとめて足す。見つからない入力は覚えておく
+    function gaddList(g, text) {
       var r = resolveList(picSplitGeneList(text));
-      r.idxs.forEach(function (gi) { if (selected.indexOf(gi) === -1) selected.push(gi); });
-      input.value = ""; hideAc();
-      describeResolve(pasteMsg, r);
-      refresh();
+      r.idxs.forEach(function (gi) { if (g.idxs.indexOf(gi) === -1) g.idxs.push(gi); });
+      r.missing.forEach(function (t) { if (g.miss.indexOf(t) === -1) g.miss.push(t); });
+      g.multi = r.multi;
+      g.input.value = ""; hideAc(g);
+      grefresh(g);
     }
-    var SEP_RE = /[\s,;\/|　、，；／]/;
-
-    // ---- autocomplete (選択済みは除外) ----
-    function hideAc() { ac.style.display = "none"; ac.innerHTML = ""; }
-    function showAc() {
-      var t = (input.value || "").trim().toLowerCase();
-      if (t.length < 1) { hideAc(); return; }
+    // ---- 補完 (名前でも ID でも。選択済みは除く) ----
+    function hideAc(g) { g.ac.style.display = "none"; g.ac.innerHTML = ""; }
+    function showAc(g) {
+      var t = (g.input.value || "").trim().toLowerCase();
+      if (t.length < 1) { hideAc(g); return; }
       var pref = [], sub = [];
       for (var k = 0; k < cand.length && pref.length < 12; k++) {
         var c = cand[k];
-        if (selected.indexOf(c.i) !== -1) continue;
-        if (c.low.indexOf(t) === 0 || (c.tok && c.tok.toLowerCase().indexOf(t) === 0)) pref.push(c);
+        if (g.idxs.indexOf(c.i) !== -1) continue;
+        if (c.keys.some(function (x) { return x.indexOf(t) === 0; })) pref.push(c);
       }
       if (pref.length < 12) {
         for (var k2 = 0; k2 < cand.length && (pref.length + sub.length) < 12; k2++) {
           var c2 = cand[k2];
-          if (selected.indexOf(c2.i) !== -1 || pref.indexOf(c2) !== -1) continue;
+          if (g.idxs.indexOf(c2.i) !== -1 || pref.indexOf(c2) !== -1) continue;
           if (c2.low.indexOf(t) !== -1) sub.push(c2);
         }
       }
       var list = pref.concat(sub);
-      if (!list.length) { hideAc(); return; }
-      ac.innerHTML = "";
+      if (!list.length) { hideAc(g); return; }
+      g.ac.innerHTML = "";
       list.forEach(function (c) {
         var it = document.createElement("div");
         it.className = "pic-expr-ac-item"; it.textContent = c.disp; it._gi = c.i;
-        it.addEventListener("mousedown", function (e) { e.preventDefault(); addGene(c.i); });
-        ac.appendChild(it);
+        it.addEventListener("mousedown", function (e) { e.preventDefault(); gaddIdx(g, c.i); });
+        g.ac.appendChild(it);
       });
-      ac.style.display = "block";
+      g.ac.style.display = "block";
     }
-
-    input.addEventListener("input", showAc);
-    input.addEventListener("paste", function (e) {
-      var t = (e.clipboardData || window.clipboardData);
-      t = t ? t.getData("text") : "";
-      if (!t || !SEP_RE.test(t.trim())) return;   // 1 つだけなら従来どおり (候補から選ぶ)
-      e.preventDefault();
-      addList(t);
-    });
-    input.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        var t = (input.value || "").trim();
-        if (!t) return;
-        if (SEP_RE.test(t)) { addList(t); return; }
-        var gi = lut[t.toLowerCase()];
-        if (gi === undefined) {
-          var first = ac.querySelector(".pic-expr-ac-item");
-          if (first && first._gi !== undefined) addGene(first._gi);
-        } else { addGene(gi); }
-      } else if (e.key === "Backspace" && !input.value && selected.length) {
-        removeGene(selected[selected.length - 1]);
-      } else if (e.key === "Escape") { hideAc(); }
-    });
-    input.addEventListener("blur", function () { setTimeout(hideAc, 150); });
-
-    // ---- 遺伝子のグループ (貼り付けたリストごとに 1 枚の図) ----
-    // 左: タイトルとテキストボックスの組を足す/消す。右: 上の図の下に、グループごとの図を並べる。
-    // 中身は localStorage にレポートごと (project@out_dir と expr の id) に保存する。
-    var main = document.createElement("div"); main.className = "pic-expr-main";
-    plots.parentNode.insertBefore(main, plots); main.appendChild(plots);
-    var gplots = document.createElement("div"); gplots.className = "pic-expr-gplots"; main.appendChild(gplots);
-    var gside = document.createElement("div"); gside.className = "pic-expr-gsets";
-    gside.innerHTML = '<h4>Gene groups</h4><p class="pic-tree-hint">Paste a list of gene symbols or IDs ' +
-      '(separated by new lines, commas, spaces, tabs, slashes or semicolons; case-insensitive). ' +
-      'Each group is plotted as its own figure below the genes above.</p><div class="pic-expr-gset-list"></div>';
-    var gaddBtn = document.createElement("button"); gaddBtn.type = "button"; gaddBtn.className = "pic-excl-btn pic-expr-gset-add";
-    gaddBtn.textContent = "Add group"; gside.appendChild(gaddBtn);
-    msg.parentNode.insertBefore(gside, msg.nextSibling);
-    var glist = gside.querySelector(".pic-expr-gset-list");
-    var meta = (typeof PIC_META !== "undefined" && PIC_META) ? PIC_META : null;
-    var gkey = "picExprSets:" + (meta && meta.project ? meta.project + "@" + (meta.out_dir || "") : document.title) + ":" + id;
-    var sets = [];   // {title, text, card, ta, ti, sum, blk, msg, st}
-    function gsave() {
-      try { localStorage.setItem(gkey, JSON.stringify(sets.map(function (g) { return { title: g.title, text: g.text }; }))); } catch (e) {}
-    }
-    function gtitle(g) { return g.title && g.title.trim() ? g.title.trim() : "Group " + (sets.indexOf(g) + 1); }
-    function gupdate(g) {
-      var r = resolveList(picSplitGeneList(g.text));
-      g.st.title = gtitle(g);
-      g.ti.placeholder = "Group " + (sets.indexOf(g) + 1);
-      var nt = picSplitGeneList(g.text).length;
-      g.sum.textContent = nt ? (r.idxs.length + " gene" + (r.idxs.length === 1 ? "" : "s") + " plotted" +
-        (r.missing.length ? " · " + r.missing.length + " not found" : "") +
-        (r.multi.length ? " · " + r.multi.length + " with several IDs" : "")) : "";
-      g.sum.classList.toggle("pic-expr-gset-warn", r.missing.length > 0);
-      g.blk.hidden = !nt;
-      describeResolve(g.msg, r, r.idxs.length ? null : gtitle(g));
-      plotInto(g.st, r.idxs);
-    }
-    function gadd(title, text, focus) {
-      var g = { title: title || "", text: text || "" };
+    function gadd(title, idxs, miss, focus) {
+      var g = { title: title || "", idxs: (idxs || []).slice(), miss: (miss || []).slice(), multi: [] };
       var card = document.createElement("div"); card.className = "pic-expr-gset";
       var head = document.createElement("div"); head.className = "pic-expr-gset-head";
       var ti = document.createElement("input"); ti.type = "text"; ti.className = "pic-expr-gset-title"; ti.value = g.title;
@@ -645,55 +617,96 @@
       var del = document.createElement("button"); del.type = "button"; del.className = "pic-expr-gset-del"; del.textContent = "×";
       del.title = "Remove this group";
       head.appendChild(ti); head.appendChild(del);
-      var ta = document.createElement("textarea"); ta.className = "pic-expr-gset-text"; ta.rows = 4; ta.value = g.text;
-      ta.placeholder = "e.g. Gapdh, Actb / Tubb5\nENSMUSG00000057666";
-      ta.setAttribute("aria-label", "Gene list");
+      var ta = document.createElement("div"); ta.className = "pic-expr-typeahead";
+      var tagbox = document.createElement("div"); tagbox.className = "pic-expr-tagbox";
+      var input = document.createElement("input"); input.type = "text"; input.className = "pic-expr-input";
+      input.autocomplete = "off"; input.placeholder = "Add or paste genes…"; input.setAttribute("aria-label", "Add genes");
+      tagbox.appendChild(input);
+      var acel = document.createElement("div"); acel.className = "pic-expr-ac";
+      ta.appendChild(tagbox); ta.appendChild(acel);
+      tagbox.addEventListener("mousedown", function (e) { if (e.target === tagbox) { e.preventDefault(); input.focus(); } });
       var sum = document.createElement("div"); sum.className = "pic-expr-gset-sum";
       card.appendChild(head); card.appendChild(ta); card.appendChild(sum);
       glist.appendChild(card);
       var blk = document.createElement("div"); blk.className = "pic-expr-gblock"; blk.hidden = true;
-      var gm = document.createElement("div"); gm.className = "pic-expr-gmsg";
       var gp = document.createElement("div"); gp.className = "pic-expr-gplot";
-      blk.appendChild(gp); blk.appendChild(gm); gplots.appendChild(blk);   // 見つからない名前などは図の下に
-      g.card = card; g.ta = ta; g.ti = ti; g.sum = sum; g.blk = blk; g.msg = gm;
+      blk.appendChild(gp); gplots.appendChild(blk);
+      g.card = card; g.ti = ti; g.tagbox = tagbox; g.input = input; g.ac = acel; g.sum = sum; g.blk = blk;
       g.st = { el: gp, idxs: [], ncol: 0, title: "" };
       sets.push(g); setStates.push(g.st);
       var tmr = null;
-      ta.addEventListener("input", function () {
-        g.text = ta.value; gsave();
-        clearTimeout(tmr); tmr = setTimeout(function () { gupdate(g); }, 350);
-      });
       ti.addEventListener("input", function () {
         g.title = ti.value; gsave();
-        clearTimeout(tmr); tmr = setTimeout(function () { gupdate(g); }, 350);
+        clearTimeout(tmr); tmr = setTimeout(function () { gplot(g); }, 350);
       });
       del.addEventListener("click", function () {
-        var k = sets.indexOf(g);
-        sets.splice(k, 1); setStates.splice(setStates.indexOf(g.st), 1);
+        sets.splice(sets.indexOf(g), 1); setStates.splice(setStates.indexOf(g.st), 1);
         card.remove(); blk.remove();
         gsave();
-        sets.forEach(gupdate);   // 「Group N」の番号を詰める
+        sets.forEach(gplot);   // 「Group N」の番号を詰める
+        gmsg();
       });
-      gupdate(g);
-      if (focus) ta.focus();
+      input.addEventListener("input", function () { showAc(g); });
+      input.addEventListener("paste", function (e) {
+        var t = (e.clipboardData || window.clipboardData);
+        t = t ? t.getData("text") : "";
+        if (!t || !SEP_RE.test(t.trim())) return;   // 1 つだけなら候補から選ぶ
+        e.preventDefault();
+        gaddList(g, (input.value ? input.value + " " : "") + t);
+      });
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          var t = (input.value || "").trim();
+          if (!t) return;
+          if (SEP_RE.test(t)) { gaddList(g, t); return; }
+          var first = g.ac.querySelector(".pic-expr-ac-item");
+          var r = resolveList([t]);
+          if (r.idxs.length) gaddList(g, t);
+          else if (first && first._gi !== undefined) gaddIdx(g, first._gi);
+          else gaddList(g, t);   // 見つからない入力として出す
+        } else if (e.key === "Backspace" && !input.value && g.idxs.length) {
+          gremove(g, g.idxs[g.idxs.length - 1]);
+        } else if (e.key === "Escape") { hideAc(g); }
+      });
+      input.addEventListener("blur", function () { setTimeout(function () { hideAc(g); }, 150); });
+      gchips(g); gsummary(g); gplot(g);
+      if (focus) input.focus();
       return g;
     }
-    gaddBtn.addEventListener("click", function () { gadd("", "", true); gsave(); });
-    var saved = null;
-    try { var sv = localStorage.getItem(gkey); if (sv) saved = JSON.parse(sv); } catch (e) {}
-    if (Array.isArray(saved)) saved.forEach(function (x) { if (x) gadd(String(x.title || ""), String(x.text || "")); });
-    else gadd("", "");
+    gaddBtn.addEventListener("click", function () { gadd("", [], [], true); gsave(); });
 
-    // 既定: pvalue 最小の 5 遺伝子
-    selected = (data.default || []).map(function (e) { return lut[String(e).toLowerCase()]; })
-      .filter(function (x) { return x !== undefined; });
-    refresh();
+    // 既定: pvalue 最小の 5 遺伝子を 1 つのグループに
+    function defaultIdxs() {
+      return uniqueInOrder((data.default || []).map(function (e) { return lut[String(e).toLowerCase()]; })
+        .filter(function (x) { return x !== undefined; }));
+    }
+    var saved = null, old = null;
+    try { var sv = localStorage.getItem(gkey); if (sv) saved = JSON.parse(sv); } catch (e) {}
+    if (Array.isArray(saved)) {
+      saved.forEach(function (x) {
+        if (!x) return;
+        var r = resolveList((x.genes || []).map(String));
+        gadd(String(x.title || ""), r.idxs, (x.miss || []).map(String).concat(r.missing));
+      });
+    } else {
+      gadd(PIC_TOP_GENES_TITLE, defaultIdxs(), []);
+      // 旧版で作ったグループ (貼り付けた文字) を引き継ぐ
+      try { var so = localStorage.getItem(gkeyOld); if (so) old = JSON.parse(so); } catch (e) {}
+      if (Array.isArray(old)) old.forEach(function (x) {
+        if (!x || !String(x.text || "").trim()) return;
+        var r = resolveList(picSplitGeneList(String(x.text || "")));
+        gadd(String(x.title || ""), r.idxs, r.missing);
+      });
+      gsave();
+    }
+    gmsg();
     if (window.ResizeObserver) {
       var _roTimer = null;
       new ResizeObserver(function () {
         clearTimeout(_roTimer);
         _roTimer = setTimeout(box._picRefit, 120);
-      }).observe(main);
+      }).observe(gplots);
     }
   }
 
@@ -775,6 +788,33 @@
           p.classList.toggle("active", on);
           if (on) { renderWithin(p); resizeWithin(p); }
         });
+        sec.querySelectorAll(".pic-method-sel").forEach(function (w) { w.hidden = (w.dataset.sub !== key); });
+      });
+    });
+    // タブの見出しの右の method のリスト (Enrichment)。サブパネルごとに 1 つ作り、表示中のものだけ出す。
+    // 元のラジオ (.pic-method-src、CSS で隠す) はそのまま残し、リストから操作する
+    // (表示の切り替え・ゲノム間の引き継ぎはラジオの change の仕組みのまま)。
+    document.querySelectorAll("section.pic-tab").forEach(function (sec) {
+      var host = sec.querySelector(":scope > .pic-tab-head > .pic-head-methods");
+      if (!host) return;
+      sec.querySelectorAll(".pic-subpanel").forEach(function (sp) {
+        var src = sp.querySelector(".pic-method-src"); if (!src) return;
+        var radios = Array.prototype.slice.call(src.querySelectorAll("input[type=radio]"));
+        if (!radios.length) return;
+        var wrap = document.createElement("label"); wrap.className = "pic-method-sel"; wrap.dataset.sub = sp.id;
+        var t = document.createElement("span"); t.textContent = src.dataset.title || "Method";
+        var sel = document.createElement("select");
+        radios.forEach(function (r, i) {
+          var o = document.createElement("option"); o.value = String(i);
+          o.textContent = (r.closest("label") || r.parentNode).textContent.trim();
+          sel.appendChild(o);
+        });
+        function sync() { radios.forEach(function (r, i) { if (r.checked) sel.value = String(i); }); }
+        sync();
+        sel.addEventListener("change", function () { var r = radios[+sel.value]; if (r && !r.checked) r.click(); });
+        radios.forEach(function (r) { r.addEventListener("change", sync); });
+        wrap.appendChild(t); wrap.appendChild(sel); host.appendChild(wrap);
+        wrap.hidden = !sp.classList.contains("active");
       });
     });
     // GSEA の contrast × method マトリクスを初期化
@@ -1090,7 +1130,7 @@
     //   Correlation … 行・列を外す。値はそのまま、色の幅だけ表示中のサンプル (対角を除く) の最小〜最大に引き直す
     //   PCA … 残りのサンプルで主成分を引き直す (picRecomputePCA)
     //   DEG / Expression / Enrichment … DESeq2 は全サンプルで計算したもの。外したサンプルの列・点を隠し、
-    //       丸ごと外した group を含む比較を隠し、「正確ではない」と注記する。
+    //       丸ごと外した group を含む比較を隠し、参考値である旨を 1 文 (PIC_EXCL_NOTE_TEXT) で注記する。
     // 除外が無いときは何もしない (図・表は元のまま)。
     var PIC_META_ = (typeof PIC_META !== "undefined") ? PIC_META : null;
     function exInitModel() {
@@ -1165,46 +1205,17 @@
       if (id === "cor" || id === "pca" || id === "deg" || id === "expr" || id === "enrich") return id;
       return "";
     }
-    function exNames(arr) { return arr.map(function (x) { return "<b>" + escHtml(x) + "</b>"; }).join(", "); }
+    // DESeq2 / enrichment の結果 (DEG・Expression・Enrichment) は全サンプルで計算したもの。
+    // サンプルを外しているときは、これらのタブの冒頭に 1 文 (PIC_EXCL_NOTE_TEXT) だけ出す。
     function exNote(tab) {
       var old = tab.querySelector(":scope > .pic-excl-note");
       if (old) old.parentNode.removeChild(old);
       var kind = exTabKind(tab);
-      if (!kind || !exAny()) return;
-      var l = exList(), kept = EX.samples.length - l.length;
-      var gs = exOutGroups(), html = "", warn = false;
-      var what = "Excluded " + l.length + " of " + EX.samples.length + " samples" +
-        (gs.length ? " (whole group" + (gs.length > 1 ? "s " : " ") + exNames(gs) + ")" : "") + ": " + exNames(l) + ".";
-      if (kind === "qc") {
-        html = what + " The read distribution, sequencing depth and aggregation profiles are per-sample values, so the excluded samples are simply hidden; " +
-          "the sequencing-depth data bars are rescaled to the remaining samples. RNA integrity (TapeStation) is not linked to the sample sheet and is not filtered.";
-      } else if (kind === "cor") {
-        html = what + " The correlation matrix shows the remaining " + kept + " samples. The values are those of the all-sample table; " +
-          "only the color scale is refit to the shown samples (off-diagonal minimum to maximum, see the color bar). " +
-          "Use <i>Download CSV (selected)</i> to save this sub-matrix.";
-      } else if (kind === "pca") {
-        html = what + " The PCA is recomputed in the browser from the remaining " + kept + " samples (top-variance genes re-selected). " +
-          "Use <i>Download CSV (selected)</i> to save these coordinates.";
-      } else {
-        // DESeq2 / enrichment は全サンプルで計算したもの。隠すだけで、計算し直さない。
-        warn = true;
-        var lines = ["<b>Excluded samples/groups are only hidden; these results were computed with all samples and are not exact for the current selection.</b>"];
-        var hid = [what];
-        if (gs.length) hid.push("Comparisons involving " + exNames(gs) + " are hidden.");
-        if (kind === "deg") hid.push("Heatmap columns of the excluded samples are hidden.");
-        if (kind === "expr") hid.push("The excluded samples are not plotted.");
-        if (kind === "enrich" && gs.length) hid.push("The excluded groups are hidden from the cluster expression profiles.");
-        lines.push(hid.join(" "));
-        html = lines.map(function (x) { return "<p>" + x + "</p>"; }).join("");
-      }
+      if (!(kind === "deg" || kind === "expr" || kind === "enrich") || !exAny()) return;
       var box = document.createElement("div");
-      box.className = "pic-excl-note" + (warn ? " pic-excl-warn" : "");
-      box.innerHTML = warn ? html : "<p>" + html + "</p>";
-      var acts = document.createElement("div"); acts.className = "pic-excl-actions";
-      var reset = document.createElement("button"); reset.type = "button"; reset.className = "pic-excl-btn"; reset.textContent = "Include all samples";
-      reset.addEventListener("click", function () { EX.excl = {}; exCommit(); });
-      acts.appendChild(reset);
-      box.appendChild(acts);
+      box.className = "pic-excl-note pic-excl-warn";
+      var p = document.createElement("p"); p.textContent = PIC_EXCL_NOTE_TEXT;
+      box.appendChild(p);
       var head = tab.querySelector(":scope > .pic-tab-head");
       if (head) head.parentNode.insertBefore(box, head.nextSibling); else tab.insertBefore(box, tab.firstChild);
     }
@@ -1362,20 +1373,6 @@
         });
       });
     }
-    // 除外していないサンプルだけの相関の部分行列を CSV で保存 (R の correlation_*.csv と同じ並び)
-    function exCorDownloadSelected(tab) {
-      var tbl = tab && tab.querySelector("table.pic-cor"); if (!tbl) return;
-      var cols = exColInfo(tbl).filter(function (c) { return !EX.excl[c.s]; });
-      var rows = Array.prototype.slice.call(tbl.querySelectorAll("tbody > tr[data-sample]")).filter(function (r) { return !EX.excl[r.dataset.sample]; });
-      var csvq = function (x) { x = String(x); return /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
-      var out = [["sample"].concat(cols.map(function (c) { return csvq(c.s); })).join(",")];
-      rows.forEach(function (r) {
-        out.push([csvq(r.dataset.sample)].concat(cols.map(function (c) { var v = r.children[c.k].dataset.v; return v === "" ? "NA" : v; })).join(","));
-      });
-      var proj = (PIC_META_ && PIC_META_.project) || "selected";
-      saveBlob(new Blob([out.join("\n") + "\n"], { type: "text/csv" }), "correlation_" + proj + "_" + rows.length + "samples.csv");
-    }
-
     // ---- DEG heatmap: 列を隠す (値と並びは全サンプルのまま) ----
     function exApplyHeatmap(tab) {
       var any = exAny();
@@ -1612,12 +1609,6 @@
     // PCA の「選択中サンプルだけ」の CSV は埋め込みではなくその場で生成する
     document.querySelectorAll(".pic-pca-dlsel").forEach(function (el) {
       var run = function (e) { e.preventDefault(); picPCADownloadSelected(el.closest("section.pic-tab")); };
-      el.addEventListener("click", run);
-      el.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") run(e); });
-    });
-    // 相関の「除外していないサンプルだけ」の CSV も同じくその場で作る
-    document.querySelectorAll(".pic-cor-dlsel").forEach(function (el) {
-      var run = function (e) { e.preventDefault(); exCorDownloadSelected(el.closest("section.pic-tab")); };
       el.addEventListener("click", run);
       el.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") run(e); });
     });

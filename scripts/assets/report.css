@@ -28,15 +28,14 @@ section.pic-tab.active{display:block}
 /* セクション内サブタブ */
 /* サブタブは左コントロール内 (View 見出し + 縦並びボタン) で選択 */
 .pic-subbody{min-width:0}
-.pic-subtabs{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
-.pic-subtabbtn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--muted);font-size:13px;font-weight:600;padding:7px 16px;cursor:pointer;border-radius:6px;text-align:left;white-space:nowrap}
+.pic-subtabs{display:flex;flex-direction:row;flex-wrap:wrap;gap:5px;margin:0 0 0 8px}
+.pic-subtabbtn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--muted);font-size:13px;font-weight:600;padding:5px 14px;cursor:pointer;border-radius:6px;text-align:left;white-space:nowrap}
 .pic-subtabbtn:hover{background:#eef3fb;color:var(--accent)}
 .pic-subtabbtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 .pic-subpanel{display:none}
 .pic-subpanel.active{display:block}
 /* 左コントロール内の見出し (View / Groups / Comparison / Method / Genes) を統一 */
 .pic-ctrl h4,.pic-subtabs h4,.pic-hmsel-ctrl h4,.pic-degsel-ctrl h4,.pic-selgrid-ctrl h4,.pic-matrix-sel h4,.pic-expr-side h4{margin:2px 0 8px;color:var(--fg);font-size:13px;font-weight:700;text-transform:none;letter-spacing:normal;font-family:inherit}
-@media(max-width:900px){.pic-subtabs{flex-direction:row;flex-wrap:wrap}}
 /* info (丸 i) + hover 吹き出し */
 .pic-info{position:relative;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--accent);color:var(--accent);font-size:12px;font-weight:700;font-style:italic;font-family:Georgia,serif;cursor:help;flex:none}
 .pic-info-pop{display:none;position:absolute;left:26px;top:-4px;z-index:80;width:min(520px,70vw);max-height:min(80vh,560px);overflow-y:auto;background:#1f2933;color:#fff;font-weight:400;font-style:normal;font-size:13px;line-height:1.5;padding:10px 13px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
@@ -329,3 +328,21 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-expr-gmsg{font-size:12px;line-height:1.45;margin:0 0 4px}
 .pic-expr-gmsg:empty{display:none}
 .pic-expr-gtitle{font-size:16px;font-weight:700;color:var(--fg);margin:0 0 4px}
+
+/* タブの見出しの右: View のボタン + method のリスト */
+.pic-head-methods{display:flex;align-items:center;gap:8px}
+.pic-head-methods:empty{display:none}
+.pic-method-sel{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+.pic-method-sel[hidden]{display:none!important}
+.pic-method-sel select{font:inherit;font-weight:600;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 8px;background:#fff;cursor:pointer}
+.pic-method-sel select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(33,102,172,.12)}
+.pic-method-src{display:none!important}
+/* Expression のグループの入力欄 (タグ + 補完) */
+.pic-expr-gset .pic-expr-tagbox{min-height:36px;padding:4px 6px;gap:4px}
+.pic-expr-gset .pic-expr-chip{font-size:12px;padding:2px 5px 2px 9px}
+.pic-expr-gset .pic-expr-input{min-width:110px;font-size:13px}
+.pic-expr-gset-sum .pic-expr-miss,.pic-expr-gset-sum .pic-expr-multi{font-size:11px;margin-top:2px}
+.pic-expr-miss-x{border:none;background:none;color:#b45309;cursor:pointer;font-size:12px;padding:0 0 0 4px}
+.pic-expr-gsets{margin:0 0 4px}
+.pic-expr-gplots,.pic-expr-plots{display:block}
+.pic-expr-plots>.pic-expr-gblock:first-child{border-top:none;padding-top:0}

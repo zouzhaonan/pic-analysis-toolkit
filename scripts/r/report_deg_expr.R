@@ -349,8 +349,8 @@ build_expression_section <- function(reg, deseq2_dir, project, group_map, group_
   sprintf(paste0(
     '<section id="%s"><h2>%s</h2>',
     '<p class="pic-note">Compare the expression of individual genes across sample groups. ',
-    'Start typing a gene ID or symbol and pick it from the list to add it as a tag; ',
-    'click <b>&times;</b> on a tag (or press Backspace) to remove it. The plot updates automatically. ',
+    'Add genes to a gene group on the left: start typing a gene symbol or ID and pick it from the list, or paste a list of genes. ',
+    'Each group is plotted as its own figure; click <b>&times;</b> on a tag (or press Backspace) to remove a gene. ',
     'Each gene gets its own panel with its own y-axis scale (starting at 0), so compare heights within a panel, not across panels. ',
     'Each box shows the distribution of normalized counts for one group; dots are individual samples.</p>',
     '<p class="pic-note">A gene name turns <b style="color:#d7301f">red</b> when its adjusted p-value (padj) ',
@@ -358,11 +358,7 @@ build_expression_section <- function(reg, deseq2_dir, project, group_map, group_
     'Hover over a gene name to see &minus;log<sub>10</sub> p-value and &minus;log<sub>10</sub> padj for every comparison between the shown groups (larger = more significant). Use the Groups panel to narrow the groups and comparisons.</p>',
     '%s',
     '<div class="pic-expr" data-expr="%s">',
-    '<div class="pic-expr-side"><h4>Genes</h4>',
-    '<div class="pic-expr-typeahead"><div class="pic-expr-tagbox">',
-    '<input class="pic-expr-input" type="text" autocomplete="off" placeholder="Add a gene…"></div>',
-    '<div class="pic-expr-ac"></div></div>',
-    '<div class="pic-expr-msg"></div>%s</div>',
+    '<div class="pic-expr-side"><div class="pic-expr-msg"></div>%s</div>',
     '<div class="pic-expr-plots"></div></div></section>'),
     section_id, html_escape(heading), format(fdr, trim = TRUE),
     src_note(report_rel_path(countf, proj_dir)), id, tree)
