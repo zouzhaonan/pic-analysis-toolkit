@@ -416,7 +416,8 @@ build_ora_plotly <- function(ora_df) {
     showlegend = FALSE,
     xaxis = list(type = "category", categoryorder = "array",
                  categoryarray = as.list(levels(plot_df$cluster_label)),
-                 tickangle = 0, automargin = TRUE, showline = TRUE, mirror = TRUE,
+                 # 2 行の見出しを縦に (横にすると cluster の数が多いとき隣と重なる)
+                 tickangle = -90, automargin = TRUE, showline = TRUE, mirror = TRUE,
                  linecolor = "#cdd7e2"),
     yaxis = list(tickmode = "array", tickvals = as.list(seq_along(ylab_levels)),
                  ticktext = as.list(ylab_levels), automargin = TRUE,
