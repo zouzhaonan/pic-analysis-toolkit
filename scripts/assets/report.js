@@ -63,6 +63,7 @@
   }
 
   function renderWithin(root) {
+    hmRefresh(root);
     root.querySelectorAll(".pic-plot").forEach(renderPlot);
     root.querySelectorAll(".pic-expr").forEach(function (b) { if (b._picRefit) b._picRefit(); });
   }
@@ -147,6 +148,89 @@
     document.querySelectorAll(".pic-geno-dl").forEach(function (d) { d.hidden = (d.dataset.geno !== currentGeno); });
   }
 
+  // ---- DEG heatmap: 見えている行の近くだけを DOM に置く (仮想スクロール) ----
+  // pic193_2 では約 8,000 行 × 37 列 (td 約 29 万個) あり、DEG タブを開くたびの style / layout と、
+  // 除外のたびの layout に 0.4〜0.7 秒かかっていた。行の要素 (tr) は作ったまま手元に持ち、
+  // スクロール枠の中で見えている範囲 (前後に余裕を持たせる) だけを tbody に入れる。
+  // 上下の空き行 (pic-hm-pad) で全体の高さを保つので、スクロールバーと表の見た目は変わらない。
+  var HM_V_MIN = 400, HM_V_BUF = 60;
+  function hmPad() {
+    var tr = document.createElement("tr"); tr.className = "pic-hm-pad"; tr.setAttribute("aria-hidden", "true");
+    var td = document.createElement("td"); tr.appendChild(td);
+    return tr;
+  }
+  function hmVirtualize(tbl) {
+    if (tbl._picV !== undefined) return;
+    var box = tbl.closest(".pic-hm-scroll"), tb = tbl.tBodies[0];
+    var rows = tb ? Array.prototype.slice.call(tb.rows) : [];
+    if (!box || rows.length < HM_V_MIN) { tbl._picV = null; return; }
+    var ncol = tbl.tHead && tbl.tHead.rows[0] ? tbl.tHead.rows[0].cells.length : 1;
+    var V = tbl._picV = { rows: rows, box: box, tb: tb, rh: 0, a: 0, b: 0, top: hmPad(), bot: hmPad(), w: 0 };
+    V.top.firstChild.colSpan = ncol; V.bot.firstChild.colSpan = ncol;
+    tb.textContent = "";
+    tb.appendChild(V.top); tb.appendChild(V.bot);
+    box.addEventListener("scroll", function () { hmUpdate(tbl); }, { passive: true });
+    hmUpdate(tbl, true);
+  }
+  // 遺伝子名の列の幅を、全行のうち一番長い名前に合わせて固定する (入れる行が変わっても幅が揺れないように)
+  function hmFixNameWidth(tbl, V) {
+    if (V.w) return;
+    var th = V.tb.querySelector("tr:not(.pic-hm-pad) > th.g"); if (!th) return;
+    var cs = getComputedStyle(th);
+    if (!cs.fontSize) return;
+    var ctx = document.createElement("canvas").getContext("2d");
+    ctx.font = cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
+    var mx = 0;
+    V.rows.forEach(function (r) { var c = r.cells[0]; if (c) { var w = ctx.measureText(c.textContent).width; if (w > mx) mx = w; } });
+    if (!(mx > 0)) return;
+    V.w = Math.ceil((mx + (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0)) * 64) / 64;
+    var corner = tbl.querySelector("thead th.corner");
+    if (corner) corner.style.minWidth = V.w + "px";
+  }
+  function hmUpdate(tbl, force) {
+    var V = tbl._picV; if (!V) return;
+    var n = V.rows.length, rh = V.rh || 13;
+    var view = V.box.clientHeight;
+    var head = tbl.tHead ? tbl.tHead.offsetHeight : 0;
+    var y0 = Math.max(0, V.box.scrollTop - head), y1 = y0 + (view > 0 ? view : 600);
+    var i0 = Math.floor(y0 / rh), i1 = Math.min(n, Math.ceil(y1 / rh));
+    if (!force && V.b > V.a && i0 >= V.a && i1 <= V.b && (i0 - V.a > 10 || V.a === 0) && (V.b - i1 > 10 || V.b === n)) return;
+    var a = Math.max(0, i0 - HM_V_BUF), b = Math.min(n, i1 + HM_V_BUF);
+    if (!force && a === V.a && b === V.b) return;
+    var tb = V.tb;
+    while (V.top.nextSibling && V.top.nextSibling !== V.bot) tb.removeChild(V.top.nextSibling);
+    var frag = document.createDocumentFragment();
+    for (var i = a; i < b; i++) frag.appendChild(V.rows[i]);
+    tb.insertBefore(frag, V.bot);
+    V.a = a; V.b = b;
+    if (!V.rh && view > 0 && b > a) {
+      var h = V.rows[a].getBoundingClientRect().height;
+      if (h > 0) { V.rh = h; hmFixNameWidth(tbl, V); if (Math.abs(h - rh) > 0.01) { hmUpdate(tbl, true); return; } }
+    }
+    rh = V.rh || rh;
+    V.top.firstChild.style.height = (a * rh) + "px";
+    V.bot.firstChild.style.height = ((n - b) * rh) + "px";
+    V.top.style.display = a ? "" : "none";
+    V.bot.style.display = b < n ? "" : "none";
+  }
+  // 表示されたとき (タブ・サブタブの切り替え) に、見えている範囲を入れ直す
+  function hmRefresh(root) {
+    root.querySelectorAll("table.pic-hm").forEach(function (tbl) {
+      hmVirtualize(tbl);
+      if (tbl._picV && tbl.offsetParent !== null) hmUpdate(tbl, true);
+    });
+  }
+  // PNG 用の写し: 仮想化した表の tbody を全行に戻す (src と dst は同じ並びの table.pic-hm)
+  function hmFillClone(src, dst) {
+    var ss = src.querySelectorAll("table.pic-hm"), ds = dst.querySelectorAll("table.pic-hm");
+    Array.prototype.forEach.call(ss, function (t, i) {
+      var V = t._picV, d = ds[i]; if (!V || !d || !d.tBodies[0]) return;
+      var tb = d.tBodies[0], frag = document.createDocumentFragment();
+      V.rows.forEach(function (r) { frag.appendChild(r.cloneNode(true)); });
+      tb.textContent = ""; tb.appendChild(frag);
+    });
+  }
+
   // HTML 要素 (heatmap / QC / correlation テーブル) を PNG 化してダウンロードする。
   // 外部ライブラリ不要: SVG <foreignObject> に要素とレポート CSS を埋めて canvas 描画。
   function capturePng(el, filename, btn) {
@@ -163,6 +247,7 @@
       ".pic-png-btn{display:none!important}";
     // クローンをオフスクリーンに一時配置してスクロール領域を展開し、フルサイズを実測する
     var clone = el.cloneNode(true);
+    hmFillClone(el, clone);
     clone.querySelectorAll(".pic-hm-scroll").forEach(function (n) { n.style.maxHeight = "none"; n.style.overflow = "visible"; });
     clone.style.position = "absolute"; clone.style.left = "-100000px"; clone.style.top = "0"; clone.style.background = "#fff";
     document.body.appendChild(clone);
@@ -1581,6 +1666,14 @@
       });
       tab.querySelectorAll("[data-gcol]").forEach(function (c) {
         c.style.display = hide[c.dataset.gcol] ? "none" : "";
+      });
+      // 仮想スクロールの表で、いま DOM に入っていない行のセルにも当てる
+      tab.querySelectorAll("table.pic-hm").forEach(function (tbl) {
+        if (!tbl._picV) return;
+        tbl._picV.rows.forEach(function (r) {
+          if (r.parentNode) return;
+          for (var c = r.firstChild; c; c = c.nextSibling) if (c.dataset && c.dataset.gcol != null) c.style.display = hide[c.dataset.gcol] ? "none" : "";
+        });
       });
     }
     // ゲノム切替などで呼ぶ: 共通の除外 + 旧来のトグル
