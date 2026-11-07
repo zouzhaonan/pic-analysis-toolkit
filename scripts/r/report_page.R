@@ -266,16 +266,12 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   data_tabs <- build_analysis_data_tabs(reg, desc, out_dir, out_dir, "", fdr,
                                         msum, group_map, group_pal, sample_order, group_order,
                                         stats, deg_counts, tmp_dir)
-  params <- pic_read_analysis_params(out_dir)
-  # サンプル除外 (report.js) が使う情報: 状態を保存する鍵 (project + out_dir) と、
-  # 「pic reanalyze」のコマンドに入れる out_dir の絶対パス (レポートを作った計算機でのパス)。
+  # サンプル除外 (report.js) が使う情報: 状態を localStorage に保存する鍵 (project + out_dir) と、
+  # 「Download CSV (selected)」のファイル名 (project)。
   reg$meta <- list(
     project = project, run = run, genome = genome,
-    out_dir = tryCatch(normalizePath(out_dir, winslash = "/", mustWork = FALSE), error = function(e) out_dir),
-    excluded_samples = as.list(pic_split_csv(pic_param(params, "excluded_samples"))),
-    excluded_groups = as.list(pic_split_csv(pic_param(params, "excluded_groups"))),
-    reanalyzed_from = pic_param(params, "reanalyzed_from"))
-  overview_sec  <- build_overview_section(run, genome, params = params)
+    out_dir = tryCatch(normalizePath(out_dir, winslash = "/", mustWork = FALSE), error = function(e) out_dir))
+  overview_sec  <- build_overview_section(run, genome, params = pic_read_analysis_params(out_dir))
   downloads_sec <- build_downloads_section(data_tabs, run, genome, group_pal)
   tb <- build_tabs(c(list(list(html = overview_sec, label = "Overview")),
                      data_tabs,
@@ -471,31 +467,6 @@ pic_param <- function(params, key, default = "") {
   if (is.null(v) || is.na(v)) default else as.character(v)
 }
 
-# "a,b,c" -> c("a","b","c") (空なら character(0))。
-pic_split_csv <- function(x) {
-  if (is.null(x) || !nzchar(x)) return(character(0))
-  v <- trimws(strsplit(x, ",", fixed = TRUE)[[1]])
-  v[nzchar(v)]
-}
-
-# pic reanalyze で作り直したレポートなら、何を除外したか (analysis_params の excluded_samples /
-# excluded_groups / reanalyzed_from) を Overview の先頭に示す。それ以外は ""。
-pic_excluded_note_html <- function(params) {
-  xs <- pic_split_csv(pic_param(params, "excluded_samples"))
-  xg <- pic_split_csv(pic_param(params, "excluded_groups"))
-  if (length(xs) == 0 && length(xg) == 0) return("")
-  from <- pic_param(params, "reanalyzed_from")
-  li <- character(0)
-  if (length(xg) > 0) li <- c(li, sprintf('<li>Excluded groups (%d): <b>%s</b></li>', length(xg),
-                                          paste(html_escape(xg), collapse = ", ")))
-  if (length(xs) > 0) li <- c(li, sprintf('<li>Excluded samples (%d): <b>%s</b></li>', length(xs),
-                                          paste(html_escape(xs), collapse = ", ")))
-  if (nzchar(from)) li <- c(li, sprintf('<li>Re-analyzed from <code>%s</code> with <code>pic reanalyze</code> (DESeq2, enrichment and this report were recomputed without them).</li>',
-                                        html_escape(from)))
-  sprintf('<div class="pic-excl-ov"><b>Sample exclusion.</b> This report was computed without the following samples.<ul>%s</ul></div>',
-          paste(li, collapse = ""))
-}
-
 build_overview_section <- function(run, genome, pre_steps = list(), extra_tools = character(0),
                                    params = list()) {
   code_block <- function(txt) sprintf('<pre class="pic-code">%s</pre>', txt)
@@ -637,9 +608,9 @@ sf_code,
     '(photo-isolation chemistry) 3&prime;-biased RNA-seq run <b>%s</b>, mapped to <b>%s</b>.</p>'),
     html_escape(run), html_escape(genome))
   pipe_intro <- '<p class="pic-flow-sub">Starting from the demultiplexed per-sample FASTQ. Run each command per sample.</p>'
-  sprintf(paste0('<section id="overview"><h2>Overview</h2>%s%s',
+  sprintf(paste0('<section id="overview"><h2>Overview</h2>%s',
                  '<h3 class="pic-flow-title">Analysis Pipeline</h3>%s%s<div class="pic-flow">%s</div></section>'),
-          pic_excluded_note_html(params), overview, pipe_intro, tools_block, paste(steps, collapse = arrow))
+          overview, pipe_intro, tools_block, paste(steps, collapse = arrow))
 }
 
 # 1 run に複数 genome (= 複数 project) があるとき、パスが他 project のものかを判定する。
@@ -807,7 +778,7 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
     '<main class="pic-main">', body_html, '</main>',
     '<script>', plotly_js, '</script>',
     '<script>var PIC_PLOTS=', plots_json, ';var PIC_EXPR=', expr_json, ';var PIC_PCA=', pca_json, ';var PIC_FILES=', files_json, ';</script>',
-    # サンプル除外の状態の鍵と再計算のコマンドに使う情報 (xenograft など無いときは null)
+    # サンプル除外の状態の鍵などに使う情報 (xenograft など無いときは null)
     '<script>var PIC_META=', meta_json, ';</script>',
     '<script>', report_runtime_js(), '</script>',
     '</body></html>'

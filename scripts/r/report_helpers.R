@@ -556,7 +556,7 @@ pic_report_registry <- function() {
   reg$plots <- list()
   reg$expr <- list()   # 遺伝子発現データ (id -> normalized counts など)
   reg$pca <- list()    # 部分集合 PCA 用の rlog 行列 (id -> samples/groups/mat)
-  reg$meta <- NULL     # サンプル除外と再計算のコマンドに使う情報 (project / out_dir など。PIC_META)
+  reg$meta <- NULL     # サンプル除外の状態の鍵などに使う情報 (project / out_dir など。PIC_META)
   reg
 }
 
