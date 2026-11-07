@@ -54,7 +54,9 @@ pic_ora_mdirs <- function(enrich_dir) {
 }
 
 # ORA の method 1 つ分: cluster の CSV を合わせて読み、図の spec と結合 CSV の中身を作る。図にしないものは NULL。
-pic_ora_item <- function(mdir, project) {
+# cluster_n: cluster ごとの遺伝子数 (pic_cluster_gene_counts)。x 軸の見出し "c1 (n)" の n に使う
+#   (Cluster expression profiles とそろえる)。NULL なら GeneRatio の分母。
+pic_ora_item <- function(mdir, project, cluster_n = NULL) {
   csvs <- list.files(mdir, pattern = paste0(project, "\\.csv$"), full.names = TRUE)
   csvs <- csvs[!grepl("^ORA_", basename(csvs))]   # 結合 CSV は cluster から集計するため除外
   if (length(csvs) == 0) return(NULL)
@@ -63,7 +65,7 @@ pic_ora_item <- function(mdir, project) {
     error = function(e) NULL
   )
   if (is.null(ora_all) || nrow(ora_all) == 0) return(NULL)
-  spec <- tryCatch(build_ora_plotly(ora_all), error = function(e) NULL)
+  spec <- tryCatch(build_ora_plotly(ora_all, cluster_n = cluster_n), error = function(e) NULL)
   if (is.null(spec)) return(NULL)
   list(n_terms = spec$n_terms,
        content = tryCatch(readr::format_csv(ora_all), error = function(e) NULL),
@@ -152,7 +154,8 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
   ora_items <- list()
   if (dir.exists(ora_root)) {
     methods <- pic_ora_mdirs(enrich_dir)
-    oitems <- if (!is.null(pre)) pre$ora else lapply(methods, pic_ora_item, project = project)
+    oitems <- if (!is.null(pre)) pre$ora else lapply(methods, pic_ora_item, project = project,
+                                                             cluster_n = pic_cluster_gene_counts(deseq2_dir, project))
     for (k in seq_along(methods)) {
       it <- oitems[[k]]
       if (is.null(it)) next

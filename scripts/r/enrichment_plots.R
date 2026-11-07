@@ -322,7 +322,9 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator, group_pal = NULL)
 
 # ORA (cluster) を plotly の dot plot spec に変換する。
 # x=cluster, y=term, color=p.adjust, size=GeneRatio。
-build_ora_plotly <- function(ora_df) {
+# cluster_n: cluster_id -> 遺伝子数 (DEGCluster_summary の gene_count)。あれば見出し "c1 (n)" の n に使い、
+#   Cluster expression profiles とそろえる。無い cluster と NULL のときは GeneRatio の分母 (method ごとに注釈の付いた数)。
+build_ora_plotly <- function(ora_df, cluster_n = NULL) {
   ecfg <- pic_plot_spec()$plot$enrichment
   required_cols <- c("cluster", "Description", "GeneRatio")
   if (nrow(ora_df) == 0 || !all(required_cols %in% colnames(ora_df))) return(NULL)
@@ -371,7 +373,7 @@ build_ora_plotly <- function(ora_df) {
   cluster_levels <- pic_cluster_order(plot_df$cluster)
   cluster_labels <- stats::setNames(
     vapply(cluster_levels, function(cl) {
-      den <- cluster_den$den[cluster_den$cluster == cl]
+      den <- if (!is.null(cluster_n) && cl %in% names(cluster_n)) cluster_n[[cl]] else cluster_den$den[cluster_den$cluster == cl]
       s <- pic_cluster_short(cl)
       if (length(den) == 0 || !is.finite(den[[1]])) s
       else sprintf("%s (%s)", s, format(den[[1]], scientific = FALSE, trim = TRUE))

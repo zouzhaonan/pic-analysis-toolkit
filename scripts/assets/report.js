@@ -4,8 +4,6 @@
   // 文言 (差し替えるときはここだけ直す)
   // Expression の最初のグループ (pvalue 最小の 10 遺伝子) のタイトル
   var PIC_TOP_GENES_TITLE = "Top 10 DEGs";
-  // 前の版の最初のグループのタイトル (localStorage に残っていれば今のものに置き換える)
-  var PIC_TOP_GENES_TITLE_OLD = "Top 5 DEGs";
   // 描いた直後に呼ぶフック (サンプル除外を描いたばかりの図に当てる。DOMContentLoaded で設定)
   var picAfterRender = null;
   // タブを表示した直後に呼ぶフック (隠れている間に変わったサンプル除外を、そのタブに当てる。DOMContentLoaded で設定)
@@ -14,18 +12,9 @@
   var EX = { excl: {}, samples: [], groupOf: {}, groups: [], members: {}, ready: false };
   function exList() { return EX.samples.filter(function (s) { return EX.excl[s]; }); }
   function exAny() { return EX.ready && exList().length > 0; }
-  // URL のハッシュは "#<tab>" か "#<tab>&excl=<s1>,<s2>"。タブとサンプル除外を分けて返す。
-  function picParseHash() {
-    var h = (location.hash || "").replace(/^#/, ""), parts = h.split("&"), x = null;
-    parts.slice(1).forEach(function (q) { if (q.indexOf("excl=") === 0) x = q.slice(5); });
-    return { tab: parts[0] || "", excl: x };
-  }
-  function exHashSuffix() {
-    // 状態を読む前 (最初のタブの表示) は、URL にある除外をそのまま残す
-    if (!EX.ready) { var h0 = picParseHash().excl; return h0 ? "&excl=" + h0 : ""; }
-    var l = exList();
-    return l.length ? "&excl=" + l.map(encodeURIComponent).join(",") : "";
-  }
+  // report の状態 (タブ・除外・View・method・comparison・gene group・左の幅) は保存しない
+  // (2026-11-07 ユーザーの指示)。localStorage と URL のハッシュには書かず、読みもしない。
+  // 開き直すと毎回最初の状態に戻る。開いている間の状態はタブの間で共有する。
   function renderPlot(el) {
     if (!el || el.dataset.rendered) return;
     // 非表示 (別タブ / 閉じた details / 非表示ブロック) 内は描画しない (表示された時に描く)
@@ -102,7 +91,6 @@
     });
     var tab = document.getElementById(target);
     if (tab) { renderWithin(tab); resizeWithin(tab); if (picOnTabShown) { try { picOnTabShown(tab); } catch (e) {} } }
-    try { if (history.replaceState) history.replaceState(null, "", "#" + key + exHashSuffix()); } catch (e) {}
     window.scrollTo(0, 0);
   }
 
@@ -231,9 +219,139 @@
     });
   }
 
+  // ---- PNG の大きさの上限 ----
+  // canvas は大きすぎると描けない (Safari は面積 16,777,216 px が上限。Chrome も 1 辺 32,767 px まで)。
+  // どのブラウザでも描けるよう、面積 16,777,216 px・1 辺 16,384 px に収める。
+  var PNG_MAX_AREA = 16777216, PNG_MAX_SIDE = 16384;
+  function pngFits(w, h, scale) { return w * scale * h * scale <= PNG_MAX_AREA && h * scale <= PNG_MAX_SIDE && w * scale <= PNG_MAX_SIDE; }
+  function pngScale(w, h) { return pngFits(w, h, 2) ? 2 : (pngFits(w, h, 1) ? 1 : 0); }
+  function pngSave(c, filename, btn) {
+    c.toBlob(function (blob) {
+      if (!blob) { if (btn) btn.textContent = "PNG error"; return; }
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+      if (btn) { var t = btn.textContent; btn.textContent = "✓ saved"; setTimeout(function () { btn.textContent = t; }, 1200); }
+    }, "image/png");
+  }
+  // DEG heatmap の行が多くて、今の見た目 (1 行 13 px・遺伝子名つき) では上限を超えるときの PNG。
+  // 表の DOM を写さず canvas に直接描く: 縦を縮め (1 行 = 1〜4 px。それでも入らなければ数行を 1 px に重ねる)、
+  // 遺伝子名は出さない。列名 (サンプル名、群の色)・群の帯・色の凡例・群の区切り線は残す。
+  // 除外して隠した列は描かない (画面と同じ)。
+  function hmCompactPng(tbl, filename, btn, title) {
+    var hdr = tbl.tHead && tbl.tHead.rows[0]; if (!hdr) return false;
+    var V = tbl._picV, rows = V ? V.rows : Array.prototype.slice.call(tbl.tBodies[0].rows);
+    var n = rows.length; if (!n) return false;
+    // 群の色 (左の木の色見本)。無ければ列名の色
+    var gcol = {};
+    document.querySelectorAll(".pic-tree-g > summary").forEach(function (sm) {
+      var cb = sm.querySelector(".pic-gtoggle"), sw = sm.querySelector(".pic-swatch");
+      if (cb && sw && sw.style.background) gcol[cb.dataset.group] = sw.style.backgroundColor || sw.style.background;
+    });
+    var cols = [];
+    for (var k = 1; k < hdr.cells.length; k++) {
+      var th = hdr.cells[k];
+      if (th.style.display === "none") continue;
+      var sp = th.querySelector("span");
+      var col = sp && sp.style.color ? sp.style.color : "#333";
+      cols.push({ k: k, g: th.dataset.gcol || "", name: th.dataset.sample || th.textContent, color: col,
+                  band: gcol[th.dataset.gcol] || col });
+    }
+    var m = cols.length; if (!m) return false;
+    var zmax = parseFloat(tbl.dataset.zmax);
+    var PAD = 14, CW = 16, BAND = 10, FONT = "600 10px -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
+    var meas = document.createElement("canvas").getContext("2d");
+    meas.font = FONT;
+    var nameH = 0;
+    cols.forEach(function (c) { nameH = Math.max(nameH, meas.measureText(c.name).width); });
+    nameH = Math.ceil(nameH) + 6;
+    // 縦: 1 行 = rpx px (1〜4)。行が多くて 1 px でも上限を超えるなら、高さを抑えて数行を 1 px に重ねる
+    var rpx = Math.max(1, Math.min(4, Math.floor(4000 / n)));
+    var W = Math.max(PAD * 2 + m * CW, 420);
+    var top = PAD + 18 + 16 + 8;               // 題・説明の行
+    var headH = nameH + 4 + BAND + 4;          // 列名 + 群の帯
+    var legH = 46;                             // 色の凡例
+    var maxHeat = Math.floor(Math.min(PNG_MAX_AREA / W, PNG_MAX_SIDE)) - top - headH - legH - PAD;
+    var H = Math.min(n * rpx, maxHeat);
+    if (H < 50) return false;
+    var Htot = top + headH + H + legH + PAD;
+    var scale = pngScale(W, Htot); if (!scale) return false;
+    var c = document.createElement("canvas");
+    c.width = Math.ceil(W * scale); c.height = Math.ceil(Htot * scale);
+    var ctx = c.getContext("2d"); ctx.scale(scale, scale);
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, Htot);
+    // 題と説明
+    ctx.fillStyle = "#1f2933"; ctx.textBaseline = "top";
+    ctx.font = "700 14px -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
+    ctx.fillText(title || "DEG heatmap", PAD, PAD);
+    ctx.fillStyle = "#5f6b7a"; ctx.font = "11px -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
+    var per = n * rpx > H ? (n / H).toFixed(1) + " genes per px" : (rpx === 1 ? "1 px per gene" : rpx + " px per gene");
+    ctx.fillText(n + " genes × " + m + " samples · rows compressed (" + per + "), gene names omitted", PAD, PAD + 20);
+    var x0 = PAD, y0 = top;
+    // 列名 (下端をそろえて縦書き、群の色)
+    ctx.font = FONT; ctx.textBaseline = "middle";
+    cols.forEach(function (cc, j) {
+      ctx.save();
+      ctx.translate(x0 + j * CW + CW / 2, y0 + nameH);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillStyle = cc.color; ctx.textAlign = "left";
+      ctx.fillText(cc.name, 2, 0);
+      ctx.restore();
+    });
+    // 群の帯
+    var yb = y0 + nameH + 4;
+    cols.forEach(function (cc, j) { ctx.fillStyle = cc.band; ctx.fillRect(x0 + j * CW, yb, CW, BAND); });
+    // 本体: 行 i を y = i * H / n の高さ H / n で塗る (1 px より細い行は重なって平均の色になる)
+    var yh = yb + BAND + 4, rh = H / n;
+    for (var i = 0; i < n; i++) {
+      var cells = rows[i].cells, y = yh + i * rh;
+      for (var j = 0; j < m; j++) {
+        var td = cells[cols[j].k];
+        ctx.fillStyle = td ? (td.style.backgroundColor || "#fff") : "#fff";
+        ctx.fillRect(x0 + j * CW, y, CW, rh);
+      }
+    }
+    // 群の区切り線と外枠
+    ctx.fillStyle = "#6b7885";
+    for (var j2 = 1; j2 < m; j2++) if (cols[j2].g !== cols[j2 - 1].g) ctx.fillRect(x0 + j2 * CW - 1, yb, 2, BAND + 4 + H);
+    ctx.strokeStyle = "#cdd7e2"; ctx.lineWidth = 1; ctx.strokeRect(x0 - 0.5, yh - 0.5, m * CW + 1, H + 1);
+    // 色の凡例 (z-score)
+    var ly = yh + H + 14, lw = 160, lx = PAD;
+    var grd = ctx.createLinearGradient(lx, 0, lx + lw, 0);
+    grd.addColorStop(0, "#2166ac"); grd.addColorStop(0.5, "#ffffff"); grd.addColorStop(1, "#b2182b");
+    ctx.fillStyle = grd; ctx.fillRect(lx, ly, lw, 10);
+    ctx.strokeStyle = "#9aa5b1"; ctx.strokeRect(lx - 0.5, ly - 0.5, lw + 1, 11);
+    ctx.fillStyle = "#1f2933"; ctx.font = "11px -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
+    ctx.textBaseline = "top";
+    var zl = isFinite(zmax) ? zmax.toFixed(1) : "";
+    ctx.textAlign = "left"; ctx.fillText(zl ? "−" + zl : "low", lx, ly + 13);
+    ctx.textAlign = "center"; ctx.fillText("0", lx + lw / 2, ly + 13);
+    ctx.textAlign = "right"; ctx.fillText(zl ? "+" + zl : "high", lx + lw, ly + 13);
+    ctx.textAlign = "left"; ctx.fillText("z-score (per gene)", lx + lw + 12, ly);
+    pngSave(c, filename, btn);
+    return true;
+  }
+
   // HTML 要素 (heatmap / QC / correlation テーブル) を PNG 化してダウンロードする。
   // 外部ライブラリ不要: SVG <foreignObject> に要素とレポート CSS を埋めて canvas 描画。
+  // DEG heatmap の行が多くて今の見た目では canvas の上限を超えるときは、縦を縮めた絵 (hmCompactPng) にする。
   function capturePng(el, filename, btn) {
+    var hm = el.querySelector("table.pic-hm");
+    var hmTitle = (function () {
+      var v = el.closest(".pic-hmsel-view"), h = v && v.querySelector(".pic-sub-hd h3");
+      return h ? h.textContent : "";
+    })();
+    if (hm) {
+      // 今の見た目 (1 行 13 px) での大きさを、写しを作る前に見積もる
+      var nr = hm._picV ? hm._picV.rows.length : (hm.tBodies[0] ? hm.tBodies[0].rows.length : 0);
+      var rh0 = (hm._picV && hm._picV.rh) || 13, hh = hm.tHead ? hm.tHead.offsetHeight : 120;
+      var estW = Math.ceil(hm.scrollWidth || el.scrollWidth), estH = Math.ceil(nr * rh0 + hh + 4);
+      if (!pngScale(estW, estH)) {
+        if (!hmCompactPng(hm, filename, btn, hmTitle) && btn) btn.textContent = "PNG error";
+        return;
+      }
+    }
     // レポート自身の CSS のみ (plotly が注入する style は < を含み SVG(XML) を壊すため除外)
     var css = "";
     document.querySelectorAll("style").forEach(function (s) {
@@ -263,20 +381,19 @@
       '<div xmlns="http://www.w3.org/1999/xhtml" style="background:#fff;width:' + w + 'px">' +
       '<style><![CDATA[' + css + ']]></style>' + xhtml + '</div></foreignObject></svg>';
     var img = new Image();
+    // 2 倍で上限を超えるなら 1 倍。1 倍でも超えるなら、heatmap は縦を縮めた絵にする
+    var scale = pngScale(w, h);
+    if (!scale) {
+      if (!(hm && hmCompactPng(hm, filename, btn, hmTitle)) && btn) btn.textContent = "PNG error";
+      return;
+    }
     img.onload = function () {
-      var scale = 2, c = document.createElement("canvas");
+      var c = document.createElement("canvas");
       c.width = Math.ceil(w * scale); c.height = Math.ceil(h * scale);
       var ctx = c.getContext("2d"); ctx.scale(scale, scale);
       ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
       ctx.drawImage(img, 0, 0);
-      c.toBlob(function (blob) {
-        if (!blob) { if (btn) btn.textContent = "PNG error"; return; }
-        var a = document.createElement("a");
-        a.href = URL.createObjectURL(blob); a.download = filename;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
-        if (btn) { var t = btn.textContent; btn.textContent = "✓ saved"; setTimeout(function () { btn.textContent = t; }, 1200); }
-      }, "image/png");
+      pngSave(c, filename, btn);
     };
     img.onerror = function () { if (btn) btn.textContent = "PNG error"; };
     img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
@@ -526,9 +643,12 @@
       });
       var drect = div.getBoundingClientRect();
       var fdr = (typeof data.fdr === "number") ? data.fdr : 0.1;
-      // 表示中の群どうしの contrast だけを対象にする
+      // 表示中の群どうしの contrast だけを対象にする。表示中 = サンプルの除外で残った群のうち、
+      // 凡例のクリックで隠していない群 (隠した群は trace の visible が "legendonly")
+      var hiddenG = {};
+      (div.data || []).forEach(function (tr) { if (tr.visible === "legendonly" && tr.legendgroup) hiddenG[tr.legendgroup] = 1; });
       var shownSet = {};
-      ((st && st.shown) || groups).forEach(function (g) { shownSet[g] = 1; });
+      ((st && st.shown) || groups).forEach(function (g) { if (!hiddenG[g]) shownSet[g] = 1; });
       var cidx = [];
       data.contrasts.forEach(function (c, ci) {
         var ab = String(c).split(" / ");
@@ -539,7 +659,8 @@
         if (gi === undefined || !t) return;
         var q = data.qval[gi] || [];
         var sig = cidx.some(function (ci) { var v = q[ci]; return v != null && !isNaN(v) && v < fdr; });
-        if (sig) { t.style.fill = "#d7301f"; t.style.fontWeight = "700"; }
+        // 赤字は毎回付け直す (前の状態の赤が残らないように、有意でなければ元に戻す)
+        t.style.fill = sig ? "#d7301f" : ""; t.style.fontWeight = sig ? "700" : "";
         var r = t.getBoundingClientRect();
         var zone = document.createElement("div");
         zone.className = "pic-expr-tickzone";
@@ -587,26 +708,16 @@
     // ---- 遺伝子のグループ (グループごとに 1 枚の図) ----
     // 左: グループごとにタイトルと遺伝子の入力欄 (タグ + 補完。区切りの混ざったリストの貼り付けも可)。
     // 右: グループごとの図。最初は既定の遺伝子 (pvalue 最小の 5 つ) を 1 つのグループとして出す。
-    // 中身は localStorage にレポートごと (project@out_dir と expr の id) に保存する。
+    // 中身は保存しない (開き直すと「Top 10 DEGs」だけに戻る)。
     var gplots = plots;
     var gside = document.createElement("div"); gside.className = "pic-expr-gsets";
     gside.innerHTML = '<h4>Gene groups</h4><div class="pic-expr-gset-list"></div>';
     var gaddBtn = document.createElement("button"); gaddBtn.type = "button"; gaddBtn.className = "pic-excl-btn pic-expr-gset-add";
     gaddBtn.textContent = "Add group"; gside.appendChild(gaddBtn);
-    msg.parentNode.insertBefore(gside, msg);
+    // 左の並び: 群とサンプルの除外 (全タブ共通) を一番上、その下に Gene groups
+    msg.parentNode.appendChild(gside);
     var glist = gside.querySelector(".pic-expr-gset-list");
-    var meta = (typeof PIC_META !== "undefined" && PIC_META) ? PIC_META : null;
-    var gbase = (meta && meta.project ? meta.project + "@" + (meta.out_dir || "") : document.title) + ":" + id;
-    var gkey = "picExprSets2:" + gbase;      // {title, genes:[ID], miss:[入力のまま]}
-    var gkeyOld = "picExprSets:" + gbase;    // 旧版 (Genes の欄 + {title, text} のグループ)
     var sets = [];
-    function gsave() {
-      try {
-        localStorage.setItem(gkey, JSON.stringify(sets.map(function (g) {
-          return { title: g.title, genes: g.idxs.map(function (gi) { return data.ens[gi]; }), miss: g.miss };
-        })));
-      } catch (e) {}
-    }
     function gtitle(g) { return g.title && g.title.trim() ? g.title.trim() : "Group " + (sets.indexOf(g) + 1); }
     function gmsg() { msg.textContent = ""; }   // 操作の説明は出さない (2026-11-07 ユーザーの指示)
     // カードの下の 1 行: 遺伝子数 / 見つからない入力 / 複数の ID に当たった入力
@@ -619,7 +730,7 @@
         m.appendChild(document.createTextNode("Not found: " + g.miss.join(", ")));
         var x = document.createElement("button"); x.type = "button"; x.className = "pic-expr-miss-x"; x.textContent = "×";
         x.title = "Clear this message";
-        x.addEventListener("click", function () { g.miss = []; gsave(); gsummary(g); });
+        x.addEventListener("click", function () { g.miss = []; gsummary(g); });
         m.appendChild(x);
         g.sum.appendChild(m);
       }
@@ -654,7 +765,7 @@
         g.tagbox.insertBefore(chip, g.input);
       });
     }
-    function grefresh(g) { gchips(g); gsummary(g); gplot(g); gsave(); }
+    function grefresh(g) { gchips(g); gsummary(g); gplot(g); }
     function gaddIdx(g, gi) {
       if (gi === undefined || gi === null || g.idxs.indexOf(gi) !== -1) return;
       g.idxs.push(gi); g.input.value = ""; hideAc(g); grefresh(g); g.input.focus();
@@ -726,13 +837,12 @@
       sets.push(g); setStates.push(g.st);
       var tmr = null;
       ti.addEventListener("input", function () {
-        g.title = ti.value; gsave();
+        g.title = ti.value;
         clearTimeout(tmr); tmr = setTimeout(function () { gplot(g); }, 350);
       });
       del.addEventListener("click", function () {
         sets.splice(sets.indexOf(g), 1); setStates.splice(setStates.indexOf(g.st), 1);
         card.remove(); blk.remove();
-        gsave();
         sets.forEach(gplot);   // 「Group N」の番号を詰める
         gmsg();
       });
@@ -764,43 +874,14 @@
       if (focus) input.focus();
       return g;
     }
-    gaddBtn.addEventListener("click", function () { gadd("", [], [], true); gsave(); });
+    gaddBtn.addEventListener("click", function () { gadd("", [], [], true); });
 
     // 既定: pvalue 最小の 10 遺伝子を 1 つのグループに
     function defaultIdxs() {
       return uniqueInOrder((data.default || []).map(function (e) { return lut[String(e).toLowerCase()]; })
         .filter(function (x) { return x !== undefined; }));
     }
-    var saved = null, old = null;
-    try { var sv = localStorage.getItem(gkey); if (sv) saved = JSON.parse(sv); } catch (e) {}
-    if (Array.isArray(saved)) {
-      // 前の版の既定のグループ (「Top 5 DEGs」で中身も既定の 5 遺伝子のまま) は、今の既定 (10 遺伝子) に置き換える。
-      // 中身を利用者が変えたグループは、タイトルも中身もそのまま残す。
-      var d0 = defaultIdxs().map(function (gi) { return String(data.ens[gi]); });
-      saved.forEach(function (x, si) {
-        if (!x || si !== 0 || String(x.title || "") !== PIC_TOP_GENES_TITLE_OLD) return;
-        var gs = (x.genes || []).map(String);
-        var same5 = gs.length === Math.min(5, d0.length) && gs.every(function (e, k) { return e === d0[k]; });
-        if (!same5 || (x.miss || []).length) return;
-        x.title = PIC_TOP_GENES_TITLE; x.genes = d0.slice();
-      });
-      saved.forEach(function (x) {
-        if (!x) return;
-        var r = resolveList((x.genes || []).map(String));
-        gadd(String(x.title || ""), r.idxs, (x.miss || []).map(String).concat(r.missing));
-      });
-      gsave();
-    } else {
-      gadd(PIC_TOP_GENES_TITLE, defaultIdxs(), []);
-      // 旧版で作ったグループ (貼り付けた文字) を引き継ぐ
-      try { var so = localStorage.getItem(gkeyOld); if (so) old = JSON.parse(so); } catch (e) {}
-      if (Array.isArray(old)) old.forEach(function (x) {
-        if (!x || !String(x.text || "").trim()) return;
-        var r = resolveList(picSplitGeneList(String(x.text || "")));
-        gadd(String(x.title || ""), r.idxs, r.missing);
-      });
-      gsave();
-    }
+    gadd(PIC_TOP_GENES_TITLE, defaultIdxs(), []);
     gmsg();
     if (window.ResizeObserver) {
       var _roTimer = null;
@@ -841,11 +922,9 @@
         b.addEventListener("click", function () { activateTab(b.dataset.target); });
       });
       var targets = Array.prototype.map.call(tabbtns, function (b) { return b.dataset.target; });
-      var initial = picParseHash().tab;
-      if (!initial || targets.indexOf(initial) === -1) {
-        var activeBtn = document.querySelector(".pic-tabbtn.active") || tabbtns[0];
-        initial = activeBtn ? activeBtn.dataset.target : "";
-      }
+      // 最初のタブはいつも既定 (URL のハッシュは読まない)
+      var activeBtn = document.querySelector(".pic-tabbtn.active") || tabbtns[0];
+      var initial = activeBtn ? activeBtn.dataset.target : "";
       activateTab(initial);
     }
     // Overview の解説カード / Downloads の「open tab →」でそのタブへ
@@ -949,10 +1028,6 @@
     (function initSplitters() {
       var SEL = ".pic-2pane, .pic-matrix, .pic-degsel, .pic-selgrid, .pic-expr, .pic-hmsel";
       var MIN = 170, MAX = 620;
-      try {
-        var saved = localStorage.getItem("picCtrlW");
-        if (saved && /^\d+px$/.test(saved)) document.documentElement.style.setProperty("--ctrl-w", saved);
-      } catch (e) {}
       document.querySelectorAll(SEL).forEach(function (grid) {
         if (grid.classList.contains("pic-1pane") || grid.dataset.split) return;
         grid.dataset.split = "1";
@@ -974,8 +1049,6 @@
             document.removeEventListener("mouseup", up);
             handle.classList.remove("pic-drag");
             document.body.classList.remove("pic-resizing");
-            var cur = getComputedStyle(document.documentElement).getPropertyValue("--ctrl-w").trim();
-            try { if (cur) localStorage.setItem("picCtrlW", cur); } catch (e2) {}
             // リサイズ後、表示中のプロットを再描画してレイアウトを合わせる
             var act = document.querySelector("section.pic-tab.active");
             if (act) resizeWithin(act);
@@ -1224,7 +1297,7 @@
     }
     // ---- サンプル除外 (全タブ共通) --------------------------------------------
     // どのタブの group -> sample の木 (.pic-tree) を触っても、状態 EX.excl は 1 つ。
-    // 変えたら全タブの木を揃え、localStorage と URL (#<tab>&excl=...) に保存し、全タブに当てる。
+    // 変えたら全タブの木を揃え、全タブに当てる (保存はしない。開き直すと全サンプル表示に戻る)。
     // タブごとの扱い (計算し直すのは PCA だけ。ほかは表示から外すだけ):
     //   QC (Read distribution / Sequencing depth / Aggregation) … サンプルごとの値なので行・線を外す
     //       (データバーは残りのサンプルの最大で引き直す)
@@ -1233,7 +1306,6 @@
     //   DEG / Expression / Enrichment … DESeq2 は全サンプルで計算したもの。外したサンプルの列・点を隠し、
     //       丸ごと外した group を含む比較を隠す (注記は出さない)。
     // 除外が無いときは何もしない (図・表は元のまま)。
-    var PIC_META_ = (typeof PIC_META !== "undefined") ? PIC_META : null;
     function exInitModel() {
       document.querySelectorAll(".pic-tree .pic-stoggle").forEach(function (c) {
         var s = c.dataset.sample, g = c.dataset.sgroup;
@@ -1243,27 +1315,6 @@
         EX.members[g].push(s);
       });
       EX.ready = EX.samples.length > 0;
-    }
-    function exStoreKey() {
-      var m = PIC_META_;
-      return "picExcl:" + (m && m.project ? m.project + "@" + (m.out_dir || "") : document.title);
-    }
-    function exLoad() {
-      var h = picParseHash(), list = null;
-      if (h.excl !== null) {
-        list = h.excl ? h.excl.split(",").map(function (x) { try { return decodeURIComponent(x); } catch (e) { return x; } }) : [];
-      } else {
-        try { var v = localStorage.getItem(exStoreKey()); if (v) list = JSON.parse(v); } catch (e) {}
-      }
-      EX.excl = {};
-      (list || []).forEach(function (s) { if (EX.groupOf[s] !== undefined) EX.excl[s] = 1; });
-    }
-    function exSave() {
-      var l = exList();
-      try { if (l.length) localStorage.setItem(exStoreKey(), JSON.stringify(l)); else localStorage.removeItem(exStoreKey()); } catch (e) {}
-      try {
-        if (history.replaceState) history.replaceState(null, "", "#" + (picParseHash().tab || currentTab || "") + exHashSuffix());
-      } catch (e) {}
     }
     // group が丸ごと除外されているか
     function exGroupOut(g) { var m = EX.members[g]; return !!m && m.every(function (s) { return EX.excl[s]; }); }
@@ -1297,7 +1348,7 @@
         foot.appendChild(rb);
       });
     }
-    function exCommit() { exSyncTrees(); exSave(); exApplyAll(); }
+    function exCommit() { exSyncTrees(); exApplyAll(); }
 
     // ---- タブごとの注記 ----
     function exTabKind(tab) {
@@ -1727,12 +1778,12 @@
       el.addEventListener("click", run);
       el.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") run(e); });
     });
-    // サンプル除外の状態を読み (URL のハッシュ > localStorage)、あれば全タブに当てる。
+    // サンプル除外は最初はなし (全サンプル表示)。除外したら全タブに当てる。
     // 以後に描く図には picAfterRender で当てる (PCA はタブごとにまとめて引き直す)。
     exInitModel();
     document.querySelectorAll("section.pic-tab").forEach(exApplyCor);   // 相関の凡例 (除外なしは R の色のまま)
     if (EX.ready) {
-      exLoad();
+      EX.excl = {};
       var pcaTimers = {};
       picAfterRender = function (el) {
         var tab = el.closest && el.closest("section.pic-tab");

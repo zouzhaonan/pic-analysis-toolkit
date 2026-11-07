@@ -103,7 +103,8 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
   } else list()
   gjobs <- lapply(gbins, function(idx) { force(idx); function()
     lapply(gcsvs[idx], function(g) pic_gsea_job(g$csv, g$method, group_pal, out_dir)) })
-  ojobs <- lapply(omdirs, function(m) { force(m); function() pic_ora_item(m, project) })
+  ora_cluster_n <- pic_cluster_gene_counts(desc$deseq2_dir, project)
+  ojobs <- lapply(omdirs, function(m) { force(m); function() pic_ora_item(m, project, cluster_n = ora_cluster_n) })
   all_jobs <- c(jobs, gjobs, ojobs)
   n_s <- length(jobs)
   # 先に始める順: heatmap (行の hclust が一番長い)、Expression、MA/volcano、enrichment、残りの節
@@ -266,8 +267,8 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   data_tabs <- build_analysis_data_tabs(reg, desc, out_dir, out_dir, "", fdr,
                                         msum, group_map, group_pal, sample_order, group_order,
                                         stats, deg_counts, tmp_dir)
-  # サンプル除外 (report.js) が使う情報: 状態を localStorage に保存する鍵 (project + out_dir) と、
-  # 「Download CSV (selected)」のファイル名 (project)。
+  # report.js が使う情報: 「Download CSV (selected)」のファイル名 (project) など。
+  # (状態は保存しないので、localStorage の鍵には使わない)
   reg$meta <- list(
     project = project, run = run, genome = genome,
     out_dir = tryCatch(normalizePath(out_dir, winslash = "/", mustWork = FALSE), error = function(e) out_dir))

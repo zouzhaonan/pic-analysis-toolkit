@@ -173,8 +173,9 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     sprintf('<div class="pic-degsel"><div class="pic-degsel-ctrl"><!--SUBNAV-->%s</div><div class="pic-degsel-view">%s%s</div></div>', ctrl_html, view_head, view_body)
   } else if (nzchar(matrix_html)) {
     # 左 = サブタブ + contrast 行列 (radio)、右 = タイトル行 + MA/volcano ブロック
-    paste0('<div class="pic-degsel"><div class="pic-degsel-ctrl"><!--SUBNAV--><h4>Comparison</h4>',
-           matrix_html, ctrl_html, '</div><div class="pic-degsel-view">', view_head,
+    # 左の並び: 群とサンプルの除外 (全タブ共通) を一番上、その下にこのタブの Comparison
+    paste0('<div class="pic-degsel"><div class="pic-degsel-ctrl"><!--SUBNAV-->', ctrl_html, '<h4>Comparison</h4>',
+           matrix_html, '</div><div class="pic-degsel-view">', view_head,
            paste(blocks, collapse = ""), '</div></div>')
   } else {
     sprintf('<div class="pic-degsel"><div class="pic-degsel-ctrl"><!--SUBNAV-->%s</div><div class="pic-degsel-view">%s%s</div></div>',
@@ -443,12 +444,7 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
   prof <- prof[is.finite(prof$value), , drop = FALSE]
   if (nrow(prof) == 0) return(NULL)
 
-  summ_f <- file.path(degcluster_dir_of(deseq2_dir, project), sprintf("DEGCluster_summary_%s.csv", project))
-  nmap <- NULL
-  if (file.exists(summ_f)) {
-    summ <- suppressMessages(readr::read_csv(summ_f, show_col_types = FALSE, progress = FALSE))
-    if (all(c("cluster_id", "gene_count") %in% colnames(summ))) nmap <- stats::setNames(summ$gene_count, summ$cluster_id)
-  }
+  nmap <- pic_cluster_gene_counts(deseq2_dir, project)
   # cluster は番号順 (c1, c2, ..., c11)。ORA の dot plot の x 軸と同じ並びと名前にする。
   clusters <- pic_cluster_order(prof$cluster_id)
   # 見出しは "c1 (2432)" の 1 行 (名前は cN、括弧は遺伝子の数)

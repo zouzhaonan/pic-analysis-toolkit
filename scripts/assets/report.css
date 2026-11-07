@@ -157,6 +157,9 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-expr-tip-none{color:#cdd7e2}
 .pic-expr-msg{color:#b45309;font-size:13px;min-height:1em;margin:2px 0}
 .pic-expr-msg+h4{margin-top:12px}
+/* 文言は出さないので、空の欄は詰める (左のカラムの一番上の Groups を、ほかのタブと同じ高さに) */
+.pic-expr-msg:empty{display:none}
+.pic-expr-msg:empty+h4{margin-top:2px}
 .pic-expr-plots{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
 
 /* 複数ブロックをチェックボックスで表示選択 */
@@ -344,5 +347,16 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-expr-gset-sum .pic-expr-miss,.pic-expr-gset-sum .pic-expr-multi{font-size:11px;margin-top:2px}
 .pic-expr-miss-x{border:none;background:none;color:#b45309;cursor:pointer;font-size:12px;padding:0 0 0 4px}
 .pic-expr-gsets{margin:0 0 4px}
+/* 左のカラム: 一番上の Groups の下に、各タブの選択を少し離して置く */
 .pic-expr-gplots,.pic-expr-plots{display:block}
 .pic-expr-plots>.pic-expr-gblock:first-child{border-top:none;padding-top:0}
+/* ---- 左のカラム: 全タブで同じ部品・同じ余白 (2026-11-07) ----
+   QC / Correlation / PCA (.pic-ctrl)、DEG heatmap (.pic-hmsel-ctrl)、M-A / Volcano (.pic-degsel-ctrl)、
+   Expression (.pic-expr-side)、GSEA (.pic-matrix-sel)、ORA (.pic-selgrid-ctrl)。
+   一番上に Groups (群とサンプルの除外)、その下に各タブに固有のもの (Comparison・Gene groups など)。 */
+.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side{position:sticky;top:60px;align-self:start;box-sizing:border-box;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:13px}
+.pic-ctrl h4,.pic-hmsel-ctrl h4,.pic-degsel-ctrl h4,.pic-selgrid-ctrl h4,.pic-matrix-sel h4,.pic-expr-side h4{margin:2px 0 8px;font-size:13px;font-weight:700;color:var(--fg);text-transform:none;letter-spacing:normal;font-family:inherit}
+:is(.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side) :is(.pic-tree,.pic-tgl-list)+h4,
+:is(.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side) :is(.pic-tree,.pic-tgl-list)+.pic-expr-gsets{margin-top:16px}
+:is(.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side) .pic-expr-gsets>h4{margin-top:2px}
+@media(max-width:900px){.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side{position:static;max-height:none}}

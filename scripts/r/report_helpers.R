@@ -6,6 +6,16 @@
 # deseq2/<genome>/ の genome ネストを廃した代わりに、フォルダ名で genome を識別する。
 deg_dir_of        <- function(deseq2_dir, project) file.path(deseq2_dir, sprintf("DEG_%s", project))
 degcluster_dir_of <- function(deseq2_dir, project) file.path(deg_dir_of(deseq2_dir, project), sprintf("DEGCluster_%s", project))
+# cluster ごとの遺伝子数 (DEGCluster_summary の gene_count)。cluster_id -> 数 の名前付きベクトル。無ければ NULL。
+# Cluster expression profiles と ORA の dot plot の見出し "c1 (2432)" の括弧の数に使う。
+pic_cluster_gene_counts <- function(deseq2_dir, project) {
+  if (is.null(deseq2_dir)) return(NULL)
+  f <- file.path(degcluster_dir_of(deseq2_dir, project), sprintf("DEGCluster_summary_%s.csv", project))
+  if (!file.exists(f)) return(NULL)
+  summ <- tryCatch(suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE)), error = function(e) NULL)
+  if (is.null(summ) || !all(c("cluster_id", "gene_count") %in% colnames(summ))) return(NULL)
+  stats::setNames(summ$gene_count, as.character(summ$cluster_id))
+}
 pca_dir_of        <- function(deseq2_dir, project) file.path(deseq2_dir, sprintf("PCA_%s", project))
 
 # 集計/中間テーブル (mapping_sum, deftable, aggregate_profile) は base_dir/summary/ に
@@ -421,7 +431,7 @@ color_contrast <- function(contrast, group_pal) {
 # 複数ブロックをチェックボックスで表示選択する UI。既定は先頭のみ表示。
 # items: list(list(id=, label=, html=, checked=logical), ...)
 # ブロックが 1 つだけなら選択 UI は付けずにそのまま表示する。
-# ctrl_extra: 左パネルの末尾に足す HTML (サンプル除外のパネルなど)。既定 "" で従来どおり。
+# ctrl_extra: 左パネルの先頭に置く HTML (サンプル除外のパネルなど)。既定 "" で従来どおり。
 # method_src = TRUE: 選択 (見出し + ラジオ) を .pic-method-src で包む。report.js がこれを隠し、
 #   タブの見出しの右に置くリスト (select) から操作する (Enrichment の method)。
 build_select_group <- function(items, prefix = "", ctrl_title = NULL, view_header = "", ctrl_extra = "",
@@ -445,7 +455,8 @@ build_select_group <- function(items, prefix = "", ctrl_title = NULL, view_heade
     sel_html <- sprintf('<div class="pic-method-src" data-title="%s">%s</div>',
                         html_escape(if (is.null(ctrl_title)) "Method" else ctrl_title), sel_html)
   # 左 = ラジオ選択 / 右 = タイトル行 + (prefix +) 選択ブロック
-  paste0('<div class="pic-selgrid"><div class="pic-selgrid-ctrl"><!--SUBNAV-->', sel_html, ctrl_extra, '</div><div class="pic-selgrid-view">', view_header, prefix,
+  # 左の並び: ctrl_extra (群とサンプルの除外) を一番上、その下に選択
+  paste0('<div class="pic-selgrid"><div class="pic-selgrid-ctrl"><!--SUBNAV-->', ctrl_extra, sel_html, '</div><div class="pic-selgrid-view">', view_header, prefix,
          paste(blk, collapse = ""), '</div></div>')
 }
 
@@ -560,10 +571,11 @@ build_matrix_group <- function(rows, cols, cell_html, row_title = "Comparison", 
   # 左 (.pic-matrix-sel) = Comparison(行列) (+ 隠した Method)、右 = プロット
   comp_hdr <- if (nzchar(gm)) sprintf('<h4>%s</h4>', html_escape(row_title)) else ""
   # 列 (method) の選択は .pic-method-src で包む。report.js が隠し、タブの見出しの右のリストから操作する。
-  sprintf(paste0('<div class="pic-matrix"><div class="pic-matrix-sel"><!--SUBNAV-->%s%s',
-                 '<div class="pic-method-src" data-title="%s"><h4>%s</h4><div class="pic-select-bar">%s</div></div>%s</div>',
+  # 左の並び: ctrl_extra (群とサンプルの除外) を一番上、その下に Comparison
+  sprintf(paste0('<div class="pic-matrix"><div class="pic-matrix-sel"><!--SUBNAV-->%s%s%s',
+                 '<div class="pic-method-src" data-title="%s"><h4>%s</h4><div class="pic-select-bar">%s</div></div></div>',
                  '<div class="pic-matrix-cells">%s%s</div></div>'),
-          comp_hdr, row_sel, html_escape(col_title), html_escape(col_title), paste(col_bar, collapse = ""), ctrl_extra,
+          ctrl_extra, comp_hdr, row_sel, html_escape(col_title), html_escape(col_title), paste(col_bar, collapse = ""),
           view_header, paste(cells, collapse = ""))
 }
 

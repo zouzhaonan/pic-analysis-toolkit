@@ -705,8 +705,9 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
     'Cell color is the gene&rsquo;s z-score across samples &mdash; <b style="color:#b2182b">red</b> is higher than that gene&rsquo;s average, ',
     '<b style="color:#2166ac">blue</b> is lower. Genes are ordered by similarity.</p>',
     sprintf('<div class="pic-capbox" id="%s">', cap_id),
-    sprintf('<div class="pic-hm-scroll"><table class="pic-hm"><thead>%s</thead><tbody>%s</tbody></table></div>',
-            header, paste(rows, collapse = "")),
+    # data-zmax: 色の端の z 値 (PNG の色の凡例に使う)
+    sprintf('<div class="pic-hm-scroll"><table class="pic-hm" data-zmax="%s"><thead>%s</thead><tbody>%s</tbody></table></div>',
+            format(signif(zmax, 3), trim = TRUE), header, paste(rows, collapse = "")),
     '</div>'
   )
   # 左 (control) の先頭に <!--SUBNAV--> を置き、pic_tab_panel がサブタブ選択を差し込む。
