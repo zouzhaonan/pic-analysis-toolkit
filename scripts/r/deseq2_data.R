@@ -68,6 +68,21 @@ pic_gene_name_of <- function(ids, e2g) {
   dplyr::coalesce(v[keep][match(ids, e[keep])], ids)
 }
 
+# 遺伝子名の列 (name_col) が空 (NA・""・空白のみ) の行を、その行の ID (id_col、ens_gene) で埋める。
+# 出力の表 (stats・normalizedCountTable・DEG_normalizedCountTable・DEGCluster_gene_for_ora) で
+# UMI_count・pic_gene_name_of と同じ規則にする (名前の無い ID は ID をそのまま名前にする)。
+# どちらかの列が無い表はそのまま返す。
+pic_fill_gene_name <- function(df, name_col = "ext_gene", id_col = "ens_gene") {
+  if (is.null(df) || !all(c(name_col, id_col) %in% colnames(df))) return(df)
+  v <- as.character(df[[name_col]])
+  empty <- is.na(v) | trimws(v) == ""
+  if (any(empty)) {
+    v[empty] <- as.character(df[[id_col]])[empty]
+    df[[name_col]] <- v
+  }
+  df
+}
+
 build_count_matrix <- function(umi, e2g) {
   # 遺伝子 × サンプルに足し上げて横に広げる。data.table で行う (dplyr の group_by + pivot_wider と
   # 同じ表: 行は ens_gene を C ロケールで並べた順、列はその並びで最初に出てくるサンプルの順、無い組は 0)。
@@ -371,7 +386,8 @@ build_stats_tables <- function(results_list, contrasts, e2g, fdr) {
       dplyr::relocate(
         dplyr::any_of(c("ens_gene", "ext_gene", "biotype", "chr")),
         .after = "aspect"
-      )
+      ) |>
+      pic_fill_gene_name()
   }) |>
     dplyr::bind_rows() |>
     dplyr::arrange(is.na(.data$pvalue), .data$pvalue)
@@ -402,6 +418,7 @@ build_normalized_counts <- function(dds, e2g) {
       dplyr::any_of(c("ext_gene", "biotype", "chr")),
       .after = "ens_gene"
     )
+    normcount <- pic_fill_gene_name(normcount)
   }
 
   normcount
@@ -632,7 +649,8 @@ build_degpattern_outputs <- function(
       dplyr::relocate(
         dplyr::any_of(c("ext_gene", "biotype", "chr")),
         .after = "ens_gene"
-      )
+      ) |>
+      pic_fill_gene_name()
   }
 
   profile_long <- tibble::as_tibble(mat, rownames = "ens_gene") |>
