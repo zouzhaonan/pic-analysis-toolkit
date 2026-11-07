@@ -31,8 +31,7 @@ scatter_traces_by_dir <- function(df, x, y, numerator, denominator, hovertemplat
   for (k in c("ns", "down", "up")) {
     sub <- df[df$dir == k, , drop = FALSE]
     if (nrow(sub) == 0) next
-    # customdata[2] = 名前の後ろに添える ID (" (ENSMUSG…)")。名前が無く ID で埋めた点は空。
-    cd <- lapply(seq_len(nrow(sub)), function(i) list(sub$cd1[[i]], sub$cd2[[i]], sub$idsuf[[i]]))
+    cd <- lapply(seq_len(nrow(sub)), function(i) list(sub$cd1[[i]], sub$cd2[[i]]))
     traces[[length(traces) + 1]] <- list(
       x = as.list(as.numeric(sub[[x]])),
       y = as.list(as.numeric(sub[[y]])),
@@ -83,10 +82,9 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     numerator <- group_name_of(numerator, group_pal); denominator <- group_name_of(denominator, group_pal)
     flab <- format_contrast_file_label(a)
 
-    # 点の名前は遺伝子名 (無ければ ID)。hover では名前の後ろに ID を添える。
+    # 点の名前は遺伝子名 (無ければ ID)。画面には ID を出さない (2026-11-07 ユーザーの指示)。
     ens <- as.character(cs$ens_gene)
     gene <- pic_gene_label(if ("ext_gene" %in% colnames(cs)) cs$ext_gene else NULL, ens)
-    idsuf <- ifelse(gene == ens | is.na(ens), "", sprintf(" (%s)", html_escape(ens)))
 
     lfc <- suppressWarnings(as.numeric(cs$log2FoldChange))
     padj <- suppressWarnings(as.numeric(cs$padj))
@@ -106,9 +104,9 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     idxMA <- downsample_idx(is_sig & keepMA)
     idxMA <- idxMA[keepMA[idxMA]]
     if (length(idxMA) > 0) {
-      dfMA <- data.frame(x = base[idxMA], y = lfc[idxMA], gene = gene[idxMA], idsuf = idsuf[idxMA], dir = dir[idxMA],
+      dfMA <- data.frame(x = base[idxMA], y = lfc[idxMA], gene = gene[idxMA], dir = dir[idxMA],
                          cd1 = padj[idxMA], cd2 = pval[idxMA], stringsAsFactors = FALSE)
-      ht <- "<b>%{text}</b>%{customdata[2]}<br>baseMean: %{x:.3g}<br>log<sub>2</sub>FC: %{y:.2f}<br>p.adjust: %{customdata[0]:.3g}<extra></extra>"
+      ht <- "<b>%{text}</b><br>baseMean: %{x:.3g}<br>log<sub>2</sub>FC: %{y:.2f}<br>p.adjust: %{customdata[0]:.3g}<extra></extra>"
       tr <- scatter_traces_by_dir(dfMA, "x", "y", numerator, denominator, ht, group_pal)
       id <- sprintf("%sma_%s", id_prefix, flab)
       layout <- list(
@@ -126,9 +124,9 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     idxV <- downsample_idx(is_sig & keepV)
     idxV <- idxV[keepV[idxV]]
     if (length(idxV) > 0) {
-      dfV <- data.frame(x = lfc[idxV], y = -log10(pval[idxV]), gene = gene[idxV], idsuf = idsuf[idxV], dir = dir[idxV],
+      dfV <- data.frame(x = lfc[idxV], y = -log10(pval[idxV]), gene = gene[idxV], dir = dir[idxV],
                         cd1 = padj[idxV], cd2 = pval[idxV], stringsAsFactors = FALSE)
-      ht <- "<b>%{text}</b>%{customdata[2]}<br>log<sub>2</sub>FC: %{x:.2f}<br>p-value: %{customdata[1]:.3g}<br>p.adjust: %{customdata[0]:.3g}<extra></extra>"
+      ht <- "<b>%{text}</b><br>log<sub>2</sub>FC: %{x:.2f}<br>p-value: %{customdata[1]:.3g}<br>p.adjust: %{customdata[0]:.3g}<extra></extra>"
       tr <- scatter_traces_by_dir(dfV, "x", "y", numerator, denominator, ht, group_pal)
       id <- sprintf("%svolcano_%s", id_prefix, flab)
       layout <- list(
@@ -262,7 +260,7 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL,
 }
 
 # 正規化カウント (normalizedCountTable) を id 付きで登録する (HTML に埋め込む用)。
-# stats があれば pvalue 最小の 5 遺伝子を default として保持する。
+# stats があれば pvalue 最小の 10 遺伝子を default として保持する。
 register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pal, stats = NULL, sample_order = NULL, group_order = NULL) {
   f <- file.path(deseq2_dir, sprintf("normalizedCountTable_%s.csv", project))
   if (!file.exists(f)) return(FALSE)
@@ -285,7 +283,7 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
   # 名前が空 (古い出力) なら ID で埋める (deseq2 の出力と同じ規則)。配列の形 (ens / ext の 2 本) は変えない。
   ext <- pic_gene_label(if ("ext_gene" %in% colnames(d)) d$ext_gene else NULL, ens_all)
 
-  # default = pvalue 最小の 5 遺伝子 (contrast 横断で遺伝子ごとに min pvalue)、
+  # default = pvalue 最小の 10 遺伝子 (contrast 横断で遺伝子ごとに min pvalue)、
   # および contrast ごとの padj (q-value, hover 表示用)。
   default_ens <- character(0)
   contrasts <- character(0)
@@ -298,7 +296,7 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
       if (nrow(st) > 0) {
         agg <- stats::aggregate(pvalue ~ ens_gene, data = st, FUN = min)
         cand <- as.character(agg$ens_gene[order(agg$pvalue)])
-        default_ens <- head(cand[cand %in% ens_all], 5)
+        default_ens <- head(cand[cand %in% ens_all], 10)
       }
     }
     if ("padj" %in% colnames(stats)) {
@@ -411,6 +409,18 @@ build_cluster_profile_png <- function(deseq2_dir, project, tmp_dir, group_pal = 
   png_data_uri(png_path)
 }
 
+# 箱ひげの値 (plotly の箱ひげを値から描くとき用)。四分位は quantile の type 7 (plotly の既定 "linear" と同じ線形補間)、
+# ひげは Tukey (箱から 1.5 IQR 以内にある最も外側の値)。
+pic_box_stats <- function(v) {
+  v <- sort(v[is.finite(v)])
+  q <- stats::quantile(v, c(0.25, 0.5, 0.75), type = 7, names = FALSE)
+  iqr <- q[3] - q[1]
+  lo <- v[v >= q[1] - 1.5 * iqr]; hi <- v[v <= q[3] + 1.5 * iqr]
+  r <- function(x) signif(x, 5)
+  list(q1 = r(q[1]), median = r(q[2]), q3 = r(q[3]),
+       lowerfence = r(if (length(lo)) min(lo) else q[1]), upperfence = r(if (length(hi)) max(hi) else q[3]))
+}
+
 # hex 色を rgba() 文字列に変換 (box の半透明塗り用)。
 hex_to_rgba <- function(hex, alpha) {
   hex <- sub("^#", "", hex)
@@ -420,7 +430,9 @@ hex_to_rgba <- function(hex, alpha) {
 }
 
 # Cluster expression profiles を plotly のインタラクティブ版に変換する。
-# cluster ごとにパネル (free_y) を横に並べ、各パネルで group ごとの box + beeswarm。
+# cluster ごとにパネル (free_y) を横に並べ、各パネルで group ごとの箱ひげ。
+# 遺伝子ごとの点は描かない (pic193_2 で 28 万点あり、ORA に切り替えるたびに数秒かかったため)。
+# 箱ひげの値 (四分位・ひげ) は R で計算して渡し、HTML に遺伝子ごとの値を入れない。
 # 戻り値: list(data, layout, height) もしくは NULL。
 build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) {
   f <- file.path(degcluster_dir_of(deseq2_dir, project), sprintf("DEGCluster_profile_%s.csv", project))
@@ -438,7 +450,8 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
     if (all(c("cluster_id", "gene_count") %in% colnames(summ))) nmap <- stats::setNames(summ$gene_count, summ$cluster_id)
   }
   clusters <- unique(as.character(prof$cluster_id))
-  clab <- function(cl) if (!is.null(nmap) && cl %in% names(nmap)) sprintf("%s (n=%s)", cl, nmap[[cl]]) else cl
+  # 見出しは括弧で続けず 2 行に (パネルが狭いと隣と重なるため)
+  clab <- function(cl) if (!is.null(nmap) && cl %in% names(nmap)) sprintf("%s<br>n=%s", html_escape(cl), nmap[[cl]]) else html_escape(cl)
   groups <- unique(as.character(prof$group))
   pal <- ensure_palette(group_pal, groups)
   # group を palette (= sample_sheet) の順に並べる
@@ -450,10 +463,14 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
 
   traces <- list()
   annotations <- list()
-  # 凡例を strip ラベルより上に置き、重なりを避ける。boxgap を詰めて箱を太くする。
-  layout <- list(margin = list(l = 54, r = 10, t = 74, b = 64), hovermode = "closest",
+  # 凡例を strip ラベル (2 行) より上に置き、重なりを避ける。boxgap を詰めて箱を太くする。
+  # x 軸の群名は凡例と色で分かるので出さない (下の余白も詰める)。
+  height <- 380L
+  mar <- list(l = 54, r = 10, t = 104, b = 16)
+  plot_h <- height - mar$t - mar$b
+  layout <- list(margin = mar, hovermode = "closest",
                  showlegend = TRUE, boxgap = 0.2, boxgroupgap = 0,
-                 legend = list(orientation = "h", yanchor = "bottom", y = 1.14, x = 0))
+                 legend = list(orientation = "h", yanchor = "bottom", y = 1 + 44 / plot_h, x = 0))
   for (i in seq_len(ncl)) {
     cl <- clusters[[i]]
     x0 <- (i - 1) * (panelw + gap); x1 <- x0 + panelw
@@ -463,7 +480,7 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
     yname <- if (i == 1) "yaxis" else paste0("yaxis", i)
     layout[[xname]] <- list(domain = list(x0, x1), anchor = yref, type = "category",
                             categoryorder = "array", categoryarray = as.list(groups),
-                            tickangle = -40, automargin = TRUE, showline = TRUE, mirror = TRUE,
+                            showticklabels = FALSE, ticks = "", showline = TRUE, mirror = TRUE,
                             linecolor = "#cdd7e2")
     # 全パネル 0 起点 (free-y だが下端は 0)。y=0 の黒線 (zeroline) は消す。
     layout[[yname]] <- list(domain = list(0, 1), anchor = xref, automargin = TRUE, rangemode = "tozero",
@@ -475,26 +492,28 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
       gv <- as.numeric(sub$value[as.character(sub$group) == g])
       if (length(gv) == 0) next
       col <- if (g %in% names(pal)) pal[[g]] else "#888888"
+      bs <- pic_box_stats(gv)
       traces[[length(traces) + 1L]] <- list(
-        y = as.list(gv), x = as.list(rep(g, length(gv))),
+        x = list(g), q1 = list(bs$q1), median = list(bs$median), q3 = list(bs$q3),
+        lowerfence = list(bs$lowerfence), upperfence = list(bs$upperfence),
         type = "box", name = group_span(g, pal), legendgroup = g, showlegend = (i == 1),
-        boxpoints = "all", jitter = 1, pointpos = 0, boxmean = FALSE, whiskerwidth = 0.6,
+        boxpoints = FALSE, whiskerwidth = 0.6,
         fillcolor = hex_to_rgba(col, "0.45"),
         line = list(color = col, width = 1.2),
-        marker = list(color = col, size = 3, opacity = 0.55),
         xaxis = xref, yaxis = yref,
-        hovertemplate = sprintf("%s<br>rlog: %%{y:.2f}<extra></extra>", html_escape(g))
+        # hover は plotly の箱ひげの既定 (四分位とひげ) に、群名 (= trace の名前) を添える
+        hoverinfo = "y+name"
       )
     }
     # strip ラベルは枠なし (テキストのみ)
     annotations[[length(annotations) + 1L]] <- list(
-      text = html_escape(clab(cl)), xref = "paper", yref = "paper",
+      text = clab(cl), xref = "paper", yref = "paper",
       x = (x0 + x1) / 2, y = 1.0, xanchor = "center", yanchor = "bottom",
       showarrow = FALSE, font = list(size = 13, color = "#1f2933")
     )
   }
   layout$annotations <- annotations
-  list(data = traces, layout = layout, height = 380L,
+  list(data = traces, layout = layout, height = height,
        config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = TRUE))
 }
 

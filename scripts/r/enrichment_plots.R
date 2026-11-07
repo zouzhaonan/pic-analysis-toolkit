@@ -371,8 +371,9 @@ build_ora_plotly <- function(ora_df) {
   cluster_labels <- stats::setNames(
     vapply(cluster_levels, function(cl) {
       den <- cluster_den$den[cluster_den$cluster == cl]
-      if (length(den) == 0 || !is.finite(den[[1]])) sprintf("%s (n=NA)", cl)
-      else sprintf("%s (n=%s)", cl, format(den[[1]], scientific = FALSE, trim = TRUE))
+      # 括弧で続けず 2 行に (横に並ぶ cluster の目盛りが重ならないように)
+      if (length(den) == 0 || !is.finite(den[[1]])) sprintf("%s<br>n=NA", cl)
+      else sprintf("%s<br>n=%s", cl, format(den[[1]], scientific = FALSE, trim = TRUE))
     }, character(1)), cluster_levels)
 
   plot_df <- plot_df |>
@@ -396,7 +397,7 @@ build_ora_plotly <- function(ora_df) {
 
   cd <- lapply(seq_len(nrow(plot_df)), function(i)
     list(as.character(plot_df$Description_plot[i]), gr[i], padj[i], xx[i]))
-  ht <- paste0("<b>%{customdata[0]}</b><br>cluster: %{customdata[3]}<br>",
+  ht <- paste0("<b>%{customdata[0]}</b><br>%{customdata[3]}<br>",
                "GeneRatio: %{customdata[1]:.3g}<br>p.adjust: %{customdata[2]:.3g}<extra></extra>")
 
   trace <- list(
@@ -415,7 +416,7 @@ build_ora_plotly <- function(ora_df) {
     showlegend = FALSE,
     xaxis = list(type = "category", categoryorder = "array",
                  categoryarray = as.list(levels(plot_df$cluster_label)),
-                 tickangle = -40, automargin = TRUE, showline = TRUE, mirror = TRUE,
+                 tickangle = 0, automargin = TRUE, showline = TRUE, mirror = TRUE,
                  linecolor = "#cdd7e2"),
     yaxis = list(tickmode = "array", tickvals = as.list(seq_along(ylab_levels)),
                  ticktext = as.list(ylab_levels), automargin = TRUE,

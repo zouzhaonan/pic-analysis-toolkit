@@ -2,12 +2,16 @@
 // 多数のプロットを最初に描くと重いので、details が開いた時 / details 外なら即時に描く。
 (function () {
   // 文言 (差し替えるときはここだけ直す)
-  // Expression の最初のグループ (pvalue 最小の 5 遺伝子) のタイトル
-  var PIC_TOP_GENES_TITLE = "Top 5 DEGs";
+  // Expression の最初のグループ (pvalue 最小の 10 遺伝子) のタイトル
+  var PIC_TOP_GENES_TITLE = "Top 10 DEGs";
+  // 前の版の最初のグループのタイトル (localStorage に残っていれば今のものに置き換える)
+  var PIC_TOP_GENES_TITLE_OLD = "Top 5 DEGs";
   // サンプルを外しているときに DEG・Enrichment・Expression のタブの冒頭に出す 1 文
   var PIC_EXCL_NOTE_TEXT = "Reference values computed with all samples. Re-analysis is required for accurate statistics.";
   // 描いた直後に呼ぶフック (サンプル除外を描いたばかりの図に当てる。DOMContentLoaded で設定)
   var picAfterRender = null;
+  // タブを表示した直後に呼ぶフック (隠れている間に変わったサンプル除外を、そのタブに当てる。DOMContentLoaded で設定)
+  var picOnTabShown = null;
   // サンプル除外の状態 (全タブ共通・1 つだけ)。excl: sample -> 1。残りは木 (.pic-tree) から作る。
   var EX = { excl: {}, samples: [], groupOf: {}, groups: [], members: {}, ready: false };
   function exList() { return EX.samples.filter(function (s) { return EX.excl[s]; }); }
@@ -98,7 +102,7 @@
       b.classList.toggle("active", b.dataset.target === key);
     });
     var tab = document.getElementById(target);
-    if (tab) { renderWithin(tab); resizeWithin(tab); }
+    if (tab) { renderWithin(tab); resizeWithin(tab); if (picOnTabShown) { try { picOnTabShown(tab); } catch (e) {} } }
     try { if (history.replaceState) history.replaceState(null, "", "#" + key + exHashSuffix()); } catch (e) {}
     window.scrollTo(0, 0);
   }
@@ -261,7 +265,7 @@
     // lut: 小文字 -> index (従来どおり 1 つ。タグ入力の Enter と既定の遺伝子)
     // lutAll: 小文字 -> index の配列 (貼り付け用。1 つの名前に複数の ID があれば全部)。
     //   遺伝子 ID は版 (ENSG...\.12) を除いた形でも引けるようにする。
-    var lut = {}, lutAll = {}, nameN = {}, nm = [];
+    var lut = {}, lutAll = {}, nm = [];
     var cand = [];   // {disp, low, keys, i}
     function addKey(k, i) {
       if (!k) return;
@@ -280,13 +284,12 @@
       if (ext) lut[ext.toLowerCase()] = i;
       addKey(ens, i); addKey(ext, i);
       if (/\.\d+$/.test(ens)) { addKey(noVer(ens), i); if (lut[noVer(ens).toLowerCase()] === undefined) lut[noVer(ens).toLowerCase()] = i; }
-      if (ext) nameN[ext.toLowerCase()] = (nameN[ext.toLowerCase()] || 0) + 1;
       var keys = [ens.toLowerCase(), noVer(ens).toLowerCase()];
       if (ext) keys.unshift(ext.toLowerCase());
-      cand.push({ disp: ext ? (ext + " (" + ens + ")") : ens, low: (ext + " " + ens).toLowerCase(), keys: keys, i: i });
+      cand.push({ disp: ext ? (ext + " | " + ens) : ens, low: (ext + " " + ens).toLowerCase(), keys: keys, i: i });
     }
-    // 候補・タグの hover に出す「名前 (ID)」
-    function candLabel(gi) { return nm[gi] ? nm[gi] + " (" + data.ens[gi] + ")" : String(data.ens[gi]); }
+    // 補完の候補と hover に出す「名前 | ID」(括弧は使わない。名前の無い遺伝子は ID だけ)
+    function candLabel(gi) { return nm[gi] ? nm[gi] + " | " + data.ens[gi] : String(data.ens[gi]); }
     // 貼り付けたリストを index に引く: {idxs, missing, multi:[{tok, idxs}]}
     // 名前でも ID でも (大文字小文字を問わず、ID の版 .N は付いていてもいなくても) 当たる。
     function resolveList(toks) {
@@ -302,13 +305,20 @@
     }
 
     // 遺伝子ごとに独立した y 軸 (下端 0、各遺伝子で最適スケール) を持つ小パネルを並べる。
-    // 列数はコンテナ幅から決め、幅が変わって列数が変わるときだけ描き直す。
+    // 列数はコンテナ幅から決め (1 行に最大 PANEL_MAXCOL)、幅が変わって列数が変わるときだけ描き直す。
+    // 列数は全グループでそろえる (遺伝子の少ないグループだけが横いっぱいに広がらないように、
+    // 左から詰めて右は空ける)。そろえる列数 = min(幅で入る列数, 一番遺伝子の多いグループの遺伝子数)。
     // 図は遺伝子のグループごとに 1 枚。図ごとに状態 st = {el, idxs, ncol, shown, title} を持つ。
-    var PANEL_ROW_H = 260, PANEL_VGAP = 56, PANEL_HGAP = 56;
+    var PANEL_ROW_H = 174, PANEL_VGAP = 56, PANEL_HGAP = 40, PANEL_MAXCOL = 5;
     var setStates = [];   // 遺伝子のグループの図の状態
-    function panelCols(width, n) {
-      var minW = Math.max(170, 70 + groups.length * 34);
-      return Math.max(1, Math.min(n, Math.floor((width + PANEL_HGAP) / (minW + PANEL_HGAP))));
+    function panelCols(width) {
+      var minW = Math.max(120, 30 + groups.length * 20);
+      return Math.max(1, Math.min(PANEL_MAXCOL, Math.floor((width + PANEL_HGAP) / (minW + PANEL_HGAP))));
+    }
+    function commonCols(width) {
+      var nmax = 1;
+      setStates.forEach(function (st) { if (st.idxs.length > nmax) nmax = st.idxs.length; });
+      return Math.min(panelCols(width), nmax);
     }
     function axId(i) { return i === 0 ? "" : String(i + 1); }
     function plotInto(st, idxs) {
@@ -323,7 +333,7 @@
       var shownGroups = groups.filter(function (g) {
         return data.samples.some(function (sm, s) { return data.groups[s] === g && on[sm]; });
       });
-      var n = idxs.length, ncol = panelCols(width, n), nrow = Math.ceil(n / ncol);
+      var n = idxs.length, ncol = commonCols(width), nrow = Math.ceil(n / ncol);
       st.ncol = ncol;
       st.shown = shownGroups;
       // タイトル付きの図 (遺伝子のグループ) は、タイトルの分だけ上を空ける
@@ -409,7 +419,7 @@
     box._picRefit = function () {
       allStates().forEach(function (st) {
         if (!st.idxs.length || !st.el.clientWidth) return;
-        if (panelCols(st.el.clientWidth, st.idxs.length) !== st.ncol) plotInto(st, st.idxs);
+        if (commonCols(st.el.clientWidth) !== st.ncol) plotInto(st, st.idxs);
       });
     };
 
@@ -486,12 +496,8 @@
       });
     }
 
-    // パネルの見出し。同じ名前に複数の ID があるときは ID も付けて区別する
-    function shortLabel(gi) {
-      var ext = nm[gi];
-      if (ext && nameN[String(ext).toLowerCase()] > 1) return ext + " (" + data.ens[gi] + ")";
-      return ext || data.ens[gi];
-    }
+    // パネルの見出し・タグは名前だけ (ID は hover と補完の候補にだけ出す。名前の無い遺伝子は ID)
+    function shortLabel(gi) { return nm[gi] || data.ens[gi]; }
 
     var SEP_RE = /[\s,;\/|　、，；／]/;
 
@@ -547,6 +553,8 @@
       g.ti.placeholder = "Group " + (sets.indexOf(g) + 1);
       g.blk.hidden = !g.idxs.length;
       plotInto(g.st, g.idxs);
+      // 遺伝子の数が変わって、そろえる列数が変わったら、ほかのグループも描き直す
+      if (box._picRefit) box._picRefit();
       gmsg();
     }
     function gchips(g) {
@@ -675,7 +683,7 @@
     }
     gaddBtn.addEventListener("click", function () { gadd("", [], [], true); gsave(); });
 
-    // 既定: pvalue 最小の 5 遺伝子を 1 つのグループに
+    // 既定: pvalue 最小の 10 遺伝子を 1 つのグループに
     function defaultIdxs() {
       return uniqueInOrder((data.default || []).map(function (e) { return lut[String(e).toLowerCase()]; })
         .filter(function (x) { return x !== undefined; }));
@@ -683,11 +691,22 @@
     var saved = null, old = null;
     try { var sv = localStorage.getItem(gkey); if (sv) saved = JSON.parse(sv); } catch (e) {}
     if (Array.isArray(saved)) {
+      // 前の版の既定のグループ (「Top 5 DEGs」で中身も既定の 5 遺伝子のまま) は、今の既定 (10 遺伝子) に置き換える。
+      // 中身を利用者が変えたグループは、タイトルも中身もそのまま残す。
+      var d0 = defaultIdxs().map(function (gi) { return String(data.ens[gi]); });
+      saved.forEach(function (x, si) {
+        if (!x || si !== 0 || String(x.title || "") !== PIC_TOP_GENES_TITLE_OLD) return;
+        var gs = (x.genes || []).map(String);
+        var same5 = gs.length === Math.min(5, d0.length) && gs.every(function (e, k) { return e === d0[k]; });
+        if (!same5 || (x.miss || []).length) return;
+        x.title = PIC_TOP_GENES_TITLE; x.genes = d0.slice();
+      });
       saved.forEach(function (x) {
         if (!x) return;
         var r = resolveList((x.genes || []).map(String));
         gadd(String(x.title || ""), r.idxs, (x.miss || []).map(String).concat(r.missing));
       });
+      gsave();
     } else {
       gadd(PIC_TOP_GENES_TITLE, defaultIdxs(), []);
       // 旧版で作ったグループ (貼り付けた文字) を引き継ぐ
@@ -1373,6 +1392,10 @@
       });
     }
     // ---- DEG heatmap: 列を隠す (値と並びは全サンプルのまま) ----
+    // 本体のセル (遺伝子 × サンプル、pic193_2 で 30 万個近く) は 1 つずつ触らず、表ごとの <style> の
+    // nth-child の規則で隠す・区切り線を引き直す (1 つずつ書き換えると 1 回の除外に 70 ms ほどかかっていた)。
+    // 見出し (サンプル名) の th は数が少ないので今までどおり 1 つずつ。
+    var hmSeq = 0;
     function exApplyHeatmap(tab) {
       var any = exAny();
       tab.querySelectorAll("table.pic-hm").forEach(function (tbl) {
@@ -1390,16 +1413,21 @@
           th.style.display = offCol[j] ? "none" : "";
           th.className = !any ? th._picCls0 : ("s" + (cstart[c.k] ? " gsep" : ""));
         });
-        tbl.querySelectorAll("tbody > tr").forEach(function (r) {
-          var ch = r.children;
+        if (!tbl.dataset.picHmx) tbl.dataset.picHmx = String(++hmSeq);
+        var sel = 'table.pic-hm[data-pic-hmx="' + tbl.dataset.picHmx + '"] tbody > tr > td:nth-child(';
+        var rules = [];
+        if (any) {
           cols.forEach(function (c, j) {
-            var td = ch[c.k]; if (!td) return;
-            var dsp = offCol[j] ? "none" : "";
-            if (td.style.display !== dsp) td.style.display = dsp;
-            var cl = (any ? cstart[c.k] : orig[c.k]) ? "gsep" : "";
-            if (td.className !== cl) td.className = cl;
+            var n = c.k + 1;
+            if (offCol[j]) rules.push(sel + n + "){display:none}");
+            else if (cstart[c.k] && !orig[c.k]) rules.push(sel + n + "){border-left:2px solid #6b7885}");
+            else if (!cstart[c.k] && orig[c.k]) rules.push(sel + n + "){border-left:none}");
           });
-        });
+        }
+        var st = tbl._picHmStyle;
+        if (!st) { st = tbl._picHmStyle = document.createElement("style"); document.head.appendChild(st); }
+        var css = rules.join("\n");
+        if (st.textContent !== css) st.textContent = css;
         tbl._picDirty = any;
       });
     }
@@ -1534,7 +1562,20 @@
       exNote(tab);
       tab._picExDirty = any;
     }
-    function exApplyAll() { document.querySelectorAll("section.pic-tab").forEach(exApplyTab); }
+    // 当てるのは見えているタブだけ。隠れているタブは印を付けておき、開いたとき (picOnTabShown) に当てる。
+    // (全タブに当てると、隠れたタブの表の書き換えと、Expression の描き直しで幅を読むときの再レイアウトで、
+    //  1 回の除外に 0.1〜0.5 秒かかっていた)
+    function exApplyAll() {
+      document.querySelectorAll("section.pic-tab").forEach(function (tab) {
+        if (tab.classList.contains("active")) { tab._picExStale = false; exApplyTab(tab); }
+        else tab._picExStale = true;
+      });
+    }
+    picOnTabShown = function (tab) {
+      if (!tab._picExStale) return;
+      tab._picExStale = false;
+      exApplyTab(tab);
+    };
 
     // 木を持たない旧来の group トグル (Genome split など): 表示の on/off だけ
     function applyLegacyGroupToggles(tab) {

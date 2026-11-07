@@ -652,10 +652,9 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
   sample_cols <- pic_reorder_vec(sample_cols, sample_order)
   sample_cols <- pic_group_contiguous(sample_cols, group_map, group_pal)
 
-  # 行の名前は遺伝子名 (無ければ ID)。ID は hover (title) で名前の後ろに添える。
+  # 行の名前は遺伝子名 (無ければ ID)。画面には ID を出さない (2026-11-07 ユーザーの指示)。
   ens <- as.character(d$ens_gene)
   labels <- pic_gene_label(if ("ext_gene" %in% colnames(d)) d$ext_gene else NULL, ens)
-  tips <- ifelse(labels == ens, labels, sprintf("%s (%s)", labels, ens))
   mat <- as.matrix(d[, sample_cols, drop = FALSE])
   storage.mode(mat) <- "double"
   z <- t(scale(t(mat)))                 # 行方向 z-score
@@ -664,7 +663,7 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
   # 行のみ hclust で並べ替え。列 (サンプル) は元の順番を維持。
   order_rows <- tryCatch(stats::hclust(stats::dist(z))$order, error = function(e) seq_len(nrow(z)))
   z <- z[order_rows, , drop = FALSE]
-  labels <- labels[order_rows]; tips <- tips[order_rows]
+  labels <- labels[order_rows]
   scols <- sample_cols
 
   zmax <- max(1, stats::quantile(abs(z), 0.98, names = FALSE, na.rm = TRUE))
@@ -688,13 +687,13 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
   # セル (行 × 列) の <td> をまとめて sprintf で作り、行ごとにつなぐ (1 セルずつ作るのと同じ文字列)。
   nr <- nrow(z); nc <- ncol(z)
   jj <- rep(seq_len(nc), each = nr); ii <- rep(seq_len(nr), times = nc)
-  e_lab <- html_escape(labels); e_tip <- html_escape(tips); e_g <- html_escape(gvec); e_s <- html_escape(scols)
+  e_lab <- html_escape(labels); e_g <- html_escape(gvec); e_s <- html_escape(scols)
   cls <- ifelse(gstart, "gsep", "")
   cells <- matrix(sprintf(
     '<td class="%s" data-gcol="%s" style="background:%s" title="Gene: %s&#10;Sample: %s&#10;Z: %.2f"></td>',
-    cls[jj], e_g[jj], as.vector(colmat), e_tip[ii], e_s[jj], as.vector(z)), nrow = nr)
+    cls[jj], e_g[jj], as.vector(colmat), e_lab[ii], e_s[jj], as.vector(z)), nrow = nr)
   tds <- do.call(paste0, lapply(seq_len(nc), function(j) cells[, j]))
-  rows <- sprintf('<tr><th class="g" title="%s">%s</th>%s</tr>', e_tip, e_lab, tds)
+  rows <- sprintf('<tr><th class="g">%s</th>%s</tr>', e_lab, tds)
 
   cap_id <- paste0(id_prefix, "heatmap_cap")
   # 左 = group 表示切替 / 右 = ヒートマップ本体 (タイトル右に Download csv + PNG ボタン)
