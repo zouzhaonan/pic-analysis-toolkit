@@ -390,13 +390,14 @@ pic_tab_panel <- function(sec_html, active = FALSE, controls = "", subs = NULL, 
     return(sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s%s</div><div class="%s">%s<div class="pic-view">%s</div></div></section>',
                    if (active) " active" else "", x$id, x$title, info, head_right, pane_cls, ctrl, inner2))
   }
-  # サブタブは各サブパネルの左コントロール内 (View 見出し + 縦並びボタン) で選択する。
+  # サブタブ (View) はタブの見出しの右に横並びのボタンで置く (左のカラムには置かない)。
+  # その右の .pic-head-methods には、report.js が method の選択リスト (Enrichment) を置く。
   chunks <- pic_split_inner(x$inner, vapply(subs, function(s) s$marker, character(1)))
   # 各サブタブの説明文を抽出し、どの View にかかるかを明記して info バッジに集約
   desc_parts <- character(0)
   for (i in seq_along(subs)) {
     pn <- pic_pull_notes(chunks[[i]])
-    chunks[[i]] <- pn$html
+    chunks[[i]] <- gsub("<!--SUBNAV-->", "", pn$html, fixed = TRUE)
     if (nzchar(pn$desc))
       desc_parts <- c(desc_parts, sprintf('<p class="pic-pop-sub">%s</p>%s', html_escape(subs[[i]]$label), pn$desc))
   }
@@ -404,30 +405,24 @@ pic_tab_panel <- function(sec_html, active = FALSE, controls = "", subs = NULL, 
   btns <- vapply(seq_along(subs), function(i) sprintf(
     '<button class="pic-subtabbtn%s" type="button" data-sub="%s">%s</button>',
     if (i == 1L) " active" else "", subs[[i]]$id, html_escape(subs[[i]]$label)), character(1))
-  subnav <- sprintf('<nav class="pic-subtabs"><h4>View</h4>%s</nav>', paste(btns, collapse = ""))
+  subnav <- sprintf('<nav class="pic-subtabs" aria-label="View">%s</nav><div class="pic-head-methods"></div>',
+                    paste(btns, collapse = ""))
   if (nzchar(shared_controls)) {
-    # QC など: 左パネル (.pic-ctrl) にサブタブ + 共有コントロール、右にサブパネル
+    # QC など: 左パネル (.pic-ctrl) に共有コントロール、右にサブパネル
     panels <- vapply(seq_along(subs), function(i) sprintf(
       '<div class="pic-subpanel%s" id="%s">%s</div>', if (i == 1L) " active" else "", subs[[i]]$id, chunks[[i]]), character(1))
-    body <- sprintf('<div class="pic-2pane"><aside class="pic-ctrl">%s%s</aside><div class="pic-view">%s</div></div>',
-                    subnav, shared_controls, paste(panels, collapse = ""))
+    body <- sprintf('<div class="pic-2pane"><aside class="pic-ctrl">%s</aside><div class="pic-view">%s</div></div>',
+                    shared_controls, paste(panels, collapse = ""))
   } else {
-    # DEG/Enrichment: サブパネル内のコントロール先頭 (<!--SUBNAV-->) にサブタブを差し込む
-    panels <- vapply(seq_along(subs), function(i) {
-      ck <- chunks[[i]]
-      if (grepl("<!--SUBNAV-->", ck, fixed = TRUE)) {
-        sp <- strsplit(ck, "<!--SUBNAV-->", fixed = TRUE)[[1]]
-        ck <- paste0(sp[[1]], subnav, if (length(sp) >= 2) paste(sp[-1], collapse = "<!--SUBNAV-->") else "")
-      } else {
-        ck <- paste0(subnav, ck)
-      }
-      sprintf('<div class="pic-subpanel%s" id="%s">%s</div>', if (i == 1L) " active" else "", subs[[i]]$id, ck)
-    }, character(1))
+    # DEG/Enrichment: サブパネルを丸ごと切り替える
+    panels <- vapply(seq_along(subs), function(i)
+      sprintf('<div class="pic-subpanel%s" id="%s">%s</div>', if (i == 1L) " active" else "", subs[[i]]$id, chunks[[i]]),
+      character(1))
     body <- sprintf('<div class="pic-subbody">%s</div>', paste(panels, collapse = ""))
   }
-  # ヘッダ: タイトル -> (info)。サブタブは左コントロールへ。
-  sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s</div>%s</section>',
-          if (active) " active" else "", x$id, x$title, info, body)
+  # ヘッダ: タイトル -> (info) -> View のボタン -> method のリスト
+  sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s%s</div>%s</section>',
+          if (active) " active" else "", x$id, x$title, info, subnav, body)
 }
 
 # タブ html から source ファイルのパス一覧を取得する。

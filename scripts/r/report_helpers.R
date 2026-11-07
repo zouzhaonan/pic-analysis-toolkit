@@ -411,7 +411,10 @@ color_contrast <- function(contrast, group_pal) {
 # items: list(list(id=, label=, html=, checked=logical), ...)
 # ブロックが 1 つだけなら選択 UI は付けずにそのまま表示する。
 # ctrl_extra: 左パネルの末尾に足す HTML (サンプル除外のパネルなど)。既定 "" で従来どおり。
-build_select_group <- function(items, prefix = "", ctrl_title = NULL, view_header = "", ctrl_extra = "") {
+# method_src = TRUE: 選択 (見出し + ラジオ) を .pic-method-src で包む。report.js がこれを隠し、
+#   タブの見出しの右に置くリスト (select) から操作する (Enrichment の method)。
+build_select_group <- function(items, prefix = "", ctrl_title = NULL, view_header = "", ctrl_extra = "",
+                               method_src = FALSE) {
   items <- Filter(function(it) !is.null(it$html) && nzchar(it$html), items)
   if (length(items) == 0) return(if (nzchar(prefix) || nzchar(view_header))
     sprintf('<div class="pic-select-item">%s%s</div>', view_header, prefix) else "")
@@ -426,10 +429,12 @@ build_select_group <- function(items, prefix = "", ctrl_title = NULL, view_heade
     sprintf('<div class="pic-select-item" id="%s"%s>%s</div>', html_escape(it$id), hid, it$html)
   }, character(1))
   head_html <- if (!is.null(ctrl_title)) sprintf('<h4>%s</h4>', html_escape(ctrl_title)) else ""
-  # 左 = サブタブ + ラジオ選択 / 右 = タイトル行 + (prefix +) 選択ブロック
-  paste0('<div class="pic-selgrid"><div class="pic-selgrid-ctrl"><!--SUBNAV-->', head_html,
-         '<div class="pic-select-bar">', paste(bar, collapse = ""),
-         '</div>', ctrl_extra, '</div><div class="pic-selgrid-view">', view_header, prefix,
+  sel_html <- paste0(head_html, '<div class="pic-select-bar">', paste(bar, collapse = ""), '</div>')
+  if (isTRUE(method_src))
+    sel_html <- sprintf('<div class="pic-method-src" data-title="%s">%s</div>',
+                        html_escape(if (is.null(ctrl_title)) "Method" else ctrl_title), sel_html)
+  # 左 = ラジオ選択 / 右 = タイトル行 + (prefix +) 選択ブロック
+  paste0('<div class="pic-selgrid"><div class="pic-selgrid-ctrl"><!--SUBNAV-->', sel_html, ctrl_extra, '</div><div class="pic-selgrid-view">', view_header, prefix,
          paste(blk, collapse = ""), '</div></div>')
 }
 
@@ -541,12 +546,13 @@ build_matrix_group <- function(rows, cols, cell_html, row_title = "Comparison", 
     }
   }
   if (length(cells) == 0) return("")
-  # 左 (.pic-matrix-sel) = サブタブ + Comparison(行列) + Method(見出し+縦並び)、右 = プロット
+  # 左 (.pic-matrix-sel) = Comparison(行列) (+ 隠した Method)、右 = プロット
   comp_hdr <- if (nzchar(gm)) sprintf('<h4>%s</h4>', html_escape(row_title)) else ""
+  # 列 (method) の選択は .pic-method-src で包む。report.js が隠し、タブの見出しの右のリストから操作する。
   sprintf(paste0('<div class="pic-matrix"><div class="pic-matrix-sel"><!--SUBNAV-->%s%s',
-                 '<h4>%s</h4><div class="pic-select-bar">%s</div>%s</div>',
+                 '<div class="pic-method-src" data-title="%s"><h4>%s</h4><div class="pic-select-bar">%s</div></div>%s</div>',
                  '<div class="pic-matrix-cells">%s%s</div></div>'),
-          comp_hdr, row_sel, html_escape(col_title), paste(col_bar, collapse = ""), ctrl_extra,
+          comp_hdr, row_sel, html_escape(col_title), html_escape(col_title), paste(col_bar, collapse = ""), ctrl_extra,
           view_header, paste(cells, collapse = ""))
 }
 

@@ -430,14 +430,10 @@ build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, g
   }, character(1))
 
   cap_id <- paste0(id_prefix, "cor_cap")
-  # ダウンロード 2 種 (PCA と同じ): all samples = deseq2 が書いた CSV をそのまま /
-  # selected = 除外していないサンプルだけの部分行列 (report.js が作る)。
-  dl_all <- sub(">Download CSV<", ">Download CSV (all samples)<",
-                src_note(report_rel_path(f, proj_dir)), fixed = TRUE)
+  # ダウンロードは deseq2 が書いた CSV (全サンプル) をそのまま。サンプルを外しても中身は変えない (QC と同じ)。
   paste0(
-    dl_all,
+    src_note(report_rel_path(f, proj_dir)),
     sprintf('<span class="pic-headact">%s</span>', png_button(cap_id, "sample_correlation")),
-    '<span class="pic-headact"><a class="pic-dlcsv pic-cor-dlsel" role="button" tabindex="0">Download CSV (selected)</a></span>',
     '<p class="pic-note">Sample-to-sample correlation. Replicates of the same group should correlate most strongly ',
     '(<b style="color:#b2182b">red</b>); a sample that stands out from its group (more <b style="color:#2166ac">blue</b>) may be an outlier.</p>',
     sprintf('<div class="pic-capbox" id="%s"><div class="pic-cor-wrap"><table class="pic-cor"><thead>%s</thead><tbody>%s</tbody></table></div></div>',
