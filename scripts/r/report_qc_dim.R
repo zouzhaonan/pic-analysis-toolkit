@@ -430,14 +430,10 @@ build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, g
   }, character(1))
 
   cap_id <- paste0(id_prefix, "cor_cap")
-  # ダウンロード 2 種 (PCA と同じ): all samples = deseq2 が書いた CSV をそのまま /
-  # selected = 除外していないサンプルだけの部分行列 (report.js が作る)。
-  dl_all <- sub(">Download CSV<", ">Download CSV (all samples)<",
-                src_note(report_rel_path(f, proj_dir)), fixed = TRUE)
+  # ダウンロードは deseq2 が書いた CSV (全サンプル) をそのまま。サンプルを外しても中身は変えない (QC と同じ)。
   paste0(
-    dl_all,
+    src_note(report_rel_path(f, proj_dir)),
     sprintf('<span class="pic-headact">%s</span>', png_button(cap_id, "sample_correlation")),
-    '<span class="pic-headact"><a class="pic-dlcsv pic-cor-dlsel" role="button" tabindex="0">Download CSV (selected)</a></span>',
     '<p class="pic-note">Sample-to-sample correlation. Replicates of the same group should correlate most strongly ',
     '(<b style="color:#b2182b">red</b>); a sample that stands out from its group (more <b style="color:#2166ac">blue</b>) may be an outlier.</p>',
     sprintf('<div class="pic-capbox" id="%s"><div class="pic-cor-wrap"><table class="pic-cor"><thead>%s</thead><tbody>%s</tbody></table></div></div>',
@@ -656,13 +652,9 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
   sample_cols <- pic_reorder_vec(sample_cols, sample_order)
   sample_cols <- pic_group_contiguous(sample_cols, group_map, group_pal)
 
-  labels <- if ("ext_gene" %in% colnames(d)) {
-    lab <- as.character(d$ext_gene)
-    lab[is.na(lab) | lab == ""] <- as.character(d$ens_gene)[is.na(lab) | lab == ""]
-    lab
-  } else {
-    as.character(d$ens_gene)
-  }
+  # 行の名前は遺伝子名 (無ければ ID)。画面には ID を出さない (2026-11-07 ユーザーの指示)。
+  ens <- as.character(d$ens_gene)
+  labels <- pic_gene_label(if ("ext_gene" %in% colnames(d)) d$ext_gene else NULL, ens)
   mat <- as.matrix(d[, sample_cols, drop = FALSE])
   storage.mode(mat) <- "double"
   z <- t(scale(t(mat)))                 # 行方向 z-score
@@ -711,10 +703,11 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
              src_note(report_rel_path(f, proj_dir)), png_button(cap_id, "deg_heatmap")),
     '<p class="pic-note">Each row is a gene, each column a sample (grouped by color). ',
     'Cell color is the gene&rsquo;s z-score across samples &mdash; <b style="color:#b2182b">red</b> is higher than that gene&rsquo;s average, ',
-    '<b style="color:#2166ac">blue</b> is lower. Genes are ordered by similarity. Hover a cell for the gene, sample, and z-score.</p>',
+    '<b style="color:#2166ac">blue</b> is lower. Genes are ordered by similarity.</p>',
     sprintf('<div class="pic-capbox" id="%s">', cap_id),
-    sprintf('<div class="pic-hm-scroll"><table class="pic-hm"><thead>%s</thead><tbody>%s</tbody></table></div>',
-            header, paste(rows, collapse = "")),
+    # data-zmax: 色の端の z 値 (PNG の色の凡例に使う)
+    sprintf('<div class="pic-hm-scroll"><table class="pic-hm" data-zmax="%s"><thead>%s</thead><tbody>%s</tbody></table></div>',
+            format(signif(zmax, 3), trim = TRUE), header, paste(rows, collapse = "")),
     '</div>'
   )
   # 左 (control) の先頭に <!--SUBNAV--> を置き、pic_tab_panel がサブタブ選択を差し込む。

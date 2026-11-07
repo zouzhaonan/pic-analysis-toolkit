@@ -28,15 +28,16 @@ section.pic-tab.active{display:block}
 /* セクション内サブタブ */
 /* サブタブは左コントロール内 (View 見出し + 縦並びボタン) で選択 */
 .pic-subbody{min-width:0}
-.pic-subtabs{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
-.pic-subtabbtn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--muted);font-size:13px;font-weight:600;padding:7px 16px;cursor:pointer;border-radius:6px;text-align:left;white-space:nowrap}
-.pic-subtabbtn:hover{background:#eef3fb;color:var(--accent)}
-.pic-subtabbtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+/* View の選択 (タブの見出しの右): つながった区切りのタブ (segmented)。上の段のタブより一段小さく */
+.pic-subtabs{display:inline-flex;flex-wrap:wrap;gap:0;border:1px solid var(--accent);border-radius:7px;overflow:hidden;margin-left:14px}
+.pic-subtabbtn{appearance:none;border:none;border-left:1px solid var(--accent);border-radius:0;background:#fff;color:var(--accent);font-size:12.5px;font-weight:600;font-family:inherit;padding:4px 13px;cursor:pointer;white-space:nowrap}
+.pic-subtabbtn:first-child{border-left:none}
+.pic-subtabbtn:hover{background:#eef3fb}
+.pic-subtabbtn.active{background:var(--accent);color:#fff}
 .pic-subpanel{display:none}
 .pic-subpanel.active{display:block}
 /* 左コントロール内の見出し (View / Groups / Comparison / Method / Genes) を統一 */
 .pic-ctrl h4,.pic-subtabs h4,.pic-hmsel-ctrl h4,.pic-degsel-ctrl h4,.pic-selgrid-ctrl h4,.pic-matrix-sel h4,.pic-expr-side h4{margin:2px 0 8px;color:var(--fg);font-size:13px;font-weight:700;text-transform:none;letter-spacing:normal;font-family:inherit}
-@media(max-width:900px){.pic-subtabs{flex-direction:row;flex-wrap:wrap}}
 /* info (丸 i) + hover 吹き出し */
 .pic-info{position:relative;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--accent);color:var(--accent);font-size:12px;font-weight:700;font-style:italic;font-family:Georgia,serif;cursor:help;flex:none}
 .pic-info-pop{display:none;position:absolute;left:26px;top:-4px;z-index:80;width:min(520px,70vw);max-height:min(80vh,560px);overflow-y:auto;background:#1f2933;color:#fff;font-weight:400;font-style:normal;font-size:13px;line-height:1.5;padding:10px 13px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
@@ -100,6 +101,7 @@ h4{font-size:14px;margin:6px 0;color:var(--muted)}
 .pic-plot-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
 .pic-plot-cell{border:1px solid var(--line);border-radius:8px;padding:8px}
 .pic-plot{width:100%;height:420px}
+.pic-hscroll{overflow-x:auto;overflow-y:hidden}
 .pic-pca-scree-row .pic-plot{height:180px}
 .pic-pca-scree-row .pic-plot-cell{padding:4px 8px}
 .pic-pca-scree-row h4{margin:2px 0 2px}
@@ -155,6 +157,9 @@ details[open] summary{border-bottom:1px solid var(--line);margin-bottom:8px}
 .pic-expr-tip-none{color:#cdd7e2}
 .pic-expr-msg{color:#b45309;font-size:13px;min-height:1em;margin:2px 0}
 .pic-expr-msg+h4{margin-top:12px}
+/* 文言は出さないので、空の欄は詰める (左のカラムの一番上の Groups を、ほかのタブと同じ高さに) */
+.pic-expr-msg:empty{display:none}
+.pic-expr-msg:empty+h4{margin-top:2px}
 .pic-expr-plots{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
 
 /* 複数ブロックをチェックボックスで表示選択 */
@@ -297,9 +302,6 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-excl-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 4px;padding:6px 8px;border:1px solid #f0c987;background:#fff8eb;border-radius:6px;font-size:12px;color:#7a4a05}
 .pic-excl-btn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--accent);font-size:12px;font-weight:600;font-family:inherit;padding:3px 10px;border-radius:5px;cursor:pointer}
 .pic-excl-btn:hover{background:#eef3fb}
-.pic-excl-note{margin:0 0 12px;padding:8px 12px;border:1px solid #a9cbe9;border-left:4px solid var(--accent);background:#f3f8fd;border-radius:6px;font-size:13px;line-height:1.5;color:#163a5c}
-.pic-excl-note p{margin:3px 0}
-.pic-excl-note.pic-excl-warn{border-color:#f0c987;border-left-color:#d97706;background:#fff8eb;color:#5c3a06}
 .pic-excl-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
 /* 相関の色の凡例 (カラーバーと数字)。除外して色の幅を引き直したときは枠で示す */
 .pic-cor-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:6px 0 2px;font-size:12px;color:var(--muted)}
@@ -329,3 +331,59 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-expr-gmsg{font-size:12px;line-height:1.45;margin:0 0 4px}
 .pic-expr-gmsg:empty{display:none}
 .pic-expr-gtitle{font-size:16px;font-weight:700;color:var(--fg);margin:0 0 4px}
+
+/* タブの見出しの右: View のボタン + method のリスト */
+.pic-head-methods{display:flex;align-items:center;gap:8px}
+.pic-head-methods:empty{display:none}
+.pic-method-sel{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+.pic-method-sel[hidden]{display:none!important}
+.pic-method-sel select{font:inherit;font-weight:600;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 8px;background:#fff;cursor:pointer}
+.pic-method-sel select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(33,102,172,.12)}
+.pic-method-src{display:none!important}
+/* Expression のグループの入力欄 (タグ + 補完) */
+.pic-expr-gset .pic-expr-tagbox{min-height:36px;padding:4px 6px;gap:4px}
+.pic-expr-gset .pic-expr-chip{font-size:12px;padding:2px 5px 2px 9px}
+.pic-expr-gset .pic-expr-input{min-width:110px;font-size:13px}
+.pic-expr-gset-sum .pic-expr-miss,.pic-expr-gset-sum .pic-expr-multi{font-size:11px;margin-top:2px}
+.pic-expr-miss-x{border:none;background:none;color:#b45309;cursor:pointer;font-size:12px;padding:0 0 0 4px}
+.pic-expr-gsets{margin:0 0 4px}
+/* 左のカラム: 一番上の Groups の下に、各タブの選択を少し離して置く */
+.pic-expr-gplots,.pic-expr-plots{display:block}
+.pic-expr-plots>.pic-expr-gblock:first-child{border-top:none;padding-top:0}
+/* ---- 左のカラム: 全タブで同じ部品・同じ余白 (2026-11-07) ----
+   QC / Correlation / PCA (.pic-ctrl)、DEG heatmap (.pic-hmsel-ctrl)、M-A / Volcano (.pic-degsel-ctrl)、
+   Expression (.pic-expr-side)、GSEA (.pic-matrix-sel)、ORA (.pic-selgrid-ctrl)。
+   一番上に Groups (群とサンプルの除外)、その下に各タブに固有のもの (Comparison・Gene groups など)。 */
+.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side{position:sticky;top:60px;align-self:start;box-sizing:border-box;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:13px}
+.pic-ctrl h4,.pic-hmsel-ctrl h4,.pic-degsel-ctrl h4,.pic-selgrid-ctrl h4,.pic-matrix-sel h4,.pic-expr-side h4{margin:2px 0 8px;font-size:13px;font-weight:700;color:var(--fg);text-transform:none;letter-spacing:normal;font-family:inherit}
+:is(.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side) :is(.pic-tree,.pic-tgl-list)+h4,
+:is(.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side) :is(.pic-tree,.pic-tgl-list)+.pic-expr-gsets{margin-top:16px}
+:is(.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side) .pic-expr-gsets>h4{margin-top:2px}
+@media(max-width:900px){.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side{position:static;max-height:none}}
+/* ---- Comparison の表 (DEG・GSEA。数を出さない版): ラジオは出さず、マスそのものを押して選ぶ (2026-11-07) ----
+   マスは 20px の正方形 (--cmx)。字の大きさ (13px) は変えず、行の高さ (字の行 15.6px) と縦書きの列名の幅
+   (line-height を行名と同じ 1.2 にして 15.6px) がどちらも入る一番小さい大きさ。字の両脇に 2px ずつ残る。
+   行名は左右、列名は上下に同じ余白 (--cmx-pad)。 */
+table.pic-cmatrix.pic-cmx-nocount{--cmx:20px;--cmx-pad:6px}
+.pic-cmatrix.pic-cmx-nocount tbody th,.pic-cmatrix.pic-cmx-nocount tbody td{box-sizing:border-box;height:var(--cmx);padding-top:0;padding-bottom:0;line-height:1.2}
+.pic-cmatrix.pic-cmx-nocount th.pic-cmx-rh{padding-left:var(--cmx-pad);padding-right:var(--cmx-pad)}
+.pic-cmatrix.pic-cmx-nocount th.pic-cmx-rh span{display:block}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-h{box-sizing:border-box;width:var(--cmx);min-width:var(--cmx);max-width:var(--cmx);padding:var(--cmx-pad) 0;line-height:0}
+/* 縦書きの列名は block にして行の箱 (下の余り) を作らない。上下の余白は th の padding だけになる */
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-h span{display:block;line-height:1.2;margin:0 auto}
+.pic-cmatrix.pic-cmx-nocount td.pic-cmx-cell,.pic-cmatrix.pic-cmx-nocount td.pic-cmx-empty{box-sizing:border-box;width:var(--cmx);min-width:var(--cmx);max-width:var(--cmx);padding:0;position:relative}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell label{position:absolute;inset:0;display:block;cursor:pointer}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell input:disabled+*,.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell:has(input:disabled) label{cursor:default}
+/* 選ばれているマスの印は、マスを埋める label の ::after に描く。td の box-shadow は border-collapse の
+   罫線の半分に掛かって左上へずれるため使わない。::after は罫線の内側にちょうど収まる */
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell label::after{content:"";position:absolute;inset:0;pointer-events:none;box-sizing:border-box}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell.pic-cmx-heat.pic-cmx-hit,.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell.pic-cmx-heat:hover,
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell.pic-cmx-sel,.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell:hover{box-shadow:none}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell:hover label::after{box-shadow:inset 0 0 0 2px rgba(23,81,143,.5)}
+/* 選ばれているマス: 行名と列名を強調 (薄い青の背景 + 行名は左、列名は下に青い線。pic-cmx-selhd は report.js が付ける)、
+   マスの真ん中に白い点 (白いマスでも見えるよう黒い縁)。どの色のマスの上でも分かる (2026-11-07 ユーザーが案 B を選んだ) */
+.pic-cmatrix.pic-cmx-nocount th.pic-cmx-rh.pic-cmx-selhd{background:#cfe2f6;box-shadow:inset 3px 0 0 #17518f}
+.pic-cmatrix.pic-cmx-nocount th.pic-cmx-h.pic-cmx-selhd{background:#cfe2f6;box-shadow:inset 0 -3px 0 #17518f}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell.pic-cmx-sel label{background:radial-gradient(circle at 50% 50%,#fff 0 3.2px,#111827 3.4px 4.6px,transparent 4.8px)}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell:has(input:focus-visible) label{outline:1px dashed #1f2933;outline-offset:-5px}

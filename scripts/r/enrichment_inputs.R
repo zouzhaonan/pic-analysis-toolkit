@@ -148,6 +148,11 @@ load_precomputed_deg_clusters <- function(cluster_file, stats, gene_col = "human
         human_gene_symbol = as.character(.data[[use_col]]),
         ens_gene = df_ens
       )
+    # deseq2 は名前の無い遺伝子の ext_gene を ID で埋める (deseq2_data.R の pic_fill_gene_name)。
+    # 埋めた ID は遺伝子名ではないので、前と同じく ORA の遺伝子に入れない (GeneRatio などを変えない)。
+    if (identical(use_col, "ext_gene")) {
+      mapped$human_gene_symbol[which(mapped$human_gene_symbol == mapped$ens_gene)] <- NA_character_
+    }
   } else if ("human_gene_symbol" %in% colnames(df)) {
     mapped <- df |>
       dplyr::transmute(

@@ -103,7 +103,8 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
   } else list()
   gjobs <- lapply(gbins, function(idx) { force(idx); function()
     lapply(gcsvs[idx], function(g) pic_gsea_job(g$csv, g$method, group_pal, out_dir)) })
-  ojobs <- lapply(omdirs, function(m) { force(m); function() pic_ora_item(m, project) })
+  ora_cluster_n <- pic_cluster_gene_counts(desc$deseq2_dir, project)
+  ojobs <- lapply(omdirs, function(m) { force(m); function() pic_ora_item(m, project, cluster_n = ora_cluster_n) })
   all_jobs <- c(jobs, gjobs, ojobs)
   n_s <- length(jobs)
   # 先に始める順: heatmap (行の hclust が一番長い)、Expression、MA/volcano、enrichment、残りの節
@@ -266,8 +267,8 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   data_tabs <- build_analysis_data_tabs(reg, desc, out_dir, out_dir, "", fdr,
                                         msum, group_map, group_pal, sample_order, group_order,
                                         stats, deg_counts, tmp_dir)
-  # サンプル除外 (report.js) が使う情報: 状態を localStorage に保存する鍵 (project + out_dir) と、
-  # 「Download CSV (selected)」のファイル名 (project)。
+  # report.js が使う情報: 「Download CSV (selected)」のファイル名 (project) など。
+  # (状態は保存しないので、localStorage の鍵には使わない)
   reg$meta <- list(
     project = project, run = run, genome = genome,
     out_dir = tryCatch(normalizePath(out_dir, winslash = "/", mustWork = FALSE), error = function(e) out_dir))
@@ -390,13 +391,14 @@ pic_tab_panel <- function(sec_html, active = FALSE, controls = "", subs = NULL, 
     return(sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s%s</div><div class="%s">%s<div class="pic-view">%s</div></div></section>',
                    if (active) " active" else "", x$id, x$title, info, head_right, pane_cls, ctrl, inner2))
   }
-  # サブタブは各サブパネルの左コントロール内 (View 見出し + 縦並びボタン) で選択する。
+  # サブタブ (View) はタブの見出しの右に横並びのボタンで置く (左のカラムには置かない)。
+  # その右の .pic-head-methods には、report.js が method の選択リスト (Enrichment) を置く。
   chunks <- pic_split_inner(x$inner, vapply(subs, function(s) s$marker, character(1)))
   # 各サブタブの説明文を抽出し、どの View にかかるかを明記して info バッジに集約
   desc_parts <- character(0)
   for (i in seq_along(subs)) {
     pn <- pic_pull_notes(chunks[[i]])
-    chunks[[i]] <- pn$html
+    chunks[[i]] <- gsub("<!--SUBNAV-->", "", pn$html, fixed = TRUE)
     if (nzchar(pn$desc))
       desc_parts <- c(desc_parts, sprintf('<p class="pic-pop-sub">%s</p>%s', html_escape(subs[[i]]$label), pn$desc))
   }
@@ -404,30 +406,24 @@ pic_tab_panel <- function(sec_html, active = FALSE, controls = "", subs = NULL, 
   btns <- vapply(seq_along(subs), function(i) sprintf(
     '<button class="pic-subtabbtn%s" type="button" data-sub="%s">%s</button>',
     if (i == 1L) " active" else "", subs[[i]]$id, html_escape(subs[[i]]$label)), character(1))
-  subnav <- sprintf('<nav class="pic-subtabs"><h4>View</h4>%s</nav>', paste(btns, collapse = ""))
+  subnav <- sprintf('<nav class="pic-subtabs" aria-label="View">%s</nav><div class="pic-head-methods"></div>',
+                    paste(btns, collapse = ""))
   if (nzchar(shared_controls)) {
-    # QC など: 左パネル (.pic-ctrl) にサブタブ + 共有コントロール、右にサブパネル
+    # QC など: 左パネル (.pic-ctrl) に共有コントロール、右にサブパネル
     panels <- vapply(seq_along(subs), function(i) sprintf(
       '<div class="pic-subpanel%s" id="%s">%s</div>', if (i == 1L) " active" else "", subs[[i]]$id, chunks[[i]]), character(1))
-    body <- sprintf('<div class="pic-2pane"><aside class="pic-ctrl">%s%s</aside><div class="pic-view">%s</div></div>',
-                    subnav, shared_controls, paste(panels, collapse = ""))
+    body <- sprintf('<div class="pic-2pane"><aside class="pic-ctrl">%s</aside><div class="pic-view">%s</div></div>',
+                    shared_controls, paste(panels, collapse = ""))
   } else {
-    # DEG/Enrichment: サブパネル内のコントロール先頭 (<!--SUBNAV-->) にサブタブを差し込む
-    panels <- vapply(seq_along(subs), function(i) {
-      ck <- chunks[[i]]
-      if (grepl("<!--SUBNAV-->", ck, fixed = TRUE)) {
-        sp <- strsplit(ck, "<!--SUBNAV-->", fixed = TRUE)[[1]]
-        ck <- paste0(sp[[1]], subnav, if (length(sp) >= 2) paste(sp[-1], collapse = "<!--SUBNAV-->") else "")
-      } else {
-        ck <- paste0(subnav, ck)
-      }
-      sprintf('<div class="pic-subpanel%s" id="%s">%s</div>', if (i == 1L) " active" else "", subs[[i]]$id, ck)
-    }, character(1))
+    # DEG/Enrichment: サブパネルを丸ごと切り替える
+    panels <- vapply(seq_along(subs), function(i)
+      sprintf('<div class="pic-subpanel%s" id="%s">%s</div>', if (i == 1L) " active" else "", subs[[i]]$id, chunks[[i]]),
+      character(1))
     body <- sprintf('<div class="pic-subbody">%s</div>', paste(panels, collapse = ""))
   }
-  # ヘッダ: タイトル -> (info)。サブタブは左コントロールへ。
-  sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s</div>%s</section>',
-          if (active) " active" else "", x$id, x$title, info, body)
+  # ヘッダ: タイトル -> (info) -> View のボタン -> method のリスト
+  sprintf('<section class="pic-tab%s" id="%s"><div class="pic-tab-head"><h2>%s</h2>%s%s</div>%s</section>',
+          if (active) " active" else "", x$id, x$title, info, subnav, body)
 }
 
 # タブ html から source ファイルのパス一覧を取得する。
@@ -824,7 +820,7 @@ section_genome_split <- function(summary_df, src = "", geno_map = NULL,
   note <- paste0('<p class="pic-note">Each library was split between the two reference genomes with ',
                  '<b>xengsort</b>. Each bar is one sample (100&thinsp;% stacked): <b>graft</b> / <b>host</b> are reads ',
                  'assigned uniquely to each genome; <b>both</b> map to either, <b>ambiguous</b> are undecided, ',
-                 '<b>neither</b> map to no genome. A clean split is dominated by graft + host. Hover a segment for counts.</p>')
+                 '<b>neither</b> map to no genome. A clean split is dominated by graft + host.</p>')
   parts <- c('<section id="genomesplit"><h2>Genome split</h2>', note, src_note(src))
   if (!have) {
     parts <- c(parts, '<p>classification summary not found.</p></section>')

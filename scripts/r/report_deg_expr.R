@@ -82,9 +82,9 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     numerator <- group_name_of(numerator, group_pal); denominator <- group_name_of(denominator, group_pal)
     flab <- format_contrast_file_label(a)
 
-    gene <- if ("ext_gene" %in% colnames(cs)) {
-      g <- as.character(cs$ext_gene); g[is.na(g) | g == ""] <- as.character(cs$ens_gene)[is.na(g) | g == ""]; g
-    } else as.character(cs$ens_gene)
+    # 点の名前は遺伝子名 (無ければ ID)。画面には ID を出さない (2026-11-07 ユーザーの指示)。
+    ens <- as.character(cs$ens_gene)
+    gene <- pic_gene_label(if ("ext_gene" %in% colnames(cs)) cs$ext_gene else NULL, ens)
 
     lfc <- suppressWarnings(as.numeric(cs$log2FoldChange))
     padj <- suppressWarnings(as.numeric(cs$padj))
@@ -152,8 +152,7 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
   note <- paste0(
     '<p class="pic-note">Each gene is one point. The <b>M-A plot</b> shows the log<sub>2</sub> fold change vs. mean expression; ',
     'the <b>Volcano plot</b> shows it vs. statistical significance (&minus;log<sub>10</sub> p-value). ',
-    '<b style="color:#d7301f">Red</b> / <b style="color:#2166ac">blue</b> points are significantly up / down (p.adjust below the FDR); grey is not significant. ',
-    'Hover a point for its gene name, log<sub>2</sub> fold change and p.adjust.</p>')
+    '<b style="color:#d7301f">Red</b> / <b style="color:#2166ac">blue</b> points are significantly up / down (p.adjust below the FDR); grey is not significant.</p>')
   # 右パネル先頭: 説明文 (info へ集約) + タイトル行 (Download csv を隣に)
   view_head <- paste0(note, sub_head('M-A &amp; Volcano Plot', src_note(stats_src)))
 
@@ -174,8 +173,9 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     sprintf('<div class="pic-degsel"><div class="pic-degsel-ctrl"><!--SUBNAV-->%s</div><div class="pic-degsel-view">%s%s</div></div>', ctrl_html, view_head, view_body)
   } else if (nzchar(matrix_html)) {
     # 左 = サブタブ + contrast 行列 (radio)、右 = タイトル行 + MA/volcano ブロック
-    paste0('<div class="pic-degsel"><div class="pic-degsel-ctrl"><!--SUBNAV--><h4>Comparison</h4>',
-           matrix_html, ctrl_html, '</div><div class="pic-degsel-view">', view_head,
+    # 左の並び: 群とサンプルの除外 (全タブ共通) を一番上、その下にこのタブの Comparison
+    paste0('<div class="pic-degsel"><div class="pic-degsel-ctrl"><!--SUBNAV-->', ctrl_html, '<h4>Comparison</h4>',
+           matrix_html, '</div><div class="pic-degsel-view">', view_head,
            paste(blocks, collapse = ""), '</div></div>')
   } else {
     sprintf('<div class="pic-degsel"><div class="pic-degsel-ctrl"><!--SUBNAV-->%s</div><div class="pic-degsel-view">%s%s</div></div>',
@@ -255,13 +255,13 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL,
   }
   if (length(blocks) == 0) return("")
   paste0('<p class="pic-note">Average read coverage along the gene body, scaled from the transcription start (TSS) to the end (TES) ',
-         'with short flanks on each side. Each line is one sample, colored by group &mdash; click a group in the legend to show or hide it. ',
+         'with short flanks on each side. Each line is one sample, colored by group. ',
          'This shows where reads accumulate along genes (e.g. a 3&prime; bias).</p><div class="pic-plot-grid">',
          paste(blocks, collapse = ""), '</div>')
 }
 
 # 正規化カウント (normalizedCountTable) を id 付きで登録する (HTML に埋め込む用)。
-# stats があれば pvalue 最小の 5 遺伝子を default として保持する。
+# stats があれば pvalue 最小の 10 遺伝子を default として保持する。
 register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pal, stats = NULL, sample_order = NULL, group_order = NULL) {
   f <- file.path(deseq2_dir, sprintf("normalizedCountTable_%s.csv", project))
   if (!file.exists(f)) return(FALSE)
@@ -281,9 +281,10 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
   mat <- as.matrix(d[, sample_cols, drop = FALSE]); storage.mode(mat) <- "double"
   mat <- round(mat, 2)
   ens_all <- as.character(d$ens_gene)
-  ext <- if ("ext_gene" %in% colnames(d)) as.character(d$ext_gene) else rep(NA_character_, nrow(d))
+  # 名前が空 (古い出力) なら ID で埋める (deseq2 の出力と同じ規則)。配列の形 (ens / ext の 2 本) は変えない。
+  ext <- pic_gene_label(if ("ext_gene" %in% colnames(d)) d$ext_gene else NULL, ens_all)
 
-  # default = pvalue 最小の 5 遺伝子 (contrast 横断で遺伝子ごとに min pvalue)、
+  # default = pvalue 最小の 10 遺伝子 (contrast 横断で遺伝子ごとに min pvalue)、
   # および contrast ごとの padj (q-value, hover 表示用)。
   default_ens <- character(0)
   contrasts <- character(0)
@@ -296,7 +297,7 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
       if (nrow(st) > 0) {
         agg <- stats::aggregate(pvalue ~ ens_gene, data = st, FUN = min)
         cand <- as.character(agg$ens_gene[order(agg$pvalue)])
-        default_ens <- head(cand[cand %in% ens_all], 5)
+        default_ens <- head(cand[cand %in% ens_all], 10)
       }
     }
     if ("padj" %in% colnames(stats)) {
@@ -346,20 +347,13 @@ build_expression_section <- function(reg, deseq2_dir, project, group_map, group_
   sprintf(paste0(
     '<section id="%s"><h2>%s</h2>',
     '<p class="pic-note">Compare the expression of individual genes across sample groups. ',
-    'Start typing a gene ID or symbol and pick it from the list to add it as a tag; ',
-    'click <b>&times;</b> on a tag (or press Backspace) to remove it. The plot updates automatically. ',
     'Each gene gets its own panel with its own y-axis scale (starting at 0), so compare heights within a panel, not across panels. ',
     'Each box shows the distribution of normalized counts for one group; dots are individual samples.</p>',
     '<p class="pic-note">A gene name turns <b style="color:#d7301f">red</b> when its adjusted p-value (padj) ',
-    'is below the significance threshold (FDR = %s) in at least one comparison between the shown groups. ',
-    'Hover over a gene name to see &minus;log<sub>10</sub> p-value and &minus;log<sub>10</sub> padj for every comparison between the shown groups (larger = more significant). Use the Groups panel to narrow the groups and comparisons.</p>',
+    'is below the significance threshold (FDR = %s) in at least one comparison between the shown groups.</p>',
     '%s',
     '<div class="pic-expr" data-expr="%s">',
-    '<div class="pic-expr-side"><h4>Genes</h4>',
-    '<div class="pic-expr-typeahead"><div class="pic-expr-tagbox">',
-    '<input class="pic-expr-input" type="text" autocomplete="off" placeholder="Add a gene…"></div>',
-    '<div class="pic-expr-ac"></div></div>',
-    '<div class="pic-expr-msg"></div>%s</div>',
+    '<div class="pic-expr-side"><div class="pic-expr-msg"></div>%s</div>',
     '<div class="pic-expr-plots"></div></div></section>'),
     section_id, html_escape(heading), format(fdr, trim = TRUE),
     src_note(report_rel_path(countf, proj_dir)), id, tree)
@@ -416,6 +410,18 @@ build_cluster_profile_png <- function(deseq2_dir, project, tmp_dir, group_pal = 
   png_data_uri(png_path)
 }
 
+# 箱ひげの値 (plotly の箱ひげを値から描くとき用)。四分位は quantile の type 7 (plotly の既定 "linear" と同じ線形補間)、
+# ひげは Tukey (箱から 1.5 IQR 以内にある最も外側の値)。
+pic_box_stats <- function(v) {
+  v <- sort(v[is.finite(v)])
+  q <- stats::quantile(v, c(0.25, 0.5, 0.75), type = 7, names = FALSE)
+  iqr <- q[3] - q[1]
+  lo <- v[v >= q[1] - 1.5 * iqr]; hi <- v[v <= q[3] + 1.5 * iqr]
+  r <- function(x) signif(x, 5)
+  list(q1 = r(q[1]), median = r(q[2]), q3 = r(q[3]),
+       lowerfence = r(if (length(lo)) min(lo) else q[1]), upperfence = r(if (length(hi)) max(hi) else q[3]))
+}
+
 # hex 色を rgba() 文字列に変換 (box の半透明塗り用)。
 hex_to_rgba <- function(hex, alpha) {
   hex <- sub("^#", "", hex)
@@ -425,7 +431,9 @@ hex_to_rgba <- function(hex, alpha) {
 }
 
 # Cluster expression profiles を plotly のインタラクティブ版に変換する。
-# cluster ごとにパネル (free_y) を横に並べ、各パネルで group ごとの box + beeswarm。
+# 1 枚の図の x 軸に cluster (c1..cN) を並べ、各 cluster の位置に group ごとの箱ひげ (grouped box)。
+# 遺伝子ごとの点は描かない (pic193_2 で 28 万点あり、ORA に切り替えるたびに数秒かかったため)。
+# 箱ひげの値 (四分位・ひげ) は R で計算して渡し、HTML に遺伝子ごとの値を入れない。
 # 戻り値: list(data, layout, height) もしくは NULL。
 build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) {
   f <- file.path(degcluster_dir_of(deseq2_dir, project), sprintf("DEGCluster_profile_%s.csv", project))
@@ -436,70 +444,68 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
   prof <- prof[is.finite(prof$value), , drop = FALSE]
   if (nrow(prof) == 0) return(NULL)
 
-  summ_f <- file.path(degcluster_dir_of(deseq2_dir, project), sprintf("DEGCluster_summary_%s.csv", project))
-  nmap <- NULL
-  if (file.exists(summ_f)) {
-    summ <- suppressMessages(readr::read_csv(summ_f, show_col_types = FALSE, progress = FALSE))
-    if (all(c("cluster_id", "gene_count") %in% colnames(summ))) nmap <- stats::setNames(summ$gene_count, summ$cluster_id)
+  nmap <- pic_cluster_gene_counts(deseq2_dir, project)
+  # cluster は番号順 (c1, c2, ..., c11)。ORA の dot plot の x 軸と同じ並びと名前にする。
+  clusters <- pic_cluster_order(prof$cluster_id)
+  # 見出しは "c1 (2432)" の 1 行 (名前は cN、括弧は遺伝子の数)
+  clab <- function(cl) {
+    s <- html_escape(pic_cluster_short(cl))
+    if (!is.null(nmap) && cl %in% names(nmap)) sprintf("%s (%s)", s, nmap[[cl]]) else s
   }
-  clusters <- unique(as.character(prof$cluster_id))
-  clab <- function(cl) if (!is.null(nmap) && cl %in% names(nmap)) sprintf("%s (n=%s)", cl, nmap[[cl]]) else cl
   groups <- unique(as.character(prof$group))
   pal <- ensure_palette(group_pal, groups)
   # group を palette (= sample_sheet) の順に並べる
   if (!is.null(group_pal)) groups <- pic_reorder_vec(groups, names(group_pal))
 
   ncl <- length(clusters)
-  gap <- 0.045
-  panelw <- (1 - gap * (ncl - 1)) / ncl
+  ng <- length(groups)
+  cl_labels <- vapply(clusters, clab, character(1))
 
+  # 1 枚の図: x 軸に c1..cN、各 cluster の位置に群ごとの箱ひげを並べる (grouped box)。y 軸は 1 本。
+  # cluster が多いときは図の最小幅を広げ、枠の中で横にスクロールさせる (min_width)。
+  per_cl <- max(64L, as.integer(ng * 11L + 14L))
+  min_width <- as.integer(70L + ncl * per_cl)
+  height <- 360L
   traces <- list()
-  annotations <- list()
-  # 凡例を strip ラベルより上に置き、重なりを避ける。boxgap を詰めて箱を太くする。
-  layout <- list(margin = list(l = 54, r = 10, t = 74, b = 64), hovermode = "closest",
-                 showlegend = TRUE, boxgap = 0.2, boxgroupgap = 0,
-                 legend = list(orientation = "h", yanchor = "bottom", y = 1.14, x = 0))
-  for (i in seq_len(ncl)) {
-    cl <- clusters[[i]]
-    x0 <- (i - 1) * (panelw + gap); x1 <- x0 + panelw
-    xref <- if (i == 1) "x" else paste0("x", i)
-    yref <- if (i == 1) "y" else paste0("y", i)
-    xname <- if (i == 1) "xaxis" else paste0("xaxis", i)
-    yname <- if (i == 1) "yaxis" else paste0("yaxis", i)
-    layout[[xname]] <- list(domain = list(x0, x1), anchor = yref, type = "category",
-                            categoryorder = "array", categoryarray = as.list(groups),
-                            tickangle = -40, automargin = TRUE, showline = TRUE, mirror = TRUE,
-                            linecolor = "#cdd7e2")
-    # 全パネル 0 起点 (free-y だが下端は 0)。y=0 の黒線 (zeroline) は消す。
-    layout[[yname]] <- list(domain = list(0, 1), anchor = xref, automargin = TRUE, rangemode = "tozero",
-                            zeroline = FALSE,
-                            title = if (i == 1) list(text = "rlog expression") else list(text = ""),
-                            showline = TRUE, mirror = TRUE, linecolor = "#cdd7e2")
-    sub <- prof[as.character(prof$cluster_id) == cl, , drop = FALSE]
-    for (g in groups) {
-      gv <- as.numeric(sub$value[as.character(sub$group) == g])
+  for (g in groups) {
+    col <- if (g %in% names(pal)) pal[[g]] else "#888888"
+    xs <- list(); q1 <- list(); md <- list(); q3 <- list(); lf <- list(); uf <- list()
+    for (i in seq_len(ncl)) {
+      gv <- as.numeric(prof$value[as.character(prof$cluster_id) == clusters[[i]] & as.character(prof$group) == g])
       if (length(gv) == 0) next
-      col <- if (g %in% names(pal)) pal[[g]] else "#888888"
-      traces[[length(traces) + 1L]] <- list(
-        y = as.list(gv), x = as.list(rep(g, length(gv))),
-        type = "box", name = group_span(g, pal), legendgroup = g, showlegend = (i == 1),
-        boxpoints = "all", jitter = 1, pointpos = 0, boxmean = FALSE, whiskerwidth = 0.6,
-        fillcolor = hex_to_rgba(col, "0.45"),
-        line = list(color = col, width = 1.2),
-        marker = list(color = col, size = 3, opacity = 0.55),
-        xaxis = xref, yaxis = yref,
-        hovertemplate = sprintf("%s<br>rlog: %%{y:.2f}<extra></extra>", html_escape(g))
-      )
+      bs <- pic_box_stats(gv)
+      xs[[length(xs) + 1L]] <- cl_labels[[i]]
+      q1[[length(q1) + 1L]] <- bs$q1; md[[length(md) + 1L]] <- bs$median; q3[[length(q3) + 1L]] <- bs$q3
+      lf[[length(lf) + 1L]] <- bs$lowerfence; uf[[length(uf) + 1L]] <- bs$upperfence
     }
-    # strip ラベルは枠なし (テキストのみ)
-    annotations[[length(annotations) + 1L]] <- list(
-      text = html_escape(clab(cl)), xref = "paper", yref = "paper",
-      x = (x0 + x1) / 2, y = 1.0, xanchor = "center", yanchor = "bottom",
-      showarrow = FALSE, font = list(size = 13, color = "#1f2933")
+    if (length(xs) == 0) next
+    traces[[length(traces) + 1L]] <- list(
+      x = xs, q1 = q1, median = md, q3 = q3, lowerfence = lf, upperfence = uf,
+      type = "box", name = group_span(g, pal), legendgroup = g, showlegend = TRUE,
+      boxpoints = FALSE, whiskerwidth = 0.6,
+      fillcolor = hex_to_rgba(col, "0.45"),
+      line = list(color = col, width = 1.2),
+      # 傾向を見せるだけの図なので hover は出さない
+      hoverinfo = "skip"
     )
   }
-  layout$annotations <- annotations
-  list(data = traces, layout = layout, height = 380L,
+  # cluster の境に薄い区切り線
+  shapes <- lapply(seq_len(max(0L, ncl - 1L)), function(i) list(
+    type = "line", xref = "x", yref = "paper", x0 = i - 0.5, x1 = i - 0.5, y0 = 0, y1 = 1,
+    layer = "below", line = list(color = "#e3e8ee", width = 1)
+  ))
+  layout <- list(
+    margin = list(l = 54, r = 10, t = 40, b = 40), hovermode = FALSE,
+    showlegend = TRUE, boxmode = "group", boxgap = 0.18, boxgroupgap = 0.08,
+    legend = list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0),
+    xaxis = list(type = "category", categoryorder = "array", categoryarray = as.list(unname(cl_labels)),
+                 tickangle = 0, ticks = "", showline = TRUE, mirror = TRUE, linecolor = "#cdd7e2",
+                 range = list(-0.5, ncl - 0.5), fixedrange = TRUE),
+    yaxis = list(title = list(text = "rlog expression"), rangemode = "tozero", zeroline = FALSE,
+                 automargin = TRUE, showline = TRUE, mirror = TRUE, linecolor = "#cdd7e2"),
+    shapes = shapes
+  )
+  list(data = traces, layout = layout, height = height, min_width = min_width,
        config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = TRUE))
 }
 

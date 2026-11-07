@@ -322,7 +322,9 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator, group_pal = NULL)
 
 # ORA (cluster) を plotly の dot plot spec に変換する。
 # x=cluster, y=term, color=p.adjust, size=GeneRatio。
-build_ora_plotly <- function(ora_df) {
+# cluster_n: cluster_id -> 遺伝子数 (DEGCluster_summary の gene_count)。あれば見出し "c1 (n)" の n に使い、
+#   Cluster expression profiles とそろえる。無い cluster と NULL のときは GeneRatio の分母 (method ごとに注釈の付いた数)。
+build_ora_plotly <- function(ora_df, cluster_n = NULL) {
   ecfg <- pic_plot_spec()$plot$enrichment
   required_cols <- c("cluster", "Description", "GeneRatio")
   if (nrow(ora_df) == 0 || !all(required_cols %in% colnames(ora_df))) return(NULL)
@@ -367,12 +369,14 @@ build_ora_plotly <- function(ora_df) {
       if (length(vals) == 0) NA_real_ else vals[[1]]
     }, .groups = "drop")
 
-  cluster_levels <- unique(plot_df$cluster)
+  # cluster は番号順 (c1, c2, ..., c11)。名前は cluster expression profiles と同じ "c1 (n)" の 1 行。
+  cluster_levels <- pic_cluster_order(plot_df$cluster)
   cluster_labels <- stats::setNames(
     vapply(cluster_levels, function(cl) {
-      den <- cluster_den$den[cluster_den$cluster == cl]
-      if (length(den) == 0 || !is.finite(den[[1]])) sprintf("%s (n=NA)", cl)
-      else sprintf("%s (n=%s)", cl, format(den[[1]], scientific = FALSE, trim = TRUE))
+      den <- if (!is.null(cluster_n) && cl %in% names(cluster_n)) cluster_n[[cl]] else cluster_den$den[cluster_den$cluster == cl]
+      s <- pic_cluster_short(cl)
+      if (length(den) == 0 || !is.finite(den[[1]])) s
+      else sprintf("%s (%s)", s, format(den[[1]], scientific = FALSE, trim = TRUE))
     }, character(1)), cluster_levels)
 
   plot_df <- plot_df |>
@@ -396,7 +400,7 @@ build_ora_plotly <- function(ora_df) {
 
   cd <- lapply(seq_len(nrow(plot_df)), function(i)
     list(as.character(plot_df$Description_plot[i]), gr[i], padj[i], xx[i]))
-  ht <- paste0("<b>%{customdata[0]}</b><br>cluster: %{customdata[3]}<br>",
+  ht <- paste0("<b>%{customdata[0]}</b><br>%{customdata[3]}<br>",
                "GeneRatio: %{customdata[1]:.3g}<br>p.adjust: %{customdata[2]:.3g}<extra></extra>")
 
   trace <- list(
@@ -415,7 +419,8 @@ build_ora_plotly <- function(ora_df) {
     showlegend = FALSE,
     xaxis = list(type = "category", categoryorder = "array",
                  categoryarray = as.list(levels(plot_df$cluster_label)),
-                 tickangle = -40, automargin = TRUE, showline = TRUE, mirror = TRUE,
+                 # 1 行の見出しを 45 度に (cluster が多くても隣と重ならない)
+                 tickangle = -45, automargin = TRUE, showline = TRUE, mirror = TRUE,
                  linecolor = "#cdd7e2"),
     yaxis = list(tickmode = "array", tickvals = as.list(seq_along(ylab_levels)),
                  ticktext = as.list(ylab_levels), automargin = TRUE,

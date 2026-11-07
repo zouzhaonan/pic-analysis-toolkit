@@ -54,17 +54,27 @@ pic_ora_mdirs <- function(enrich_dir) {
 }
 
 # ORA の method 1 つ分: cluster の CSV を合わせて読み、図の spec と結合 CSV の中身を作る。図にしないものは NULL。
-pic_ora_item <- function(mdir, project) {
+# cluster_n: cluster ごとの遺伝子数 (pic_cluster_gene_counts)。x 軸の見出し "c1 (n)" の n に使う
+#   (Cluster expression profiles とそろえる)。NULL なら GeneRatio の分母。
+pic_ora_item <- function(mdir, project, cluster_n = NULL) {
   csvs <- list.files(mdir, pattern = paste0(project, "\\.csv$"), full.names = TRUE)
   csvs <- csvs[!grepl("^ORA_", basename(csvs))]   # 結合 CSV は cluster から集計するため除外
   if (length(csvs) == 0) return(NULL)
-  ora_all <- tryCatch(
-    purrr::map_dfr(csvs, function(fp) suppressMessages(readr::read_csv(fp, show_col_types = FALSE, progress = FALSE))),
-    error = function(e) NULL
-  )
-  if (is.null(ora_all) || nrow(ora_all) == 0) return(NULL)
-  spec <- tryCatch(build_ora_plotly(ora_all), error = function(e) NULL)
-  if (is.null(spec)) return(NULL)
+  # 見出しだけ (term 0 件) の cluster の CSV は、readr が全列を文字として読むため、そのまま合わせると
+  # 数値の列 (RichFactor など) と型がぶつかって method ごと落ちる (KEGG / HPO で起きた)。0 行の表は除いて合わせる。
+  dfs <- lapply(csvs, function(fp) tryCatch(
+    suppressMessages(readr::read_csv(fp, show_col_types = FALSE, progress = FALSE)),
+    error = function(e) NULL))
+  dfs <- Filter(function(d) !is.null(d) && nrow(d) > 0, dfs)
+  ora_all <- if (length(dfs) == 0) NULL else tryCatch(dplyr::bind_rows(dfs), error = function(e) NULL)
+  # CSV はあるのに図にできる term が無い method も、選択肢から消さずに短い表示を出す。
+  empty <- list(n_terms = 0L, content = NULL, plot = NULL)
+  if (is.null(ora_all) || nrow(ora_all) == 0) return(empty)
+  spec <- tryCatch(build_ora_plotly(ora_all, cluster_n = cluster_n), error = function(e) NULL)
+  if (is.null(spec)) {
+    empty$content <- tryCatch(readr::format_csv(ora_all), error = function(e) NULL)
+    return(empty)
+  }
   list(n_terms = spec$n_terms,
        content = tryCatch(readr::format_csv(ora_all), error = function(e) NULL),
        plot = pic_json_verbatim(list(data = spec$data, layout = spec$layout, config = spec$config), digits = 6))
@@ -152,8 +162,11 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
   ora_items <- list()
   if (dir.exists(ora_root)) {
     methods <- pic_ora_mdirs(enrich_dir)
-    oitems <- if (!is.null(pre)) pre$ora else lapply(methods, pic_ora_item, project = project)
-    for (k in seq_along(methods)) {
+    oitems <- if (!is.null(pre)) pre$ora else lapply(methods, pic_ora_item, project = project,
+                                                             cluster_n = pic_cluster_gene_counts(deseq2_dir, project))
+    # 選択リスト・図・Downloads の並びを GSEA と同じ method の順 (spec の順) にそろえる。
+    mnames <- basename(methods)
+    for (k in match(order_methods(mnames), mnames)) {
       it <- oitems[[k]]
       if (is.null(it)) next
       method <- basename(methods[[k]])
@@ -169,12 +182,16 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         sprintf('<span class="pic-src"><a class="pic-dlcsv" role="button" tabindex="0" data-file="%s">Download CSV</a></span>', vid)
         else ""
       pid <- sprintf("%soraplot_%s", id_prefix, method)
-      register_plot(reg, pid, it$plot)
+      body <- if (is.null(it$plot)) {
+        '<p class="pic-note pic-ora-empty">No terms to plot: every cluster&rsquo;s ORA result for this method is empty.</p>'
+      } else {
+        register_plot(reg, pid, it$plot)
+        sprintf('<div id="%s" class="pic-plot" style="height:%dpx"></div>', pid, enrich_plot_height(it$n_terms))
+      }
       ora_items[[length(ora_items) + 1L]] <- list(
         id = sprintf("%sora_%s", id_prefix, method),
         label = method,
-        html = sprintf('<div class="pic-enrich-item">%s<div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
-                       sub_head(html_escape(method), dl), pid, enrich_plot_height(it$n_terms)),
+        html = sprintf('<div class="pic-enrich-item">%s%s</div>', sub_head(html_escape(method), dl), body),
         checked = (length(ora_items) == 0L)
       )
     }
@@ -191,18 +208,19 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         prefix_html <- sprintf(
           paste0('<div class="pic-enrich-item">%s',
                  '<p class="pic-note">The differentially expressed genes are grouped into clusters that share a similar pattern across groups. ',
-                 'Each panel is one cluster; the boxes show its genes&rsquo; expression per group, so you can read off what each cluster represents.</p>',
-                 '<div id="%s" class="pic-plot" style="height:%dpx"></div></div>'),
+                 'Each position on the x axis is one cluster; the boxes show its genes&rsquo; expression per group, so you can read off what each cluster represents.</p>',
+                 '<div class="pic-hscroll"><div id="%s" class="pic-plot" style="height:%dpx;min-width:%dpx"></div></div></div>'),
           sub_head('Cluster expression profiles', src_note(report_rel_path(prof_csv, proj_dir))),
-          prof_id, prof_spec$height
+          prof_id, prof_spec$height, prof_spec$min_width
         )
       }
     }
     parts <- c(parts, sprintf(
       paste0('<div class="pic-enrich-ora">',
              '<p class="pic-note">ORA takes the differentially expressed genes in each cluster and asks which biological terms are over-represented among them. ',
-             'Dot color is significance (p.adjust), size the gene ratio. Pick a method on the left to view it.</p>%s</div>'),
-      build_select_group(ora_items, prefix = prefix_html, ctrl_title = "Method", view_header = "", ctrl_extra = tree_html)
+             'Dot color is significance (p.adjust), size the gene ratio.</p>%s</div>'),
+      build_select_group(ora_items, prefix = prefix_html, ctrl_title = "Method", view_header = "", ctrl_extra = tree_html,
+                         method_src = TRUE)
     ))
   } else {
     # ORA が無い場合は無言でスキップせず、理由を明記する。

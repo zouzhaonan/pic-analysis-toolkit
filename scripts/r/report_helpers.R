@@ -6,6 +6,16 @@
 # deseq2/<genome>/ の genome ネストを廃した代わりに、フォルダ名で genome を識別する。
 deg_dir_of        <- function(deseq2_dir, project) file.path(deseq2_dir, sprintf("DEG_%s", project))
 degcluster_dir_of <- function(deseq2_dir, project) file.path(deg_dir_of(deseq2_dir, project), sprintf("DEGCluster_%s", project))
+# cluster ごとの遺伝子数 (DEGCluster_summary の gene_count)。cluster_id -> 数 の名前付きベクトル。無ければ NULL。
+# Cluster expression profiles と ORA の dot plot の見出し "c1 (2432)" の括弧の数に使う。
+pic_cluster_gene_counts <- function(deseq2_dir, project) {
+  if (is.null(deseq2_dir)) return(NULL)
+  f <- file.path(degcluster_dir_of(deseq2_dir, project), sprintf("DEGCluster_summary_%s.csv", project))
+  if (!file.exists(f)) return(NULL)
+  summ <- tryCatch(suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE)), error = function(e) NULL)
+  if (is.null(summ) || !all(c("cluster_id", "gene_count") %in% colnames(summ))) return(NULL)
+  stats::setNames(summ$gene_count, as.character(summ$cluster_id))
+}
 pca_dir_of        <- function(deseq2_dir, project) file.path(deseq2_dir, sprintf("PCA_%s", project))
 
 # 集計/中間テーブル (mapping_sum, deftable, aggregate_profile) は base_dir/summary/ に
@@ -126,8 +136,7 @@ group_sample_tree_panel <- function(samples, groups, group_pal = NULL, group_map
                    '</summary><div class="pic-tree-s">%s</div></details>'),
             html_escape(g), sw, html_escape(g), length(idx), paste(kids, collapse = ""))
   }, character(1))
-  paste0('<h4>Groups</h4><p class="pic-tree-hint">Uncheck a group or a sample to exclude it. ',
-         'The selection is shared by all tabs.</p><div class="pic-tree">', paste(blocks, collapse = ""), '</div>')
+  paste0('<h4>Groups</h4><div class="pic-tree">', paste(blocks, collapse = ""), '</div>')
 }
 
 # 「ここで選択」を明示する目立つ案内バッジ。
@@ -146,6 +155,17 @@ sub_head <- function(title_html, ...) {
 png_button <- function(cap_id, name) {
   sprintf('<button class="pic-png-btn" type="button" data-cap="%s" data-name="%s">Download PNG</button>',
           html_escape(cap_id), html_escape(name))
+}
+
+# 画面に出す遺伝子のラベル: 遺伝子名 (ext_gene) を前面に、名前が空 (NA・""・空白) なら ID で埋める
+# (deseq2 の出力と同じ規則。古い出力に空の ext_gene が残っていても同じ見え方にする)。
+pic_gene_label <- function(name, id) {
+  id <- as.character(id)
+  if (is.null(name)) return(id)
+  nm <- as.character(name)
+  miss <- is.na(nm) | !nzchar(trimws(nm))
+  nm[miss] <- id[miss]
+  nm
 }
 
 # ファイル名 (相対パス) から、その中身の短い説明を返す。
@@ -241,7 +261,8 @@ register_file <- function(rel) {
         else pic_report_file_gz(abs)
   if (is.null(gz)) return(NULL)
   cat_i <- file_category(rel)
-  reg$files[[id]] <- list(name = basename(rel), path = rel, desc = file_desc(rel),
+  # 中身は CSV にそろえてある (pic_report_dl_bytes) ので、名前も .tsv / .txt は .csv にする
+  reg$files[[id]] <- list(name = pic_report_dl_name(rel), path = rel, desc = file_desc(rel),
                           cat = cat_i$title, tab = cat_i$tab, gz = gz)
   id
 }
@@ -253,7 +274,7 @@ register_virtual_file <- function(rel, content, desc = NULL) {
   if (is.null(reg$files)) reg$files <- list()
   id <- gsub("[^A-Za-z0-9]+", "_", rel)
   if (!is.null(reg$files[[id]])) return(id)
-  gz <- tryCatch(jsonlite::base64_enc(memCompress(charToRaw(content), "gzip")), error = function(e) NULL)
+  gz <- tryCatch(jsonlite::base64_enc(memCompress(pic_csv_bom(charToRaw(enc2utf8(content))), "gzip")), error = function(e) NULL)
   if (is.null(gz)) return(NULL)
   cat_i <- file_category(rel)
   reg$files[[id]] <- list(name = basename(rel), path = rel,
@@ -266,7 +287,7 @@ register_virtual_file <- function(rel, content, desc = NULL) {
 src_note <- function(rel) {
   id <- register_file(rel)
   if (is.null(id)) return("")
-  ext <- toupper(tools::file_ext(rel))
+  ext <- toupper(tools::file_ext(pic_report_dl_name(rel)))
   label <- if (nzchar(ext)) sprintf("Download %s", ext) else "Download"
   sprintf('<span class="pic-src"><a class="pic-dlcsv" role="button" tabindex="0" data-file="%s">%s</a></span>',
           id, html_escape(label))
@@ -410,8 +431,11 @@ color_contrast <- function(contrast, group_pal) {
 # 複数ブロックをチェックボックスで表示選択する UI。既定は先頭のみ表示。
 # items: list(list(id=, label=, html=, checked=logical), ...)
 # ブロックが 1 つだけなら選択 UI は付けずにそのまま表示する。
-# ctrl_extra: 左パネルの末尾に足す HTML (サンプル除外のパネルなど)。既定 "" で従来どおり。
-build_select_group <- function(items, prefix = "", ctrl_title = NULL, view_header = "", ctrl_extra = "") {
+# ctrl_extra: 左パネルの先頭に置く HTML (サンプル除外のパネルなど)。既定 "" で従来どおり。
+# method_src = TRUE: 選択 (見出し + ラジオ) を .pic-method-src で包む。report.js がこれを隠し、
+#   タブの見出しの右に置くリスト (select) から操作する (Enrichment の method)。
+build_select_group <- function(items, prefix = "", ctrl_title = NULL, view_header = "", ctrl_extra = "",
+                               method_src = FALSE) {
   items <- Filter(function(it) !is.null(it$html) && nzchar(it$html), items)
   if (length(items) == 0) return(if (nzchar(prefix) || nzchar(view_header))
     sprintf('<div class="pic-select-item">%s%s</div>', view_header, prefix) else "")
@@ -426,10 +450,13 @@ build_select_group <- function(items, prefix = "", ctrl_title = NULL, view_heade
     sprintf('<div class="pic-select-item" id="%s"%s>%s</div>', html_escape(it$id), hid, it$html)
   }, character(1))
   head_html <- if (!is.null(ctrl_title)) sprintf('<h4>%s</h4>', html_escape(ctrl_title)) else ""
-  # 左 = サブタブ + ラジオ選択 / 右 = タイトル行 + (prefix +) 選択ブロック
-  paste0('<div class="pic-selgrid"><div class="pic-selgrid-ctrl"><!--SUBNAV-->', head_html,
-         '<div class="pic-select-bar">', paste(bar, collapse = ""),
-         '</div>', ctrl_extra, '</div><div class="pic-selgrid-view">', view_header, prefix,
+  sel_html <- paste0(head_html, '<div class="pic-select-bar">', paste(bar, collapse = ""), '</div>')
+  if (isTRUE(method_src))
+    sel_html <- sprintf('<div class="pic-method-src" data-title="%s">%s</div>',
+                        html_escape(if (is.null(ctrl_title)) "Method" else ctrl_title), sel_html)
+  # 左 = ラジオ選択 / 右 = タイトル行 + (prefix +) 選択ブロック
+  # 左の並び: ctrl_extra (群とサンプルの除外) を一番上、その下に選択
+  paste0('<div class="pic-selgrid"><div class="pic-selgrid-ctrl"><!--SUBNAV-->', ctrl_extra, sel_html, '</div><div class="pic-selgrid-view">', view_header, prefix,
          paste(blk, collapse = ""), '</div></div>')
 }
 
@@ -463,19 +490,24 @@ build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = T
   }
   hcol <- function(g) group_color_or(g, group_pal)
   n <- length(groups)
-  ths <- paste(vapply(seq_len(n), function(j)
+  # 上三角 (row < col) だけに比較があるので、最初の群の列と最後の群の行は出さない (いつも空になるため)
+  col_idx <- seq_len(n)[-1L]
+  row_idx <- seq_len(n - 1L)
+  ths <- paste(vapply(col_idx, function(j)
     sprintf('<th class="pic-cmx-h"><span style="color:%s">%s</span></th>', hcol(groups[[j]]), html_escape(groups[[j]])),
     character(1)), collapse = "")
   header <- sprintf('<tr><th class="pic-cmx-corner"></th>%s</tr>', ths)
   rows_html <- character(0)
-  for (i in seq_len(n)) {
+  for (i in row_idx) {
     rh <- sprintf('<th class="pic-cmx-rh"><span style="color:%s">%s</span></th>', hcol(groups[[i]]), html_escape(groups[[i]]))
     cs <- character(0)
-    for (j in seq_len(n)) {
+    for (j in col_idx) {
       # 各比較は上三角 (row < col) の 1 セルにのみ表示し、重複を避ける
       e <- if (i < j) cellmap[[paste0(i, "_", j)]] else NULL
       if (is.null(e)) { cs <- c(cs, '<td class="pic-cmx-empty"></td>'); next }
       ck <- if (isTRUE(e$checked)) " checked" else ""
+      # 選ばれているマス (pic-cmx-sel) は内側の枠で示す。report.js が選び替えのたびに付け直す
+      sel_cls <- if (isTRUE(e$checked)) " pic-cmx-sel" else ""
       cnt <- if (show_count && !is.null(e$count) && is.finite(suppressWarnings(as.numeric(e$count))))
                sprintf('<span class="pic-cmx-n">%s</span>', fmt_int(e$count)) else ""
       inp <- if (!is.null(radio_name)) sprintf('type="radio" name="%s"', html_escape(radio_name)) else 'type="checkbox"'
@@ -484,8 +516,8 @@ build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = T
       hcls <- if (!is.na(col)) " pic-cmx-heat" else ""
       disp <- if (!is.null(e$aspect_disp)) e$aspect_disp else e$aspect
       ttl <- if (is.finite(cv)) sprintf("%s — %s DEGs", disp, fmt_int(cv)) else disp
-      cs <- c(cs, sprintf('<td class="pic-cmx-cell%s" title="%s"%s><label>%s<input %s %s%s></label></td>',
-                          hcls, html_escape(ttl), bg, cnt, inp, e$attr, ck))
+      cs <- c(cs, sprintf('<td class="pic-cmx-cell%s%s" title="%s"%s><label>%s<input %s %s%s aria-label="%s"></label></td>',
+                          hcls, sel_cls, html_escape(ttl), bg, cnt, inp, e$attr, ck, html_escape(disp)))
     }
     rows_html <- c(rows_html, sprintf('<tr>%s%s</tr>', rh, paste(cs, collapse = "")))
   }
@@ -541,12 +573,14 @@ build_matrix_group <- function(rows, cols, cell_html, row_title = "Comparison", 
     }
   }
   if (length(cells) == 0) return("")
-  # 左 (.pic-matrix-sel) = サブタブ + Comparison(行列) + Method(見出し+縦並び)、右 = プロット
+  # 左 (.pic-matrix-sel) = Comparison(行列) (+ 隠した Method)、右 = プロット
   comp_hdr <- if (nzchar(gm)) sprintf('<h4>%s</h4>', html_escape(row_title)) else ""
-  sprintf(paste0('<div class="pic-matrix"><div class="pic-matrix-sel"><!--SUBNAV-->%s%s',
-                 '<h4>%s</h4><div class="pic-select-bar">%s</div>%s</div>',
+  # 列 (method) の選択は .pic-method-src で包む。report.js が隠し、タブの見出しの右のリストから操作する。
+  # 左の並び: ctrl_extra (群とサンプルの除外) を一番上、その下に Comparison
+  sprintf(paste0('<div class="pic-matrix"><div class="pic-matrix-sel"><!--SUBNAV-->%s%s%s',
+                 '<div class="pic-method-src" data-title="%s"><h4>%s</h4><div class="pic-select-bar">%s</div></div></div>',
                  '<div class="pic-matrix-cells">%s%s</div></div>'),
-          comp_hdr, row_sel, html_escape(col_title), paste(col_bar, collapse = ""), ctrl_extra,
+          ctrl_extra, comp_hdr, row_sel, html_escape(col_title), html_escape(col_title), paste(col_bar, collapse = ""),
           view_header, paste(cells, collapse = ""))
 }
 
