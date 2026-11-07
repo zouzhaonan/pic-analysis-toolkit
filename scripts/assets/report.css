@@ -381,5 +381,9 @@ table.pic-cmatrix.pic-cmx-nocount{--cmx:20px;--cmx-pad:6px}
 .pic-cmatrix.pic-cmx-nocount .pic-cmx-cell.pic-cmx-heat.pic-cmx-hit,.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell.pic-cmx-heat:hover,
 .pic-cmatrix.pic-cmx-nocount .pic-cmx-cell.pic-cmx-sel,.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell:hover{box-shadow:none}
 .pic-cmatrix.pic-cmx-nocount .pic-cmx-cell:hover label::after{box-shadow:inset 0 0 0 2px rgba(23,81,143,.5)}
-.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell.pic-cmx-sel label::after{box-shadow:inset 0 0 0 2px #17518f}
+/* 選ばれているマス: 行名と列名を強調 (薄い青の背景 + 行名は左、列名は下に青い線。pic-cmx-selhd は report.js が付ける)、
+   マスの真ん中に白い点 (白いマスでも見えるよう黒い縁)。どの色のマスの上でも分かる (2026-11-07 ユーザーが案 B を選んだ) */
+.pic-cmatrix.pic-cmx-nocount th.pic-cmx-rh.pic-cmx-selhd{background:#cfe2f6;box-shadow:inset 3px 0 0 #17518f}
+.pic-cmatrix.pic-cmx-nocount th.pic-cmx-h.pic-cmx-selhd{background:#cfe2f6;box-shadow:inset 0 -3px 0 #17518f}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell.pic-cmx-sel label{background:radial-gradient(circle at 50% 50%,#fff 0 3.2px,#111827 3.4px 4.6px,transparent 4.8px)}
 .pic-cmatrix.pic-cmx-nocount .pic-cmx-cell:has(input:focus-visible) label{outline:1px dashed #1f2933;outline-offset:-5px}
