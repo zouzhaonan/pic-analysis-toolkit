@@ -28,10 +28,12 @@ section.pic-tab.active{display:block}
 /* セクション内サブタブ */
 /* サブタブは左コントロール内 (View 見出し + 縦並びボタン) で選択 */
 .pic-subbody{min-width:0}
-.pic-subtabs{display:flex;flex-direction:row;flex-wrap:wrap;gap:5px;margin:0 0 0 8px}
-.pic-subtabbtn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--muted);font-size:13px;font-weight:600;padding:5px 14px;cursor:pointer;border-radius:6px;text-align:left;white-space:nowrap}
-.pic-subtabbtn:hover{background:#eef3fb;color:var(--accent)}
-.pic-subtabbtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+/* View の選択 (タブの見出しの右): つながった区切りのタブ (segmented)。上の段のタブより一段小さく */
+.pic-subtabs{display:inline-flex;flex-wrap:wrap;gap:0;border:1px solid var(--accent);border-radius:7px;overflow:hidden;margin-left:14px}
+.pic-subtabbtn{appearance:none;border:none;border-left:1px solid var(--accent);border-radius:0;background:#fff;color:var(--accent);font-size:12.5px;font-weight:600;font-family:inherit;padding:4px 13px;cursor:pointer;white-space:nowrap}
+.pic-subtabbtn:first-child{border-left:none}
+.pic-subtabbtn:hover{background:#eef3fb}
+.pic-subtabbtn.active{background:var(--accent);color:#fff}
 .pic-subpanel{display:none}
 .pic-subpanel.active{display:block}
 /* 左コントロール内の見出し (View / Groups / Comparison / Method / Genes) を統一 */
