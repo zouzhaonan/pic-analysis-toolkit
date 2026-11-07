@@ -1026,10 +1026,17 @@
       tbl.addEventListener("mouseleave", clear);
       // 選ばれているマス (ラジオは画面に出さない) に内側の枠 (pic-cmx-sel) を付ける。
       // マスそのものを押すと、マスを埋める label がラジオを選ぶ (キーボードは今どおりラジオの矢印キー)
+      // 選ばれているマスの行名と列名には pic-cmx-selhd を付ける (見た目は CSS で決める)
       function syncSel() {
+        tbl.querySelectorAll(".pic-cmx-selhd").forEach(function (e) { e.classList.remove("pic-cmx-selhd"); });
         tbl.querySelectorAll("td.pic-cmx-cell").forEach(function (td) {
           var inp = td.querySelector("input");
-          td.classList.toggle("pic-cmx-sel", !!(inp && inp.checked));
+          var on = !!(inp && inp.checked);
+          td.classList.toggle("pic-cmx-sel", on);
+          if (!on) return;
+          var tr = td.parentElement, idx = Array.prototype.indexOf.call(tr.children, td);
+          if (tr.children[0]) tr.children[0].classList.add("pic-cmx-selhd");
+          if (head && head.children[idx]) head.children[idx].classList.add("pic-cmx-selhd");
         });
       }
       tbl.addEventListener("change", syncSel);

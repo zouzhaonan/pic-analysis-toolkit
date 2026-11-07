@@ -361,17 +361,25 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 :is(.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side) .pic-expr-gsets>h4{margin-top:2px}
 @media(max-width:900px){.pic-ctrl,.pic-hmsel-ctrl,.pic-degsel-ctrl,.pic-selgrid-ctrl,.pic-matrix-sel,.pic-expr-side{position:static;max-height:none}}
 /* ---- Comparison の表 (DEG・GSEA。数を出さない版): ラジオは出さず、マスそのものを押して選ぶ (2026-11-07) ----
-   マスの幅は --cmx-w (既定 20px = 縦書きの列名の幅。25px にすると高さに合わせた正方形)。列名・行名の字の大きさは変えない。 */
-table.pic-cmatrix.pic-cmx-nocount{--cmx-w:20px;--cmx-h:25px}
-/* 行の高さは 25px (字の大きさはそのまま、上下の余白だけ詰める) */
-.pic-cmatrix.pic-cmx-nocount tbody th,.pic-cmatrix.pic-cmx-nocount tbody td{box-sizing:border-box;height:var(--cmx-h);padding-top:0;padding-bottom:0;line-height:1.2}
-.pic-cmatrix.pic-cmx-nocount .pic-cmx-h{box-sizing:border-box;width:var(--cmx-w);min-width:var(--cmx-w);max-width:var(--cmx-w);padding:4px 0}
-.pic-cmatrix.pic-cmx-nocount td.pic-cmx-cell,.pic-cmatrix.pic-cmx-nocount td.pic-cmx-empty{box-sizing:border-box;width:var(--cmx-w);min-width:var(--cmx-w);max-width:var(--cmx-w);padding:0;position:relative}
+   マスは 20px の正方形 (--cmx)。字の大きさ (13px) は変えず、行の高さ (字の行 15.6px) と縦書きの列名の幅
+   (line-height を行名と同じ 1.2 にして 15.6px) がどちらも入る一番小さい大きさ。字の両脇に 2px ずつ残る。
+   行名は左右、列名は上下に同じ余白 (--cmx-pad)。 */
+table.pic-cmatrix.pic-cmx-nocount{--cmx:20px;--cmx-pad:6px}
+.pic-cmatrix.pic-cmx-nocount tbody th,.pic-cmatrix.pic-cmx-nocount tbody td{box-sizing:border-box;height:var(--cmx);padding-top:0;padding-bottom:0;line-height:1.2}
+.pic-cmatrix.pic-cmx-nocount th.pic-cmx-rh{padding-left:var(--cmx-pad);padding-right:var(--cmx-pad)}
+.pic-cmatrix.pic-cmx-nocount th.pic-cmx-rh span{display:block}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-h{box-sizing:border-box;width:var(--cmx);min-width:var(--cmx);max-width:var(--cmx);padding:var(--cmx-pad) 0;line-height:0}
+/* 縦書きの列名は block にして行の箱 (下の余り) を作らない。上下の余白は th の padding だけになる */
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-h span{display:block;line-height:1.2;margin:0 auto}
+.pic-cmatrix.pic-cmx-nocount td.pic-cmx-cell,.pic-cmatrix.pic-cmx-nocount td.pic-cmx-empty{box-sizing:border-box;width:var(--cmx);min-width:var(--cmx);max-width:var(--cmx);padding:0;position:relative}
 .pic-cmatrix.pic-cmx-nocount .pic-cmx-cell label{position:absolute;inset:0;display:block;cursor:pointer}
 .pic-cmatrix.pic-cmx-nocount .pic-cmx-cell input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
 .pic-cmatrix.pic-cmx-nocount .pic-cmx-cell input:disabled+*,.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell:has(input:disabled) label{cursor:default}
-/* 選ばれているマスは内側の枠 (色の付いたマスでも分かる)。キーボードで選んでいるときは外側にも線 */
-.pic-cmatrix .pic-cmx-cell.pic-cmx-sel{box-shadow:inset 0 0 0 2px #17518f}
-.pic-cmatrix .pic-cmx-cell:hover{box-shadow:inset 0 0 0 2px rgba(23,81,143,.5)}
-.pic-cmatrix .pic-cmx-cell.pic-cmx-sel:hover{box-shadow:inset 0 0 0 2px #17518f}
-.pic-cmatrix .pic-cmx-cell:has(input:focus-visible){outline:2px solid #17518f;outline-offset:1px}
+/* 選ばれているマスの印は、マスを埋める label の ::after に描く。td の box-shadow は border-collapse の
+   罫線の半分に掛かって左上へずれるため使わない。::after は罫線の内側にちょうど収まる */
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell label::after{content:"";position:absolute;inset:0;pointer-events:none;box-sizing:border-box}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell.pic-cmx-heat.pic-cmx-hit,.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell.pic-cmx-heat:hover,
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell.pic-cmx-sel,.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell:hover{box-shadow:none}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell:hover label::after{box-shadow:inset 0 0 0 2px rgba(23,81,143,.5)}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell.pic-cmx-sel label::after{box-shadow:inset 0 0 0 2px #17518f}
+.pic-cmatrix.pic-cmx-nocount .pic-cmx-cell:has(input:focus-visible) label{outline:1px dashed #1f2933;outline-offset:-5px}
