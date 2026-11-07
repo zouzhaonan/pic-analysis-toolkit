@@ -95,6 +95,9 @@ pic_replicate_labels <- function(samples) {
 # 同時に配下サンプルを一括 on/off するトグルでもある。実際の計算対象はサンプル側の
 # チェックだけで決まるので、group を外したあとに個別サンプルを選び直せる
 # (group のチェックは配下の状態から checked / indeterminate が自動で決まる)。
+#
+# 全タブ共通のサンプル除外 (report.js の picExcl*) もこのパネルで操作する。どのタブの
+# パネルを触っても、除外の状態は 1 つにまとめられ、全タブのパネルと図に反映される。
 group_sample_tree_panel <- function(samples, groups, group_pal = NULL, group_map = NULL) {
   if (length(samples) == 0 || length(samples) != length(groups)) return("")
   ug <- unique(groups)
@@ -123,7 +126,8 @@ group_sample_tree_panel <- function(samples, groups, group_pal = NULL, group_map
                    '</summary><div class="pic-tree-s">%s</div></details>'),
             html_escape(g), sw, html_escape(g), length(idx), paste(kids, collapse = ""))
   }, character(1))
-  paste0('<h4>Groups</h4><div class="pic-tree">', paste(blocks, collapse = ""), '</div>')
+  paste0('<h4>Groups</h4><p class="pic-tree-hint">Uncheck a group or a sample to exclude it. ',
+         'The selection is shared by all tabs.</p><div class="pic-tree">', paste(blocks, collapse = ""), '</div>')
 }
 
 # 「ここで選択」を明示する目立つ案内バッジ。
@@ -406,7 +410,8 @@ color_contrast <- function(contrast, group_pal) {
 # 複数ブロックをチェックボックスで表示選択する UI。既定は先頭のみ表示。
 # items: list(list(id=, label=, html=, checked=logical), ...)
 # ブロックが 1 つだけなら選択 UI は付けずにそのまま表示する。
-build_select_group <- function(items, prefix = "", ctrl_title = NULL, view_header = "") {
+# ctrl_extra: 左パネルの末尾に足す HTML (サンプル除外のパネルなど)。既定 "" で従来どおり。
+build_select_group <- function(items, prefix = "", ctrl_title = NULL, view_header = "", ctrl_extra = "") {
   items <- Filter(function(it) !is.null(it$html) && nzchar(it$html), items)
   if (length(items) == 0) return(if (nzchar(prefix) || nzchar(view_header))
     sprintf('<div class="pic-select-item">%s%s</div>', view_header, prefix) else "")
@@ -424,7 +429,7 @@ build_select_group <- function(items, prefix = "", ctrl_title = NULL, view_heade
   # 左 = サブタブ + ラジオ選択 / 右 = タイトル行 + (prefix +) 選択ブロック
   paste0('<div class="pic-selgrid"><div class="pic-selgrid-ctrl"><!--SUBNAV-->', head_html,
          '<div class="pic-select-bar">', paste(bar, collapse = ""),
-         '</div></div><div class="pic-selgrid-view">', view_header, prefix,
+         '</div>', ctrl_extra, '</div><div class="pic-selgrid-view">', view_header, prefix,
          paste(blk, collapse = ""), '</div></div>')
 }
 
@@ -493,7 +498,7 @@ build_group_matrix <- function(entries, groups, group_pal = NULL, show_count = T
 # row_groups を渡すと、行 (contrast) の選択を group×group 行列で提示する。
 build_matrix_group <- function(rows, cols, cell_html, row_title = "Comparison", col_title = "Method",
                                row_groups = NULL, row_counts = NULL, group_pal = NULL, view_header = "",
-                               id_prefix = "") {
+                               id_prefix = "", ctrl_extra = "") {
   if (length(rows) == 0 || length(cols) == 0) return("")
   first_row <- rows[[1]]$key
   first_col <- cols[[1]]
@@ -539,9 +544,9 @@ build_matrix_group <- function(rows, cols, cell_html, row_title = "Comparison", 
   # 左 (.pic-matrix-sel) = サブタブ + Comparison(行列) + Method(見出し+縦並び)、右 = プロット
   comp_hdr <- if (nzchar(gm)) sprintf('<h4>%s</h4>', html_escape(row_title)) else ""
   sprintf(paste0('<div class="pic-matrix"><div class="pic-matrix-sel"><!--SUBNAV-->%s%s',
-                 '<h4>%s</h4><div class="pic-select-bar">%s</div></div>',
+                 '<h4>%s</h4><div class="pic-select-bar">%s</div>%s</div>',
                  '<div class="pic-matrix-cells">%s%s</div></div>'),
-          comp_hdr, row_sel, html_escape(col_title), paste(col_bar, collapse = ""),
+          comp_hdr, row_sel, html_escape(col_title), paste(col_bar, collapse = ""), ctrl_extra,
           view_header, paste(cells, collapse = ""))
 }
 
@@ -551,6 +556,7 @@ pic_report_registry <- function() {
   reg$plots <- list()
   reg$expr <- list()   # 遺伝子発現データ (id -> normalized counts など)
   reg$pca <- list()    # 部分集合 PCA 用の rlog 行列 (id -> samples/groups/mat)
+  reg$meta <- NULL     # サンプル除外と再計算のコマンドに使う情報 (project / out_dir など。PIC_META)
   reg
 }
 

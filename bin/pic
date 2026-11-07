@@ -60,6 +60,8 @@ source "${PIC_BASH_DIR}/cli_analysis.sh"
 source "${PIC_BASH_DIR}/cli_pipeline.sh"
 # shellcheck source=/dev/null
 source "${PIC_BASH_DIR}/cli_report.sh"
+# shellcheck source=/dev/null
+source "${PIC_BASH_DIR}/cli_reanalyze.sh"
 
 args_request_help() {
   local arg
@@ -155,6 +157,13 @@ main() {
     report)
       debug_log "Dispatch subcommand=${subcommand} args=$*"
       run_report_subcommand "$@"
+      ;;
+    reanalyze)
+      debug_log "Dispatch subcommand=${subcommand} args=$*"
+      if ! args_request_help "$@"; then
+        require_runtime_lib_dir
+      fi
+      run_reanalyze_subcommand "$@"
       ;;
     aggregate)
       debug_log "Dispatch subcommand=${subcommand} args=$*"

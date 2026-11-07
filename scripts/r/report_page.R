@@ -53,6 +53,12 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
   # 各節は自分の新しいレジストリに登録し、下で 1 本のときと同じ順 (QC, Aggregation, RIN, Correlation,
   # PCA, heatmap, MA/volcano, Expression, Enrichment) に入れ直す。
   msum_file <- { mf <- pic_list_summary(base_dir, "^mapping_sum__.*\\.tsv$"); if (length(mf) > 0) mf[[1]] else "" }
+  # 全タブ共通のサンプル除外パネル (group -> sample の階層。report.js が状態を 1 つにまとめる)。
+  # mapping_sum (この project のサンプルに絞り、sample_sheet 順に並べたもの) から作る。
+  # mapping_sum が無ければ "" (各節は従来の group トグル / PCA は rlog 行列のサンプルで作る)。
+  tree <- if (!is.null(msum) && all(c("sample", "group") %in% colnames(msum)))
+    group_sample_tree_panel(as.character(msum$sample), as.character(msum$group), group_pal, group_map) else ""
+  tree_or_null <- if (nzchar(tree)) tree else NULL
   sec_jobs <- list(
     # 1. Mapping QC
     qc = function(r) if (!is.null(msum)) section_mapping_qc(msum, sid("qc"), "1. Mapping QC", report_rel_path(msum_file, out_dir), group_map, group_pal) else "",
@@ -78,10 +84,13 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
            samples = if (!is.null(pp)) unlist(pp$samples), groups = if (!is.null(pp)) unlist(pp$groups))
     },
     # 4. DEG (heatmap + MA/volcano)
-    hm = function(r) build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order, id_prefix, deg_counts),
-    contrast = function(r) build_contrast_plots(r, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir), group_order, group_pal),
+    hm = function(r) build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order, id_prefix, deg_counts,
+                                        ctrl_html = tree_or_null),
+    contrast = function(r) build_contrast_plots(r, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir), group_order, group_pal,
+                                                ctrl_html = tree),
     # 5. Gene expression (normalized counts, interactive)
-    expr = function(r) build_expression_section(r, desc$deseq2_dir, project, group_map, group_pal, stats, sid("expr"), sid("expr"), "5. Gene Expression", out_dir, sample_order, group_order)
+    expr = function(r) build_expression_section(r, desc$deseq2_dir, project, group_map, group_pal, stats, sid("expr"), sid("expr"), "5. Gene Expression", out_dir, sample_order, group_order,
+                                                ctrl_html = tree_or_null)
   )
   jobs <- lapply(sec_jobs, pic_report_section_job)
   # 6. Enrichment の重い所 (CSV 1 本ずつの読みと spec) も同じ並びに入れる。GSEA は束にする。
@@ -174,15 +183,18 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
   sec_expr <- sec$expr$value
 
   # 6. Enrichment (section_enrichment は id="enrich" を埋め込むので prefix 付けは後処理)
-  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "6. Enrichment", out_dir, id_prefix, reg, group_order, pre = pre)
+  sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "6. Enrichment", out_dir, id_prefix, reg, group_order, pre = pre,
+                                   tree_html = tree)
   if (is.null(sec_enrich)) sec_enrich <- ""
   sec_enrich <- sub('<section id="enrich">', sprintf('<section id="%s">', sid("enrich")), sec_enrich, fixed = TRUE)
 
-  grp_panel <- group_toggle_panel(group_pal)
+  # 全タブで同じサンプル除外パネルを使う (mapping_sum が無いときだけ従来の group トグル)。
+  grp_panel <- if (nzchar(tree)) tree else group_toggle_panel(group_pal)
   # PCA は group / sample の階層で計算対象を選べるようにする
   # (特定のサンプルを外れ値として除いたときの主成分を確かめられる)。
   pca_pp <- sec$pca$value
-  pca_ctrl <- if (isTRUE(pca_pp$has_pp))
+  pca_ctrl <- if (nzchar(tree)) tree
+  else if (isTRUE(pca_pp$has_pp))
     group_sample_tree_panel(pca_pp$samples, pca_pp$groups, group_pal, group_map)
   else grp_panel
   list(
@@ -254,7 +266,16 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   data_tabs <- build_analysis_data_tabs(reg, desc, out_dir, out_dir, "", fdr,
                                         msum, group_map, group_pal, sample_order, group_order,
                                         stats, deg_counts, tmp_dir)
-  overview_sec  <- build_overview_section(run, genome, params = pic_read_analysis_params(out_dir))
+  params <- pic_read_analysis_params(out_dir)
+  # サンプル除外 (report.js) が使う情報: 状態を保存する鍵 (project + out_dir) と、
+  # 「pic reanalyze」のコマンドに入れる out_dir の絶対パス (レポートを作った計算機でのパス)。
+  reg$meta <- list(
+    project = project, run = run, genome = genome,
+    out_dir = tryCatch(normalizePath(out_dir, winslash = "/", mustWork = FALSE), error = function(e) out_dir),
+    excluded_samples = as.list(pic_split_csv(pic_param(params, "excluded_samples"))),
+    excluded_groups = as.list(pic_split_csv(pic_param(params, "excluded_groups"))),
+    reanalyzed_from = pic_param(params, "reanalyzed_from"))
+  overview_sec  <- build_overview_section(run, genome, params = params)
   downloads_sec <- build_downloads_section(data_tabs, run, genome, group_pal)
   tb <- build_tabs(c(list(list(html = overview_sec, label = "Overview")),
                      data_tabs,
@@ -450,6 +471,31 @@ pic_param <- function(params, key, default = "") {
   if (is.null(v) || is.na(v)) default else as.character(v)
 }
 
+# "a,b,c" -> c("a","b","c") (空なら character(0))。
+pic_split_csv <- function(x) {
+  if (is.null(x) || !nzchar(x)) return(character(0))
+  v <- trimws(strsplit(x, ",", fixed = TRUE)[[1]])
+  v[nzchar(v)]
+}
+
+# pic reanalyze で作り直したレポートなら、何を除外したか (analysis_params の excluded_samples /
+# excluded_groups / reanalyzed_from) を Overview の先頭に示す。それ以外は ""。
+pic_excluded_note_html <- function(params) {
+  xs <- pic_split_csv(pic_param(params, "excluded_samples"))
+  xg <- pic_split_csv(pic_param(params, "excluded_groups"))
+  if (length(xs) == 0 && length(xg) == 0) return("")
+  from <- pic_param(params, "reanalyzed_from")
+  li <- character(0)
+  if (length(xg) > 0) li <- c(li, sprintf('<li>Excluded groups (%d): <b>%s</b></li>', length(xg),
+                                          paste(html_escape(xg), collapse = ", ")))
+  if (length(xs) > 0) li <- c(li, sprintf('<li>Excluded samples (%d): <b>%s</b></li>', length(xs),
+                                          paste(html_escape(xs), collapse = ", ")))
+  if (nzchar(from)) li <- c(li, sprintf('<li>Re-analyzed from <code>%s</code> with <code>pic reanalyze</code> (DESeq2, enrichment and this report were recomputed without them).</li>',
+                                        html_escape(from)))
+  sprintf('<div class="pic-excl-ov"><b>Sample exclusion.</b> This report was computed without the following samples.<ul>%s</ul></div>',
+          paste(li, collapse = ""))
+}
+
 build_overview_section <- function(run, genome, pre_steps = list(), extra_tools = character(0),
                                    params = list()) {
   code_block <- function(txt) sprintf('<pre class="pic-code">%s</pre>', txt)
@@ -591,9 +637,9 @@ sf_code,
     '(photo-isolation chemistry) 3&prime;-biased RNA-seq run <b>%s</b>, mapped to <b>%s</b>.</p>'),
     html_escape(run), html_escape(genome))
   pipe_intro <- '<p class="pic-flow-sub">Starting from the demultiplexed per-sample FASTQ. Run each command per sample.</p>'
-  sprintf(paste0('<section id="overview"><h2>Overview</h2>%s',
+  sprintf(paste0('<section id="overview"><h2>Overview</h2>%s%s',
                  '<h3 class="pic-flow-title">Analysis Pipeline</h3>%s%s<div class="pic-flow">%s</div></section>'),
-          overview, pipe_intro, tools_block, paste(steps, collapse = arrow))
+          pic_excluded_note_html(params), overview, pipe_intro, tools_block, paste(steps, collapse = arrow))
 }
 
 # 1 run に複数 genome (= 複数 project) があるとき、パスが他 project のものかを判定する。
@@ -747,6 +793,8 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
   files_json <- jsonlite::toJSON(if (length(files_min) > 0) files_min else stats::setNames(list(), character(0)),
                                  auto_unbox = TRUE, null = "null", na = "null")
   plotly_js <- paste(readLines(file.path(asset_dir, "plotly.min.js"), warn = FALSE), collapse = "\n")
+  meta_json <- if (is.null(reg$meta)) "null" else
+    jsonlite::toJSON(reg$meta, auto_unbox = TRUE, null = "null", na = "null")
   page <- paste0(
     '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
@@ -759,6 +807,8 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
     '<main class="pic-main">', body_html, '</main>',
     '<script>', plotly_js, '</script>',
     '<script>var PIC_PLOTS=', plots_json, ';var PIC_EXPR=', expr_json, ';var PIC_PCA=', pca_json, ';var PIC_FILES=', files_json, ';</script>',
+    # サンプル除外の状態の鍵と再計算のコマンドに使う情報 (xenograft など無いときは null)
+    '<script>var PIC_META=', meta_json, ';</script>',
     '<script>', report_runtime_js(), '</script>',
     '</body></html>'
   )

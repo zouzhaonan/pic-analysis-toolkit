@@ -73,7 +73,9 @@ pic_ora_item <- function(mdir, project) {
 # enrichment セクションの中身 (h3 GSEA / ORA) を返す。<section> ラッパは付けない。
 # pre: 先に (並べて) 作った list(gsea = pic_gsea_item の list (pic_gsea_csvs の順), ora = pic_ora_item の list
 #      (pic_ora_mdirs の順))。NULL ならここで順に作る。
-enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, proj_dir = NULL, id_prefix = "", reg = NULL, group_order = NULL, pre = NULL) {
+# tree_html: GSEA / ORA の左パネルの末尾に足す HTML (サンプル除外のパネル)。
+enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, proj_dir = NULL, id_prefix = "", reg = NULL, group_order = NULL, pre = NULL,
+                              tree_html = "") {
   if (is.null(enrich_dir) || is.na(enrich_dir) || !dir.exists(enrich_dir)) return("")
   ecfg <- pic_plot_spec()$plot$enrichment
   parts <- character(0)
@@ -133,7 +135,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         vapply(contrasts, format_contrast_file_label, character(1)))
       gsea_html <- build_matrix_group(rows, methods, cell_html, row_groups = row_groups,
                                       row_counts = row_counts, group_pal = group_pal, view_header = "",
-                                      id_prefix = id_prefix)
+                                      id_prefix = id_prefix, ctrl_extra = tree_html)
     }
   }
   if (nzchar(gsea_html)) {
@@ -200,7 +202,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
       paste0('<div class="pic-enrich-ora">',
              '<p class="pic-note">ORA takes the differentially expressed genes in each cluster and asks which biological terms are over-represented among them. ',
              'Dot color is significance (p.adjust), size the gene ratio. Pick a method on the left to view it.</p>%s</div>'),
-      build_select_group(ora_items, prefix = prefix_html, ctrl_title = "Method", view_header = "")
+      build_select_group(ora_items, prefix = prefix_html, ctrl_title = "Method", view_header = "", ctrl_extra = tree_html)
     ))
   } else {
     # ORA が無い場合は無言でスキップせず、理由を明記する。
@@ -229,8 +231,9 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
 }
 
 # 通常レポート用の enrichment セクション (<section id="enrich"> でラップ)。
-section_enrichment <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, heading = "4. Enrichment", proj_dir = NULL, id_prefix = "", reg = NULL, group_order = NULL, pre = NULL) {
-  inner <- enrichment_blocks(enrich_dir, project, tmp_dir, deg_counts, deseq2_dir, group_pal, proj_dir, id_prefix, reg, group_order, pre)
+section_enrichment <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, deseq2_dir = NULL, group_pal = NULL, heading = "4. Enrichment", proj_dir = NULL, id_prefix = "", reg = NULL, group_order = NULL, pre = NULL,
+                               tree_html = "") {
+  inner <- enrichment_blocks(enrich_dir, project, tmp_dir, deg_counts, deseq2_dir, group_pal, proj_dir, id_prefix, reg, group_order, pre, tree_html)
   if (!nzchar(inner)) inner <- '<p>No enrichment plots were generated.</p>'
   sprintf('<section id="enrich"><h2>%s</h2>%s</section>', heading, inner)
 }
