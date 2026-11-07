@@ -759,13 +759,23 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
   expr_json <- pic_to_json(if (length(reg$expr) > 0) reg$expr else stats::setNames(list(), character(0)), digits = 6)
   # 部分集合 PCA 用の rlog 行列 (群を選び直して主成分を引き直すために使う)
   pca_json <- pic_to_json(if (length(reg$pca) > 0) reg$pca else stats::setNames(list(), character(0)), digits = 4)
-  # 埋め込みファイル (gzip+base64) — DL 用に {id:{n:name, gz:base64}} だけを出力
-  files_min <- if (!is.null(reg$files)) lapply(reg$files, function(f) list(n = f$name, gz = f$gz)) else list()
-  files_json <- jsonlite::toJSON(if (length(files_min) > 0) files_min else stats::setNames(list(), character(0)),
-                                 auto_unbox = TRUE, null = "null", na = "null")
+  # 埋め込みファイル (zlib+base64。register_file が作ったもの) — DL 用。1 本ずつ実行されない script 要素に入れる
+  file_blocks <- if (length(reg$files) > 0) vapply(names(reg$files), function(id) {
+    f <- reg$files[[id]]
+    pic_z_block(paste0("pic-f-", id), f$gz, c(`data-n` = f$name))
+  }, character(1)) else character(0)
   plotly_js <- paste(readLines(file.path(asset_dir, "plotly.min.js"), warn = FALSE), collapse = "\n")
   meta_json <- if (is.null(reg$meta)) "null" else
     jsonlite::toJSON(reg$meta, auto_unbox = TRUE, null = "null", na = "null")
+  # 大きな表 (DEG の heatmap など) の HTML も縮めて、開いたときに戻す
+  zb <- pic_z_fragments(body_html)
+  # plotly の js と図・発現・PCA の JSON は縮めた塊にする (report_data.js が展開して PIC_PLOTS などに入れる)
+  data_blocks <- c(
+    pic_z_block("pic-z-plotly", pic_z_b64(plotly_js)),
+    pic_z_block("pic-z-PIC_PLOTS", pic_z_b64(plots_json)),
+    pic_z_block("pic-z-PIC_EXPR", pic_z_b64(expr_json)),
+    pic_z_block("pic-z-PIC_PCA", pic_z_b64(pca_json)),
+    zb$blocks)
   page <- paste0(
     '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
@@ -775,9 +785,11 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
     # ナビバー左端にレポート名 (ただの文字)、区切り線、右側にタブを両端揃え
     '<nav class="pic-tabs"><span class="pic-brand">', html_escape(title), ' Report</span>',
     '<div class="pic-tabbtns">', nav_html, '</div>', extra_nav, '</nav>',
-    '<main class="pic-main">', body_html, '</main>',
-    '<script>', plotly_js, '</script>',
-    '<script>var PIC_PLOTS=', plots_json, ';var PIC_EXPR=', expr_json, ';var PIC_PCA=', pca_json, ';var PIC_FILES=', files_json, ';</script>',
+    '<main class="pic-main">', zb$html, '</main>',
+    paste(data_blocks, collapse = ""),
+    paste(file_blocks, collapse = ""),
+    # 縮めた塊の展開 (picData / picFileBlob / picReady)。report.js より前に置く
+    '<script>', report_data_js(), '</script>',
     # サンプル除外の状態の鍵などに使う情報 (xenograft など無いときは null)
     '<script>var PIC_META=', meta_json, ';</script>',
     '<script>', report_runtime_js(), '</script>',
@@ -1018,6 +1030,10 @@ pic_load_deg_counts <- function(deseq2_dir, project) {
   agg <- stats::aggregate(deg_count ~ contrast, data = d, FUN = sum)
   out <- as.list(stats::setNames(agg$deg_count, agg$contrast))
   out
+}
+
+report_data_js <- function() {
+  paste(readLines(file.path(pic_report_asset_dir(), "report_data.js"), warn = FALSE), collapse = "\n")
 }
 
 report_runtime_js <- function() {

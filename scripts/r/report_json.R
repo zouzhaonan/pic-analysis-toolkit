@@ -48,3 +48,60 @@ pic_to_json <- function(x, digits = 4) {
   jsonlite::toJSON(pic_json_compact(x, digits), auto_unbox = TRUE, null = "null", na = "null", digits = digits,
                    json_verbatim = TRUE)
 }
+
+# --- 埋め込みデータの圧縮 (render_report_page が使う) ----------------------------
+# 大きな埋め込み (plotly の js・PIC_PLOTS/EXPR/PCA の JSON・大きな表の HTML・ダウンロード用ファイル) は
+# zlib (RFC1950。R の memCompress(type = "gzip") が出す形) で縮めて base64 にし、
+# 実行されない <script type="application/x-pic-z" id="..."> に入れる。
+# ブラウザは report_data.js が DecompressionStream("deflate") で展開する。
+# JS の文字列として読ませないので、開いたときの JS の構文解析も軽くなる。
+
+# 文字列 (UTF-8) または raw を zlib で縮めて base64 にする。
+pic_z_b64 <- function(x) {
+  raw <- if (is.raw(x)) x else charToRaw(enc2utf8(paste(as.character(x), collapse = "")))
+  jsonlite::base64_enc(memCompress(raw, "gzip"))
+}
+
+# 実行されない script 要素に base64 を入れる。attrs は名前付きの文字列 (data-n など)。
+pic_z_block <- function(id, b64, attrs = NULL) {
+  a <- if (length(attrs) > 0) paste0(" ", names(attrs), '="', vapply(attrs, html_escape, character(1)), '"', collapse = "") else ""
+  paste0('<script type="application/x-pic-z" id="', id, '"', a, '>', b64, '</script>')
+}
+
+# body の HTML から、大きな <table> (入れ子を含まない一番内側の表で min_bytes 以上) を
+# <template class="pic-zfrag" data-z="<id>"></template> に置き換え、表の HTML を縮めた塊にする。
+# report_data.js が展開して同じ場所に戻してから report.js の初期化を走らせるので、表示は変わらない。
+# 返り値: list(html = 置き換えた body, blocks = script 要素の文字列のベクトル)
+pic_z_fragments <- function(html, min_bytes = 65536L, prefix = "pic-z-frag-") {
+  html <- enc2utf8(html)
+  op <- gregexpr("<table[ >]", html, perl = TRUE, useBytes = TRUE)[[1]]
+  cl <- gregexpr("</table>", html, fixed = TRUE, useBytes = TRUE)[[1]]
+  if (op[[1]] < 0 || cl[[1]] < 0) return(list(html = html, blocks = character(0)))
+  r <- charToRaw(html)
+  cut_a <- integer(0); cut_b <- integer(0)
+  for (o in op) {
+    c1 <- cl[cl > o]
+    if (length(c1) == 0) next
+    e <- c1[[1]] + 8L - 1L                       # "</table>" の最後のバイト
+    if (any(op > o & op < c1[[1]])) next        # 入れ子の外側は置き換えない
+    if (e - o + 1L < min_bytes) next
+    if (length(cut_b) > 0 && o <= cut_b[[length(cut_b)]]) next
+    cut_a <- c(cut_a, o); cut_b <- c(cut_b, e)
+  }
+  if (length(cut_a) == 0) return(list(html = html, blocks = character(0)))
+  parts <- character(0); blocks <- character(0); pos <- 1L
+  for (k in seq_along(cut_a)) {
+    frag <- r[cut_a[[k]]:cut_b[[k]]]
+    s <- rawToChar(frag)
+    if (grepl("<script", s, fixed = TRUE, useBytes = TRUE)) next   # script を含む表は innerHTML で動きが変わるので残す
+    id <- paste0(prefix, k)
+    if (cut_a[[k]] > pos) parts <- c(parts, rawToChar(r[pos:(cut_a[[k]] - 1L)]))
+    parts <- c(parts, sprintf('<template class="pic-zfrag" data-z="%s"></template>', id))
+    blocks <- c(blocks, pic_z_block(id, pic_z_b64(frag)))
+    pos <- cut_b[[k]] + 1L
+  }
+  if (pos <= length(r)) parts <- c(parts, rawToChar(r[pos:length(r)]))
+  out <- paste(parts, collapse = "")
+  Encoding(out) <- "UTF-8"
+  list(html = out, blocks = blocks)
+}
