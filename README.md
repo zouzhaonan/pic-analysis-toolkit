@@ -12,8 +12,8 @@ pic all --sample-sheet sample.tsv --raw-fastq-dir fastq/ --out-dir out/ --run-na
 
 ## 注意事項 / Notes
 
-- Apple Silicon Mac でのみ動作確認しています。/ Tested only on Apple Silicon Mac.
-- **⚠️ Intel Mac は未検証です。Windows では動きません。/ Intel Mac is untested. Windows is not supported. ⚠️**
+- Apple Silicon Mac (osx-arm64) と Linux (x86_64) で動作確認しています。/ Tested on Apple Silicon Mac (osx-arm64) and Linux (x86_64).
+- **⚠️ 1.5.0 から OS ごとのパッケージになり、Intel Mac 用はありません。Windows では動きません。/ Since 1.5.0 the package is built per OS; there is no Intel Mac build. Windows is not supported. ⚠️**
 - conda が必要です（[Miniforge](https://github.com/conda-forge/miniforge) を推奨）。/ Requires conda ([Miniforge](https://github.com/conda-forge/miniforge) recommended).
 - ネット接続が必要です（インストール、リファレンスの取得、`pic chipatlas`、`pic enrich --prepare-libs` などで外部のサーバーにつなぎます）。/ Requires an internet connection (installation, reference download, `pic chipatlas`, `pic enrich --prepare-libs`, etc. access external servers).
 - `conda activate pic` を忘れると、Linux では groff の `pic` が動きます。/ Without `conda activate pic`, Linux runs groff's `pic` instead.

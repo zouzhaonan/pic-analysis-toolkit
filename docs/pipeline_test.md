@@ -9,7 +9,7 @@ A single `pic all` command runs mapping → DESeq2 → ORA/GSEA → HTML report,
 ```bash
 mkdir -p "$HOME/tmp"
 cd "$HOME/tmp"
-curl -L "https://github.com/zouzhaonan/pic-analysis-toolkit/releases/download/v1.4.0/pic_test.tar.gz" | tar zx
+curl -L "https://github.com/zouzhaonan/pic-analysis-toolkit/releases/latest/download/pic_test.tar.gz" | tar zx
 
 wd="$HOME/tmp/pic_test"
 ```
@@ -36,7 +36,7 @@ pic all \
   --run-name test
 ```
 
-The run is finished when `pic all: 完了しました` ("completed") is printed. It takes several minutes to about 10 minutes on an Apple Silicon Mac (mapping is followed by enrichment and report generation).
+The run is finished when `pic all: 完了しました` ("completed") is printed. It takes a few minutes (about 3 minutes on an Apple Silicon Mac) (mapping is followed by enrichment and report generation).
 
 Check `mapping_sum`: all 4 samples should be listed, each with roughly 80,000-150,000 reads in `total`.
 
@@ -50,7 +50,7 @@ cat "$wd/summary/mapping_sum__test.tsv"
 open "$wd/report_test_hg38.html"
 ```
 
-The report embeds all of its data in a single HTML file, so you can share just this file (tens of MB at this data size).
+The report embeds all of its data in a single HTML file, so you can share just this file (about 6 MB at this data size).
 `R6_CTRL` vs `Lig_CTRL` gives some DEGs.
 The main outputs are (`<run>_<genome>` = `test_hg38`):
 

@@ -28,6 +28,11 @@ Optional options:
                            --prefix, the one prefix uses all <threads>.
                            Output gzip level: env PIC_DEMUX_LEVEL (1-12,
                            default 6; about the same size as gzip -6).
+  --barcode-first          read1 layout is barcode(6) + UMI(6).
+                           Default assumes the PIC standard UMI(6) + barcode(6).
+                           Use only for libraries built with the two segments
+                           swapped; with the wrong setting demux matches almost
+                           nothing and samples come out near-empty.
 
 Per-prefix mode (for schedulers; run each prefix, then --collect):
   --prefix <prefix>        Split only this FASTQ pair (column 1 of the sample

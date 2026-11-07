@@ -370,7 +370,12 @@ run_umi_count_for_bam() {
 }
 
 umi_count() {
-  local bam_path output_table
+  local bam_path output_table failed=0
+
+  if ! command -v umi_tools >/dev/null 2>&1; then
+    handle_error "umi_tools not found. Install it into the pic environment: conda install -c bioconda umi_tools"
+    exit 1
+  fi
 
   while IFS= read -r bam_path; do
     wait_for_available_slot "$THREADS" || return 1
@@ -379,6 +384,16 @@ umi_count() {
   done < <(find "$BAM_DIR" -name "*.bam")
 
   wait
+
+  # 背景の job の失敗は wait では拾えないので、表ができたかで確かめる。
+  while IFS= read -r bam_path; do
+    output_table="${COUNTS_DIR}/$(basename "${bam_path%.bam}.txt")"
+    if [[ ! -s "$output_table" ]]; then
+      handle_error "UMI counting failed for $(basename "${bam_path%.bam}")."
+      failed=1
+    fi
+  done < <(find "$BAM_DIR" -name "*.bam")
+  [[ "$failed" = 0 ]] || exit 1
 }
 
 generate_deftables() {

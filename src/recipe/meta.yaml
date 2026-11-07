@@ -1,5 +1,5 @@
 {% set name = "pic" %}
-{% set version = "1.4.0" %}
+{% set version = "1.5.0" %}
 
 package:
   name: {{ name|lower }}
@@ -12,7 +12,7 @@ build:
   number: 0
 
 requirements:
-  # pic-demux (src/pic-demux、Rust + libdeflate) を build するので、パッケージは OS ごと (linux-64 / osx-arm64)。
+  # pic-demux・pic-aggregate (src/pic-demux・src/pic-aggregate、Rust。pic-demux は libdeflate も) を build するので、パッケージは OS ごと (linux-64 / osx-arm64)。
   build:
     - {{ compiler('c') }}
     - {{ compiler('rust') }}
@@ -24,6 +24,7 @@ requirements:
     - hisat2 =2.2.1
     - samtools =1.23.1
     - subread =2.1.1
+    - umi_tools =1.1.6
     - bedtools =2.31.1
     - ucsc-bedgraphtobigwig =482
     - ucsc-fasize =482
@@ -64,6 +65,8 @@ test:
   commands:
     - pic
     - pic-demux --version
+    - pic-aggregate --version
+    - umi_tools --version
 
 about:
   summary: "A toolkit for mapping and statistical analysis of PIC sequencing data"
