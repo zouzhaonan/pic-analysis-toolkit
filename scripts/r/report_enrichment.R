@@ -164,7 +164,9 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
     methods <- pic_ora_mdirs(enrich_dir)
     oitems <- if (!is.null(pre)) pre$ora else lapply(methods, pic_ora_item, project = project,
                                                              cluster_n = pic_cluster_gene_counts(deseq2_dir, project))
-    for (k in seq_along(methods)) {
+    # 選択リスト・図・Downloads の並びを GSEA と同じ method の順 (spec の順) にそろえる。
+    mnames <- basename(methods)
+    for (k in match(order_methods(mnames), mnames)) {
       it <- oitems[[k]]
       if (is.null(it)) next
       method <- basename(methods[[k]])
