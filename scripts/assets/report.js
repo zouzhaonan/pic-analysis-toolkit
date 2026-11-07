@@ -6,8 +6,6 @@
   var PIC_TOP_GENES_TITLE = "Top 10 DEGs";
   // 前の版の最初のグループのタイトル (localStorage に残っていれば今のものに置き換える)
   var PIC_TOP_GENES_TITLE_OLD = "Top 5 DEGs";
-  // サンプルを外しているときに DEG・Enrichment・Expression のタブの冒頭に出す 1 文
-  var PIC_EXCL_NOTE_TEXT = "Reference values computed with all samples. Re-analysis is required for accurate statistics.";
   // 描いた直後に呼ぶフック (サンプル除外を描いたばかりの図に当てる。DOMContentLoaded で設定)
   var picAfterRender = null;
   // タブを表示した直後に呼ぶフック (隠れている間に変わったサンプル除外を、そのタブに当てる。DOMContentLoaded で設定)
@@ -1148,7 +1146,7 @@
     //   Correlation … 行・列を外す。値はそのまま、色の幅だけ表示中のサンプル (対角を除く) の最小〜最大に引き直す
     //   PCA … 残りのサンプルで主成分を引き直す (picRecomputePCA)
     //   DEG / Expression / Enrichment … DESeq2 は全サンプルで計算したもの。外したサンプルの列・点を隠し、
-    //       丸ごと外した group を含む比較を隠し、参考値である旨を 1 文 (PIC_EXCL_NOTE_TEXT) で注記する。
+    //       丸ごと外した group を含む比較を隠す (注記は出さない)。
     // 除外が無いときは何もしない (図・表は元のまま)。
     var PIC_META_ = (typeof PIC_META !== "undefined") ? PIC_META : null;
     function exInitModel() {
@@ -1223,21 +1221,6 @@
       if (id === "cor" || id === "pca" || id === "deg" || id === "expr" || id === "enrich") return id;
       return "";
     }
-    // DESeq2 / enrichment の結果 (DEG・Expression・Enrichment) は全サンプルで計算したもの。
-    // サンプルを外しているときは、これらのタブの冒頭に 1 文 (PIC_EXCL_NOTE_TEXT) だけ出す。
-    function exNote(tab) {
-      var old = tab.querySelector(":scope > .pic-excl-note");
-      if (old) old.parentNode.removeChild(old);
-      var kind = exTabKind(tab);
-      if (!(kind === "deg" || kind === "expr" || kind === "enrich") || !exAny()) return;
-      var box = document.createElement("div");
-      box.className = "pic-excl-note pic-excl-warn";
-      var p = document.createElement("p"); p.textContent = PIC_EXCL_NOTE_TEXT;
-      box.appendChild(p);
-      var head = tab.querySelector(":scope > .pic-tab-head");
-      if (head) head.parentNode.insertBefore(box, head.nextSibling); else tab.insertBefore(box, tab.firstChild);
-    }
-
     // ---- 行 (QC の棒・深さの表・相関の行) ----
     // 区切り線 (group の先頭) は見えている行の中で引き直す。除外が無ければ元のクラスに戻す。
     function exResepRows(rows, cls) {
@@ -1559,7 +1542,6 @@
       exApplyHeatmap(tab);
       exApplyCmatrix(tab);
       tab.querySelectorAll(".pic-expr").forEach(function (b) { if (b._picRefilter) b._picRefilter(); });
-      exNote(tab);
       tab._picExDirty = any;
     }
     // 当てるのは見えているタブだけ。隠れているタブは印を付けておき、開いたとき (picOnTabShown) に当てる。

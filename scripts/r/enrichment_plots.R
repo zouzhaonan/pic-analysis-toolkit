@@ -367,13 +367,14 @@ build_ora_plotly <- function(ora_df) {
       if (length(vals) == 0) NA_real_ else vals[[1]]
     }, .groups = "drop")
 
-  cluster_levels <- unique(plot_df$cluster)
+  # cluster は番号順 (c1, c2, ..., c11)。名前は cluster expression profiles と同じ "c1 (n)" の 1 行。
+  cluster_levels <- pic_cluster_order(plot_df$cluster)
   cluster_labels <- stats::setNames(
     vapply(cluster_levels, function(cl) {
       den <- cluster_den$den[cluster_den$cluster == cl]
-      # 括弧で続けず 2 行に (横に並ぶ cluster の目盛りが重ならないように)
-      if (length(den) == 0 || !is.finite(den[[1]])) sprintf("%s<br>n=NA", cl)
-      else sprintf("%s<br>n=%s", cl, format(den[[1]], scientific = FALSE, trim = TRUE))
+      s <- pic_cluster_short(cl)
+      if (length(den) == 0 || !is.finite(den[[1]])) s
+      else sprintf("%s (%s)", s, format(den[[1]], scientific = FALSE, trim = TRUE))
     }, character(1)), cluster_levels)
 
   plot_df <- plot_df |>
@@ -416,8 +417,8 @@ build_ora_plotly <- function(ora_df) {
     showlegend = FALSE,
     xaxis = list(type = "category", categoryorder = "array",
                  categoryarray = as.list(levels(plot_df$cluster_label)),
-                 # 2 行の見出しを縦に (横にすると cluster の数が多いとき隣と重なる)
-                 tickangle = -90, automargin = TRUE, showline = TRUE, mirror = TRUE,
+                 # 1 行の見出しを 45 度に (cluster が多くても隣と重ならない)
+                 tickangle = -45, automargin = TRUE, showline = TRUE, mirror = TRUE,
                  linecolor = "#cdd7e2"),
     yaxis = list(tickmode = "array", tickvals = as.list(seq_along(ylab_levels)),
                  ticktext = as.list(ylab_levels), automargin = TRUE,

@@ -430,7 +430,7 @@ hex_to_rgba <- function(hex, alpha) {
 }
 
 # Cluster expression profiles を plotly のインタラクティブ版に変換する。
-# cluster ごとにパネル (free_y) を横に並べ、各パネルで group ごとの箱ひげ。
+# 1 枚の図の x 軸に cluster (c1..cN) を並べ、各 cluster の位置に group ごとの箱ひげ (grouped box)。
 # 遺伝子ごとの点は描かない (pic193_2 で 28 万点あり、ORA に切り替えるたびに数秒かかったため)。
 # 箱ひげの値 (四分位・ひげ) は R で計算して渡し、HTML に遺伝子ごとの値を入れない。
 # 戻り値: list(data, layout, height) もしくは NULL。
@@ -449,71 +449,67 @@ build_cluster_profile_plotly <- function(deseq2_dir, project, group_pal = NULL) 
     summ <- suppressMessages(readr::read_csv(summ_f, show_col_types = FALSE, progress = FALSE))
     if (all(c("cluster_id", "gene_count") %in% colnames(summ))) nmap <- stats::setNames(summ$gene_count, summ$cluster_id)
   }
-  clusters <- unique(as.character(prof$cluster_id))
-  # 見出しは括弧で続けず 2 行に (パネルが狭いと隣と重なるため)
-  clab <- function(cl) if (!is.null(nmap) && cl %in% names(nmap)) sprintf("%s<br>n=%s", html_escape(cl), nmap[[cl]]) else html_escape(cl)
+  # cluster は番号順 (c1, c2, ..., c11)。ORA の dot plot の x 軸と同じ並びと名前にする。
+  clusters <- pic_cluster_order(prof$cluster_id)
+  # 見出しは "c1 (2432)" の 1 行 (名前は cN、括弧は遺伝子の数)
+  clab <- function(cl) {
+    s <- html_escape(pic_cluster_short(cl))
+    if (!is.null(nmap) && cl %in% names(nmap)) sprintf("%s (%s)", s, nmap[[cl]]) else s
+  }
   groups <- unique(as.character(prof$group))
   pal <- ensure_palette(group_pal, groups)
   # group を palette (= sample_sheet) の順に並べる
   if (!is.null(group_pal)) groups <- pic_reorder_vec(groups, names(group_pal))
 
   ncl <- length(clusters)
-  gap <- 0.045
-  panelw <- (1 - gap * (ncl - 1)) / ncl
+  ng <- length(groups)
+  cl_labels <- vapply(clusters, clab, character(1))
 
+  # 1 枚の図: x 軸に c1..cN、各 cluster の位置に群ごとの箱ひげを並べる (grouped box)。y 軸は 1 本。
+  # cluster が多いときは図の最小幅を広げ、枠の中で横にスクロールさせる (min_width)。
+  per_cl <- max(64L, as.integer(ng * 11L + 14L))
+  min_width <- as.integer(70L + ncl * per_cl)
+  height <- 360L
   traces <- list()
-  annotations <- list()
-  # 凡例を strip ラベル (2 行) より上に置き、重なりを避ける。boxgap を詰めて箱を太くする。
-  # x 軸の群名は凡例と色で分かるので出さない (下の余白も詰める)。
-  height <- 380L
-  mar <- list(l = 54, r = 10, t = 104, b = 16)
-  plot_h <- height - mar$t - mar$b
-  layout <- list(margin = mar, hovermode = "closest",
-                 showlegend = TRUE, boxgap = 0.2, boxgroupgap = 0,
-                 legend = list(orientation = "h", yanchor = "bottom", y = 1 + 44 / plot_h, x = 0))
-  for (i in seq_len(ncl)) {
-    cl <- clusters[[i]]
-    x0 <- (i - 1) * (panelw + gap); x1 <- x0 + panelw
-    xref <- if (i == 1) "x" else paste0("x", i)
-    yref <- if (i == 1) "y" else paste0("y", i)
-    xname <- if (i == 1) "xaxis" else paste0("xaxis", i)
-    yname <- if (i == 1) "yaxis" else paste0("yaxis", i)
-    layout[[xname]] <- list(domain = list(x0, x1), anchor = yref, type = "category",
-                            categoryorder = "array", categoryarray = as.list(groups),
-                            showticklabels = FALSE, ticks = "", showline = TRUE, mirror = TRUE,
-                            linecolor = "#cdd7e2")
-    # 全パネル 0 起点 (free-y だが下端は 0)。y=0 の黒線 (zeroline) は消す。
-    layout[[yname]] <- list(domain = list(0, 1), anchor = xref, automargin = TRUE, rangemode = "tozero",
-                            zeroline = FALSE,
-                            title = if (i == 1) list(text = "rlog expression") else list(text = ""),
-                            showline = TRUE, mirror = TRUE, linecolor = "#cdd7e2")
-    sub <- prof[as.character(prof$cluster_id) == cl, , drop = FALSE]
-    for (g in groups) {
-      gv <- as.numeric(sub$value[as.character(sub$group) == g])
+  for (g in groups) {
+    col <- if (g %in% names(pal)) pal[[g]] else "#888888"
+    xs <- list(); q1 <- list(); md <- list(); q3 <- list(); lf <- list(); uf <- list()
+    for (i in seq_len(ncl)) {
+      gv <- as.numeric(prof$value[as.character(prof$cluster_id) == clusters[[i]] & as.character(prof$group) == g])
       if (length(gv) == 0) next
-      col <- if (g %in% names(pal)) pal[[g]] else "#888888"
       bs <- pic_box_stats(gv)
-      traces[[length(traces) + 1L]] <- list(
-        x = list(g), q1 = list(bs$q1), median = list(bs$median), q3 = list(bs$q3),
-        lowerfence = list(bs$lowerfence), upperfence = list(bs$upperfence),
-        type = "box", name = group_span(g, pal), legendgroup = g, showlegend = (i == 1),
-        boxpoints = FALSE, whiskerwidth = 0.6,
-        fillcolor = hex_to_rgba(col, "0.45"),
-        line = list(color = col, width = 1.2),
-        xaxis = xref, yaxis = yref,
-        # hover は plotly の箱ひげの既定 (四分位とひげ) に、群名 (= trace の名前) を添える
-        hoverinfo = "y+name"
-      )
+      xs[[length(xs) + 1L]] <- cl_labels[[i]]
+      q1[[length(q1) + 1L]] <- bs$q1; md[[length(md) + 1L]] <- bs$median; q3[[length(q3) + 1L]] <- bs$q3
+      lf[[length(lf) + 1L]] <- bs$lowerfence; uf[[length(uf) + 1L]] <- bs$upperfence
     }
-    # strip ラベルは枠なし (テキストのみ)
-    annotations[[length(annotations) + 1L]] <- list(
-      text = clab(cl), xref = "paper", yref = "paper",
-      x = (x0 + x1) / 2, y = 1.0, xanchor = "center", yanchor = "bottom",
-      showarrow = FALSE, font = list(size = 13, color = "#1f2933")
+    if (length(xs) == 0) next
+    traces[[length(traces) + 1L]] <- list(
+      x = xs, q1 = q1, median = md, q3 = q3, lowerfence = lf, upperfence = uf,
+      type = "box", name = group_span(g, pal), legendgroup = g, showlegend = TRUE,
+      boxpoints = FALSE, whiskerwidth = 0.6,
+      fillcolor = hex_to_rgba(col, "0.45"),
+      line = list(color = col, width = 1.2),
+      # 傾向を見せるだけの図なので hover は出さない
+      hoverinfo = "skip"
     )
   }
-  layout$annotations <- annotations
-  list(data = traces, layout = layout, height = height,
+  # cluster の境に薄い区切り線
+  shapes <- lapply(seq_len(max(0L, ncl - 1L)), function(i) list(
+    type = "line", xref = "x", yref = "paper", x0 = i - 0.5, x1 = i - 0.5, y0 = 0, y1 = 1,
+    layer = "below", line = list(color = "#e3e8ee", width = 1)
+  ))
+  layout <- list(
+    margin = list(l = 54, r = 10, t = 40, b = 40), hovermode = FALSE,
+    showlegend = TRUE, boxmode = "group", boxgap = 0.18, boxgroupgap = 0.08,
+    legend = list(orientation = "h", yanchor = "bottom", y = 1.02, x = 0),
+    xaxis = list(type = "category", categoryorder = "array", categoryarray = as.list(unname(cl_labels)),
+                 tickangle = 0, ticks = "", showline = TRUE, mirror = TRUE, linecolor = "#cdd7e2",
+                 range = list(-0.5, ncl - 0.5), fixedrange = TRUE),
+    yaxis = list(title = list(text = "rlog expression"), rangemode = "tozero", zeroline = FALSE,
+                 automargin = TRUE, showline = TRUE, mirror = TRUE, linecolor = "#cdd7e2"),
+    shapes = shapes
+  )
+  list(data = traces, layout = layout, height = height, min_width = min_width,
        config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = TRUE))
 }
 

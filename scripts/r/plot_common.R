@@ -18,6 +18,17 @@ save_plot_png <- function(plot_obj, output_path, width = 10, height = 8) {
   ggplot2::ggsave(output_path, plot = plot_obj, width = width, height = height, dpi = 300, limitsize = FALSE)
 }
 
+# report の図で使う cluster の短い名前: "cluster_3" -> "c3" (それ以外の名前はそのまま)。
+pic_cluster_short <- function(cl) sub("^cluster_?([0-9]+)$", "c\\1", as.character(cl))
+
+# cluster を番号順に並べる (c1, c2, ..., c10, c11)。番号のないものは後ろに名前順。
+pic_cluster_order <- function(cl) {
+  cl <- unique(as.character(cl))
+  num <- suppressWarnings(as.numeric(sub("^(cluster_?|c)([0-9]+)$", "\\2", cl)))
+  num[!grepl("^(cluster_?|c)[0-9]+$", cl)] <- NA_real_
+  cl[order(is.na(num), num, cl)]
+}
+
 format_contrast_file_label <- function(display_label) {
   gsub(" / ", "_vs_", display_label, fixed = TRUE)
 }

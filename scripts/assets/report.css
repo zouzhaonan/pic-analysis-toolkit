@@ -101,6 +101,7 @@ h4{font-size:14px;margin:6px 0;color:var(--muted)}
 .pic-plot-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
 .pic-plot-cell{border:1px solid var(--line);border-radius:8px;padding:8px}
 .pic-plot{width:100%;height:420px}
+.pic-hscroll{overflow-x:auto;overflow-y:hidden}
 .pic-pca-scree-row .pic-plot{height:180px}
 .pic-pca-scree-row .pic-plot-cell{padding:4px 8px}
 .pic-pca-scree-row h4{margin:2px 0 2px}
@@ -298,9 +299,6 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-excl-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 4px;padding:6px 8px;border:1px solid #f0c987;background:#fff8eb;border-radius:6px;font-size:12px;color:#7a4a05}
 .pic-excl-btn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--accent);font-size:12px;font-weight:600;font-family:inherit;padding:3px 10px;border-radius:5px;cursor:pointer}
 .pic-excl-btn:hover{background:#eef3fb}
-.pic-excl-note{margin:0 0 12px;padding:8px 12px;border:1px solid #a9cbe9;border-left:4px solid var(--accent);background:#f3f8fd;border-radius:6px;font-size:13px;line-height:1.5;color:#163a5c}
-.pic-excl-note p{margin:3px 0}
-.pic-excl-note.pic-excl-warn{border-color:#f0c987;border-left-color:#d97706;background:#fff8eb;color:#5c3a06}
 .pic-excl-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
 /* 相関の色の凡例 (カラーバーと数字)。除外して色の幅を引き直したときは枠で示す */
 .pic-cor-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:6px 0 2px;font-size:12px;color:var(--muted)}

@@ -191,10 +191,10 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         prefix_html <- sprintf(
           paste0('<div class="pic-enrich-item">%s',
                  '<p class="pic-note">The differentially expressed genes are grouped into clusters that share a similar pattern across groups. ',
-                 'Each panel is one cluster; the boxes show its genes&rsquo; expression per group, so you can read off what each cluster represents.</p>',
-                 '<div id="%s" class="pic-plot" style="height:%dpx"></div></div>'),
+                 'Each position on the x axis is one cluster; the boxes show its genes&rsquo; expression per group, so you can read off what each cluster represents.</p>',
+                 '<div class="pic-hscroll"><div id="%s" class="pic-plot" style="height:%dpx;min-width:%dpx"></div></div></div>'),
           sub_head('Cluster expression profiles', src_note(report_rel_path(prof_csv, proj_dir))),
-          prof_id, prof_spec$height
+          prof_id, prof_spec$height, prof_spec$min_width
         )
       }
     }
