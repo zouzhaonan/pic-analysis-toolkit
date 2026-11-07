@@ -60,13 +60,21 @@ pic_ora_item <- function(mdir, project, cluster_n = NULL) {
   csvs <- list.files(mdir, pattern = paste0(project, "\\.csv$"), full.names = TRUE)
   csvs <- csvs[!grepl("^ORA_", basename(csvs))]   # 結合 CSV は cluster から集計するため除外
   if (length(csvs) == 0) return(NULL)
-  ora_all <- tryCatch(
-    purrr::map_dfr(csvs, function(fp) suppressMessages(readr::read_csv(fp, show_col_types = FALSE, progress = FALSE))),
-    error = function(e) NULL
-  )
-  if (is.null(ora_all) || nrow(ora_all) == 0) return(NULL)
+  # 見出しだけ (term 0 件) の cluster の CSV は、readr が全列を文字として読むため、そのまま合わせると
+  # 数値の列 (RichFactor など) と型がぶつかって method ごと落ちる (KEGG / HPO で起きた)。0 行の表は除いて合わせる。
+  dfs <- lapply(csvs, function(fp) tryCatch(
+    suppressMessages(readr::read_csv(fp, show_col_types = FALSE, progress = FALSE)),
+    error = function(e) NULL))
+  dfs <- Filter(function(d) !is.null(d) && nrow(d) > 0, dfs)
+  ora_all <- if (length(dfs) == 0) NULL else tryCatch(dplyr::bind_rows(dfs), error = function(e) NULL)
+  # CSV はあるのに図にできる term が無い method も、選択肢から消さずに短い表示を出す。
+  empty <- list(n_terms = 0L, content = NULL, plot = NULL)
+  if (is.null(ora_all) || nrow(ora_all) == 0) return(empty)
   spec <- tryCatch(build_ora_plotly(ora_all, cluster_n = cluster_n), error = function(e) NULL)
-  if (is.null(spec)) return(NULL)
+  if (is.null(spec)) {
+    empty$content <- tryCatch(readr::format_csv(ora_all), error = function(e) NULL)
+    return(empty)
+  }
   list(n_terms = spec$n_terms,
        content = tryCatch(readr::format_csv(ora_all), error = function(e) NULL),
        plot = pic_json_verbatim(list(data = spec$data, layout = spec$layout, config = spec$config), digits = 6))
@@ -172,12 +180,16 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         sprintf('<span class="pic-src"><a class="pic-dlcsv" role="button" tabindex="0" data-file="%s">Download CSV</a></span>', vid)
         else ""
       pid <- sprintf("%soraplot_%s", id_prefix, method)
-      register_plot(reg, pid, it$plot)
+      body <- if (is.null(it$plot)) {
+        '<p class="pic-note pic-ora-empty">No terms to plot: every cluster&rsquo;s ORA result for this method is empty.</p>'
+      } else {
+        register_plot(reg, pid, it$plot)
+        sprintf('<div id="%s" class="pic-plot" style="height:%dpx"></div>', pid, enrich_plot_height(it$n_terms))
+      }
       ora_items[[length(ora_items) + 1L]] <- list(
         id = sprintf("%sora_%s", id_prefix, method),
         label = method,
-        html = sprintf('<div class="pic-enrich-item">%s<div id="%s" class="pic-plot" style="height:%dpx"></div></div>',
-                       sub_head(html_escape(method), dl), pid, enrich_plot_height(it$n_terms)),
+        html = sprintf('<div class="pic-enrich-item">%s%s</div>', sub_head(html_escape(method), dl), body),
         checked = (length(ora_items) == 0L)
       )
     }
