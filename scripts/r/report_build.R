@@ -11,7 +11,7 @@
 # 実体は責務別に分割済み。以下を順に source して全関数を読み込む。
 # (source は globalenv で評価されるため script_dir が参照可能)
 for (.pic_report_part in c(
-  "report_helpers.R", "report_qc_dim.R", "report_deg_expr.R",
+  "report_helpers.R", "report_json.R", "report_parallel.R","report_qc_dim.R", "report_deg_expr.R",
   "report_enrichment.R", "report_rin.R", "report_page.R")) {
   source(file.path(script_dir, .pic_report_part))
 }

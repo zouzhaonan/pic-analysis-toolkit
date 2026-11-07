@@ -12,8 +12,9 @@ cp -R "${pkg_root}/scripts" "${install_root}/"
 cp -R "${pkg_root}/help" "${install_root}/"
 cp "${pkg_root}/VERSION" "${install_root}/"
 
-# pic demux の振り分けのプログラム (Rust)。環境の bin に置く。
-CARGO_TARGET_DIR="${SRC_DIR}/target-pic-demux" PIC_DEMUX_CACHE="${SRC_DIR}/cache-pic-demux" bash "${pkg_root}/src/pic-demux/install.sh" "${PREFIX}/bin"
+# Rust のプログラム (pic-demux・pic-aggregate)。環境の bin に置く。
+CARGO_TARGET_DIR="${SRC_DIR}/target-rust" PIC_DEMUX_CACHE="${SRC_DIR}/cache-pic-demux" \
+  PIC_AGGREGATE_CACHE="${SRC_DIR}/cache-pic-aggregate" bash "${pkg_root}/src/install.sh" "${PREFIX}/bin"
 
 cat > "${PREFIX}/bin/pic" <<'WRAP'
 #!/usr/bin/env bash

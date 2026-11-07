@@ -4,4 +4,5 @@
 source(file.path(script_dir, "enrichment_methods.R"))
 source(file.path(script_dir, "enrichment_inputs.R"))
 source(file.path(script_dir, "enrichment_plots.R"))
+source(file.path(script_dir, "enrichment_gsea_fast.R"))
 source(file.path(script_dir, "enrichment_run.R"))

@@ -6,6 +6,10 @@ Overview:
   Run ORA/GSEA enrichment analysis from DESeq2 stats. Result tables (CSV) only;
   dot plots are drawn interactively by `pic report`. Outputs are written to
   <out-dir>/GSEA/<method>/*.csv and <out-dir>/ORA/<method>/*.csv.
+  The gene columns (ORA geneID, GSEA core_enrichment) list gene symbols joined
+  by "/"; the column right after them (geneID_ens_gene, core_enrichment_ens_gene)
+  lists the matching gene IDs (ens_gene of the stats) in the same order
+  (";" joins several IDs that share one symbol).
 
 Required options:
   --stats <path>           DESeq2 stats CSV
@@ -17,7 +21,14 @@ Optional options:
                            deseq2 output: DEG_<project>/DEGCluster_<project>/
                            DEGCluster_gene_for_ora_<project>.csv
   --project-name <name>    Output suffix (default: auto from --stats filename)
-  --threads <n>            Number of parallel threads (default: 8)
+  --threads <n>            Number of parallel jobs (default: 8). Each method x
+                           cluster (ORA) and method x comparison (GSEA) is one
+                           job; the heaviest run first. One job uses one core.
+  --analyses <csv>         ora, gsea or ora,gsea (default: ora,gsea). GSEA needs
+                           only --stats, so it can start before the DEG
+                           clusters exist; ORA needs --deg-clusters.
+  --mem-gb <gb>            Memory budget; fewer jobs run at once if needed
+                           (default: environment variable PIC_MEM_GB, else no limit)
   --methods <csv>          Methods to run (comma-separated)
                            default: GO_BP,KEGG,REACTOME,WIKIPATHWAYS,HDO,HPO,MPO
                            choices: defaults + GO_CC, GO_MF
@@ -25,6 +36,11 @@ Optional options:
 Library preparation:
   --prepare-libs --genome <name>    Prepare local enrichment libraries for new genome assemblies
 
+
+Reproducibility:
+  GSEA permutations are seeded per job (environment variable PIC_GSEA_SEED,
+  default 42), so the same input gives the same tables whatever --threads or
+  --methods split is used.
 
 ID mapping behavior:
   - Libraries are gene symbol–based.

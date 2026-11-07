@@ -292,3 +292,40 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-dl-row{display:flex;justify-content:flex-end;margin:0 0 6px}
 
 .pic-bbadge{display:inline-block;margin-right:.28em;font-size:.82em;line-height:1;vertical-align:baseline}
+/* サンプル除外 (全タブ共通): 木の説明・木の下の状態・タブ先頭の注記 */
+.pic-tree-hint{margin:0 0 6px;color:var(--muted);font-size:11px;line-height:1.45}
+.pic-excl-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 4px;padding:6px 8px;border:1px solid #f0c987;background:#fff8eb;border-radius:6px;font-size:12px;color:#7a4a05}
+.pic-excl-btn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--accent);font-size:12px;font-weight:600;font-family:inherit;padding:3px 10px;border-radius:5px;cursor:pointer}
+.pic-excl-btn:hover{background:#eef3fb}
+.pic-excl-note{margin:0 0 12px;padding:8px 12px;border:1px solid #a9cbe9;border-left:4px solid var(--accent);background:#f3f8fd;border-radius:6px;font-size:13px;line-height:1.5;color:#163a5c}
+.pic-excl-note p{margin:3px 0}
+.pic-excl-note.pic-excl-warn{border-color:#f0c987;border-left-color:#d97706;background:#fff8eb;color:#5c3a06}
+.pic-excl-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+/* 相関の色の凡例 (カラーバーと数字)。除外して色の幅を引き直したときは枠で示す */
+.pic-cor-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:6px 0 2px;font-size:12px;color:var(--muted)}
+.pic-cor-leg-t{font-weight:700;color:var(--fg)}
+.pic-cor-leg-scale{display:inline-flex;flex-direction:column;width:220px}
+.pic-cor-leg-bar{display:block;height:12px;border-radius:2px;background:linear-gradient(to right,#2166ac,#f7f7f7,#b2182b);border:1px solid #d7dee6}
+.pic-cor-leg-ticks{display:flex;justify-content:space-between;font-variant-numeric:tabular-nums;color:var(--fg);margin-top:1px}
+.pic-cor-legend.pic-cor-leg-refit .pic-cor-leg-n{color:#7a4a05;background:#fff8eb;border:1px solid #f0c987;border-radius:4px;padding:1px 6px}
+/* Expression: 遺伝子のグループ (貼り付け) */
+.pic-expr-pastemsg:empty{display:none}
+.pic-expr-pastemsg{font-size:12px;margin:4px 0;line-height:1.45}
+.pic-expr-miss{color:#b45309;word-break:break-word}
+.pic-expr-multi{color:#1b3a5b;word-break:break-word}
+.pic-expr-gsets{margin:12px 0 4px}
+.pic-expr-gsets+h4,.pic-expr-gsets+.pic-ctrl h4{margin-top:12px}
+.pic-expr-gset{border:1px solid var(--line);border-radius:6px;background:#fff;padding:6px;margin:0 0 8px}
+.pic-expr-gset-head{display:flex;gap:4px;align-items:center;margin:0 0 4px}
+.pic-expr-gset-title{flex:1;min-width:0;border:1px solid var(--line);border-radius:4px;padding:3px 6px;font-size:13px;font-weight:600;font-family:inherit}
+.pic-expr-gset-del{border:none;background:#e3e8ef;color:#1f2933;width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:14px;line-height:1;padding:0;flex:none}
+.pic-expr-gset-del:hover{background:#d7301f;color:#fff}
+.pic-expr-gset-text{display:block;box-sizing:border-box;width:100%;min-height:64px;resize:vertical;border:1px solid var(--line);border-radius:4px;padding:4px 6px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.pic-expr-gset-title:focus,.pic-expr-gset-text:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(33,102,172,.12)}
+.pic-expr-gset-sum{font-size:11px;color:var(--muted);margin-top:3px}
+.pic-expr-gset-sum.pic-expr-gset-warn{color:#b45309}
+.pic-expr-gplots{margin-top:14px}
+.pic-expr-gblock{margin:0 0 18px;padding-top:10px;border-top:1px solid var(--line)}
+.pic-expr-gmsg{font-size:12px;line-height:1.45;margin:0 0 4px}
+.pic-expr-gmsg:empty{display:none}
+.pic-expr-gtitle{font-size:16px;font-weight:700;color:var(--fg);margin:0 0 4px}

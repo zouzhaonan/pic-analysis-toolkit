@@ -170,7 +170,31 @@ read_local_gson <- function(genome, method, genome_map_file, enrichment_lib_dir)
   readRDS(path)
 }
 
-run_local_ora <- function(genes_symbol, universe_symbol, gson_obj) {
+# gson を DOSE の「環境」の形 (PATHID2EXTID / EXTID2PATHID / PATHID2NAME) に直す。
+# DOSE の enricher_internal は gson のままだと、遺伝子ごと・term ごとに gsid2gene 全体を subset で
+# 引き直す (GO_BP では 1 クラスタ 1〜2 分)。環境なら名前で引くだけになる。
+# gson の引き方と同じ答えにするため、行の順を保ち、重複を消さずに split する
+# (clusterProfiler の build_Anno は unique を掛けるので使わない)。
+gson_to_anno_env <- function(gson_obj) {
+  if (is.null(gson_obj)) return(NULL)
+  g2 <- gson_obj@gsid2gene
+  gsid <- as.character(g2$gsid)
+  gene <- as.character(g2$gene)
+  env <- new.env(parent = emptyenv())
+  assign("PATHID2EXTID", split(gene, gsid), envir = env)
+  assign("EXTID2PATHID", split(gsid, gene), envir = env)
+  nm <- gson_obj@gsid2name
+  p2n <- if (is.null(nm) || nrow(nm) == 0) NULL else {
+    keep <- !duplicated(as.character(nm$gsid))
+    stats::setNames(as.character(nm$name)[keep], as.character(nm$gsid)[keep])
+  }
+  assign("PATHID2NAME", p2n, envir = env)
+  env
+}
+
+# anno_env を渡すと (gson_to_anno_env の結果)、gson の代わりにそれで引く。
+# enricher(gson = ) と同じ既定 (pAdjustMethod = "BH") で enricher_internal を呼ぶ。
+run_local_ora <- function(genes_symbol, universe_symbol, gson_obj, anno_env = NULL) {
   if (is.null(gson_obj) || length(genes_symbol) == 0) return(NULL)
   quiet_cluster_call <- function(f) {
     out <- NULL
@@ -191,6 +215,18 @@ run_local_ora <- function(genes_symbol, universe_symbol, gson_obj) {
   }
   tryCatch(
     quiet_cluster_call(function() {
+      if (!is.null(anno_env)) {
+        return(DOSE:::enricher_internal(
+          gene = genes_symbol,
+          pvalueCutoff = 1,
+          pAdjustMethod = "BH",
+          universe = universe_symbol,
+          minGSSize = 10,
+          maxGSSize = 500,
+          qvalueCutoff = 1,
+          USER_DATA = anno_env
+        ))
+      }
       clusterProfiler::enricher(
         gene = genes_symbol,
         universe = universe_symbol,
@@ -205,7 +241,10 @@ run_local_ora <- function(genes_symbol, universe_symbol, gson_obj) {
   )
 }
 
-run_local_gsea <- function(gene_list_symbol, gson_obj) {
+# seed を渡すと、その seed を置いてから回す (fgsea の置換は R の乱数から種を取る)。
+# fgsea の中の並列は使わない: nproc = 0 のままだと BiocParallel の既定 (全コア - 2) で
+# 子を作り、job の並列と掛け算になって CPU とメモリを食う。
+run_local_gsea <- function(gene_list_symbol, gson_obj, seed = NULL) {
   if (is.null(gson_obj) || length(gene_list_symbol) == 0) return(NULL)
   quiet_cluster_call <- function(f) {
     out <- NULL
@@ -226,13 +265,15 @@ run_local_gsea <- function(gene_list_symbol, gson_obj) {
   }
   tryCatch(
     quiet_cluster_call(function() {
+      if (!is.null(seed)) set.seed(seed)
       clusterProfiler::GSEA(
         geneList = gene_list_symbol,
         gson = gson_obj,
         minGSSize = 10,
         maxGSSize = 500,
         pvalueCutoff = 1,
-        verbose = FALSE
+        verbose = FALSE,
+        BPPARAM = BiocParallel::SerialParam()
       )
     }),
     error = function(err) NULL

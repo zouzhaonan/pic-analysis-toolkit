@@ -122,8 +122,8 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
         ))
       }
       rows <- c(rows, sprintf(
-        '<div class="pic-bar-row%s" data-group="%s"><div class="pic-bar-label" style="color:%s;font-weight:600">%s</div><div class="pic-bar-track">%s</div></div>',
-        sep_cls, html_escape(if (is.na(g_cur)) sample else g_cur), scol(sample),
+        '<div class="pic-bar-row%s" data-group="%s" data-sample="%s"><div class="pic-bar-label" style="color:%s;font-weight:600">%s</div><div class="pic-bar-track">%s</div></div>',
+        sep_cls, html_escape(if (is.na(g_cur)) sample else g_cur), html_escape(sample), scol(sample),
         paste0(pic_batch_badge(sample), html_escape(sample)), paste(segs, collapse = "")
       ))
     }
@@ -202,7 +202,9 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
       cells <- paste0(cells, sprintf('<td class="pic-td-num">%s</td>', if (is.finite(v)) fmt_ratio(v) else "NA"))
     }
     g_row <- if ("group" %in% colnames(msum)) as.character(msum$group[[i]]) else as.character(msum$sample[[i]])
-    trows <- c(trows, sprintf('<tr class="%s" data-group="%s">%s</tr>', trimws(sep_cls), html_escape(g_row), cells))
+    # data-sample: サンプル除外 (report.js) で行を隠し、データバーの長さを残りのサンプルの最大で引き直す
+    trows <- c(trows, sprintf('<tr class="%s" data-group="%s" data-sample="%s">%s</tr>', trimws(sep_cls), html_escape(g_row),
+                              html_escape(as.character(msum$sample[[i]])), cells))
   }
 
   parts <- c(parts,
@@ -402,9 +404,11 @@ build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, g
   zmin <- suppressWarnings(min(m[is.finite(m)])); if (!is.finite(zmin)) zmin <- 0
 
   # ヘッダ (列ラベル: 上部・縦書き・group 配色)。data-gcol で group 列を識別。
+  # data-sample (列・行) と data-v (相関の値を丸めずに) は、サンプル除外のときに report.js が
+  # 行と列を外し、残りのサンプルだけで色の幅を引き直す / 部分行列を CSV に書くのに使う。
   ths <- vapply(seq_len(n), function(j)
-    sprintf('<th class="pic-cor-ch%s" data-gcol="%s"><span style="color:%s">%s%s</span></th>',
-            if (gstart[[j]]) " gsep-l" else "", html_escape(grpof(samples[[j]])), gcol(samples[[j]]),
+    sprintf('<th class="pic-cor-ch%s" data-gcol="%s" data-sample="%s"><span style="color:%s">%s%s</span></th>',
+            if (gstart[[j]]) " gsep-l" else "", html_escape(grpof(samples[[j]])), html_escape(samples[[j]]), gcol(samples[[j]]),
             pic_batch_badge(samples[[j]]), html_escape(samples[[j]])),
     character(1))
   header <- sprintf('<tr><th class="pic-cor-corner"></th>%s</tr>', paste(ths, collapse = ""))
@@ -418,16 +422,22 @@ build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, g
       bg <- if (is.finite(v)) cor_color(v, zmin) else "#ffffff"
       fc <- contrast_text(bg)
       cls <- paste0("val", if (gstart[[j]]) " gsep-l" else "", if (gstart[[i]]) " gsep-t" else "")
-      sprintf('<td class="%s" data-gcol="%s" style="background:%s;color:%s">%s</td>', cls, html_escape(grpof(samples[[j]])), bg, fc,
+      sprintf('<td class="%s" data-gcol="%s" data-v="%s" style="background:%s;color:%s">%s</td>', cls, html_escape(grpof(samples[[j]])),
+              if (is.finite(v)) sprintf("%.15g", v) else "", bg, fc,
               if (is.finite(v)) sprintf("%.2f", v) else "")
     }, character(1))
-    sprintf('<tr data-grow="%s">%s%s</tr>', html_escape(grpof(samples[[i]])), rh, paste(tds, collapse = ""))
+    sprintf('<tr data-grow="%s" data-sample="%s">%s%s</tr>', html_escape(grpof(samples[[i]])), html_escape(samples[[i]]), rh, paste(tds, collapse = ""))
   }, character(1))
 
   cap_id <- paste0(id_prefix, "cor_cap")
+  # ダウンロード 2 種 (PCA と同じ): all samples = deseq2 が書いた CSV をそのまま /
+  # selected = 除外していないサンプルだけの部分行列 (report.js が作る)。
+  dl_all <- sub(">Download CSV<", ">Download CSV (all samples)<",
+                src_note(report_rel_path(f, proj_dir)), fixed = TRUE)
   paste0(
-    src_note(report_rel_path(f, proj_dir)),
+    dl_all,
     sprintf('<span class="pic-headact">%s</span>', png_button(cap_id, "sample_correlation")),
+    '<span class="pic-headact"><a class="pic-dlcsv pic-cor-dlsel" role="button" tabindex="0">Download CSV (selected)</a></span>',
     '<p class="pic-note">Sample-to-sample correlation. Replicates of the same group should correlate most strongly ',
     '(<b style="color:#b2182b">red</b>); a sample that stands out from its group (more <b style="color:#2166ac">blue</b>) may be an outlier.</p>',
     sprintf('<div class="pic-capbox" id="%s"><div class="pic-cor-wrap"><table class="pic-cor"><thead>%s</thead><tbody>%s</tbody></table></div></div>',
@@ -613,7 +623,9 @@ heatmap_unavailable_html <- function(reason) {
           view)
 }
 
-build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal = NULL, proj_dir = NULL, sample_order = NULL, id_prefix = "", deg_counts = NULL) {
+# ctrl_html: 左パネル (サンプル除外のパネル)。NULL なら従来の group トグル。
+build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal = NULL, proj_dir = NULL, sample_order = NULL, id_prefix = "", deg_counts = NULL,
+                               ctrl_html = NULL) {
   f <- file.path(deg_dir_of(deseq2_dir, project), sprintf("DEG_normalizedCountTable_%s.csv", project))
   n_deg <- if (!is.null(deg_counts) && length(deg_counts) > 0) sum(unlist(deg_counts), na.rm = TRUE) else NA_real_
   if (!file.exists(f)) {
@@ -675,22 +687,25 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
     g <- if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else s
     col <- if (!is.null(group_pal) && g %in% names(group_pal)) unname(group_pal[[g]]) else "#333333"
     col <- pic_batch_shade_color(col, s)
-    sprintf('<th class="s%s" data-gcol="%s"><span style="color:%s">%s%s</span></th>',
-            if (gstart[[j]]) " gsep" else "", html_escape(g), col, pic_batch_badge(s), html_escape(s))
+    sprintf('<th class="s%s" data-gcol="%s" data-sample="%s"><span style="color:%s">%s%s</span></th>',
+            if (gstart[[j]]) " gsep" else "", html_escape(g), html_escape(s), col, pic_batch_badge(s), html_escape(s))
   }, character(1))
   header <- sprintf('<tr><th class="corner"></th>%s</tr>', paste(ths, collapse = ""))
 
-  rows <- vapply(seq_len(nrow(z)), function(i) {
-    tds <- vapply(seq_len(ncol(z)), function(j) sprintf(
-      '<td class="%s" data-gcol="%s" style="background:%s" title="Gene: %s&#10;Sample: %s&#10;Z: %.2f"></td>',
-      if (gstart[[j]]) "gsep" else "", html_escape(gvec[[j]]), colmat[i, j], html_escape(labels[[i]]), html_escape(scols[[j]]), z[i, j]
-    ), character(1))
-    sprintf('<tr><th class="g">%s</th>%s</tr>', html_escape(labels[[i]]), paste(tds, collapse = ""))
-  }, character(1))
+  # セル (行 × 列) の <td> をまとめて sprintf で作り、行ごとにつなぐ (1 セルずつ作るのと同じ文字列)。
+  nr <- nrow(z); nc <- ncol(z)
+  jj <- rep(seq_len(nc), each = nr); ii <- rep(seq_len(nr), times = nc)
+  e_lab <- html_escape(labels); e_g <- html_escape(gvec); e_s <- html_escape(scols)
+  cls <- ifelse(gstart, "gsep", "")
+  cells <- matrix(sprintf(
+    '<td class="%s" data-gcol="%s" style="background:%s" title="Gene: %s&#10;Sample: %s&#10;Z: %.2f"></td>',
+    cls[jj], e_g[jj], as.vector(colmat), e_lab[ii], e_s[jj], as.vector(z)), nrow = nr)
+  tds <- do.call(paste0, lapply(seq_len(nc), function(j) cells[, j]))
+  rows <- sprintf('<tr><th class="g">%s</th>%s</tr>', e_lab, tds)
 
   cap_id <- paste0(id_prefix, "heatmap_cap")
   # 左 = group 表示切替 / 右 = ヒートマップ本体 (タイトル右に Download csv + PNG ボタン)
-  ctrl <- group_toggle_panel(group_pal)
+  ctrl <- if (!is.null(ctrl_html)) ctrl_html else group_toggle_panel(group_pal)
   view <- paste0(
     sub_head(sprintf('Expression heatmap (%d DEG%s)', nrow(z), if (nrow(z) == 1) "" else "s"),
              src_note(report_rel_path(f, proj_dir)), png_button(cap_id, "deg_heatmap")),

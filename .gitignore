@@ -3,3 +3,5 @@
 .claude/settings.local.json
 src/pic-demux/target/
 bin/pic-demux
+src/pic-aggregate/target/
+bin/pic-aggregate

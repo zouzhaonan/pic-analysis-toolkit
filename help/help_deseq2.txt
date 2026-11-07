@@ -11,10 +11,17 @@ deftable_<run>_<genome>.tsv):
   stats_<project>.csv, normalizedCountTable_<project>.csv,
   UMI_count_<project>.csv, correlation_<project>.csv,
   PCA_<project>/PCA_RegLog_<project>.csv, PCA_<project>/PCA_Variance_<project>.csv,
+  PCA_<project>/PCA_rlogTop_<project>.csv,
   DEG_<project>/DEG_count_<project>.csv,
   DEG_<project>/DEG_normalizedCountTable_<project>.csv,
   DEG_<project>/DEGCluster_<project>/DEGCluster_*_<project>.csv,
   DEG_<project>/DEGList_<project>/<contrast>__<group>.txt
+
+Gene names in the tables (from the biomart cache of the genome):
+  Tables keyed by gene ID carry the gene name next to the ID column:
+  ext_gene in stats / UMI_count / normalizedCountTable / DEG_normalizedCountTable /
+  DEGCluster_gene_for_ora, and gene_name in PCA_rlogTop / DEGCluster_profile.
+  gene_name is the gene ID itself when biomart has no name for it.
 
 Prerequisite:
   Target genome must be registered with:
@@ -36,6 +43,41 @@ Required options:
 
 Optional options:
   --fdr <value>         FDR threshold for DEG calling (default: 0.1)
+  --threads <n>         Run rlog alongside the DESeq2 fit and extract the
+                        contrasts in parallel (default: 1). Results are the
+                        same as with 1. Never starts more workers than there
+                        are contrasts.
+  --mem-gb <n>          Memory limit (GB) for the parallel workers; fewer
+                        workers are started so that the estimated memory
+                        stays under it (default: $PIC_MEM_GB, else no limit).
+  --part <name>         Run only one part (default: all). Parts let a
+                        scheduler run fit and rlog at the same time:
+                          fit      counts -> size factors -> DESeq -> results;
+                                   writes stats, UMI_count,
+                                   normalizedCountTable, DEG_count,
+                                   DEG_normalizedCountTable, DEGList and
+                                   summary/analysis_params.tsv
+                          rlog     counts -> size factors -> rlog (blind);
+                                   writes correlation and PCA_<project>/*.
+                                   Does not need fit.
+                          cluster  needs fit and rlog; writes
+                                   DEGCluster_<project>/*
+                          all      everything in one process (same files)
+                        Use the same --deftable / --count-dir / --genome /
+                        --out-dir (and --fdr for fit and cluster) for every
+                        part. Each part leaves a "done" marker and its
+                        intermediate files in the hidden directory
+                        <out-dir>/.pic_deseq2_parts_<project>/. cluster exits
+                        with status 3 when fit or rlog has not finished (or
+                        was run with other inputs). Files are written to a
+                        temporary name and renamed, so an interrupted part
+                        leaves no half-written output.
+
+Example (parts: fit and rlog at the same time, then cluster):
+  A="--deftable out/summary/deftable_test_mm10.tsv --count-dir out/counts --genome mm10 --out-dir out/deseq2"
+  pic deseq2 $A --part fit --threads 6 &
+  pic deseq2 $A --part rlog &
+  wait && pic deseq2 $A --part cluster
 
 Example:
   pic deseq2 \

@@ -49,7 +49,9 @@ scatter_traces_by_dir <- function(df, x, y, numerator, denominator, hovertemplat
   traces
 }
 
-build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", stats_src = "", group_order = NULL, group_pal = NULL) {
+# ctrl_html: 左パネルの末尾に足す HTML (サンプル除外のパネル)。
+build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", stats_src = "", group_order = NULL, group_pal = NULL,
+                                 ctrl_html = "") {
   aspects <- unique(stats$aspect)
   # contrast の並び順: sample_sheet の group 順 (なければ DEG 数で降順)
   if (!is.null(group_order)) {
@@ -169,15 +171,15 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
   }, character(1))
   sel_html <- if (length(items) <= 1) {
     view_body <- if (length(items) == 1) sprintf('<div class="pic-select-item">%s</div>', items[[1]]$html) else ""
-    sprintf('<div class="pic-degsel"><div class="pic-degsel-ctrl"><!--SUBNAV--></div><div class="pic-degsel-view">%s%s</div></div>', view_head, view_body)
+    sprintf('<div class="pic-degsel"><div class="pic-degsel-ctrl"><!--SUBNAV-->%s</div><div class="pic-degsel-view">%s%s</div></div>', ctrl_html, view_head, view_body)
   } else if (nzchar(matrix_html)) {
     # 左 = サブタブ + contrast 行列 (radio)、右 = タイトル行 + MA/volcano ブロック
     paste0('<div class="pic-degsel"><div class="pic-degsel-ctrl"><!--SUBNAV--><h4>Comparison</h4>',
-           matrix_html, '</div><div class="pic-degsel-view">', view_head,
+           matrix_html, ctrl_html, '</div><div class="pic-degsel-view">', view_head,
            paste(blocks, collapse = ""), '</div></div>')
   } else {
-    sprintf('<div class="pic-degsel"><div class="pic-degsel-ctrl"><!--SUBNAV--></div><div class="pic-degsel-view">%s%s</div></div>',
-            view_head, build_select_group(items))
+    sprintf('<div class="pic-degsel"><div class="pic-degsel-ctrl"><!--SUBNAV-->%s</div><div class="pic-degsel-view">%s%s</div></div>',
+            ctrl_html, view_head, build_select_group(items))
   }
   sel_html
 }
@@ -226,7 +228,9 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL,
           name = if (first) group_span(g, pal) else html_escape(s), legendgroup = g, showlegend = first,
           mode = "lines", type = "scatter",
           line = list(color = unname(pal[[g]]), width = 1.4),
-          hovertemplate = sprintf("%s<br>CPM: %%{y:.2f}<extra></extra>", html_escape(s)))
+          hovertemplate = sprintf("%s<br>CPM: %%{y:.2f}<extra></extra>", html_escape(s)),
+          # サンプル除外 (report.js) が trace とサンプルを結び付けるための印 (描画には効かない)
+          meta = list(pic_sample = s))
       }
       id <- sprintf("%saggregate_%s", id_prefix, proj)
       # フランク端ラベル (±Nkb / ±Nbp)
@@ -332,11 +336,13 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
 }
 
 # 遺伝子発現セクション: 入力した Gene ID/symbol を box+beeswarm で表示する UI。
-build_expression_section <- function(reg, deseq2_dir, project, group_map, group_pal, stats, id, section_id, heading, proj_dir = NULL, sample_order = NULL, group_order = NULL) {
+# ctrl_html: 左パネルの選択 UI (サンプル除外のパネル)。NULL なら従来の group トグル。
+build_expression_section <- function(reg, deseq2_dir, project, group_map, group_pal, stats, id, section_id, heading, proj_dir = NULL, sample_order = NULL, group_order = NULL,
+                                     ctrl_html = NULL) {
   if (!register_expr_data(reg, id, deseq2_dir, project, group_map, group_pal, stats, sample_order, group_order)) return("")
   countf <- file.path(deseq2_dir, sprintf("normalizedCountTable_%s.csv", project))
   fdr <- pic_plot_spec()$defaults$fdr
-  tree <- group_toggle_panel(group_pal[names(group_pal) %in% unlist(reg$expr[[id]]$groups)])
+  tree <- if (!is.null(ctrl_html)) ctrl_html else group_toggle_panel(group_pal[names(group_pal) %in% unlist(reg$expr[[id]]$groups)])
   sprintf(paste0(
     '<section id="%s"><h2>%s</h2>',
     '<p class="pic-note">Compare the expression of individual genes across sample groups. ',
