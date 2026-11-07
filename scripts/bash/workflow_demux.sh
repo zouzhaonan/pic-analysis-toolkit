@@ -55,13 +55,15 @@ validate_demux_prefix_names() {
 }
 
 # 1 つの prefix を振り分け、part と済んだ印を part_dir に書く。
-# 引数の prefix は sheet の 1 列目の値か、その basename。
+# 引数の prefix は sheet の 1 列目の値か、その basename。threads は pic-demux に渡すスレッド数。
 # 戻り値: 0 = 済んだ (もともと済んでいた場合も含む)、1 = 失敗。
 demux_single_prefix() {
   local prefix_arg="$1"
   local part_dir="$2"
+  local threads="${3:-$THREADS}"
   local rows sheet_prefix name fq_prefix barcodes samples marker suffix
-  local r2_status_file r2_status s rc=0
+  local s rc=0
+  local barcode_first_opt=()
 
   rows="$(demux_sheet_rows | awk -F"\t" -v OFS="\t" -v p="$prefix_arg" '{ n = $1; sub(/.*\//, "", n) } $1 == p || n == p')"
   if [[ -z "$rows" ]]; then
@@ -81,6 +83,11 @@ demux_single_prefix() {
 
   barcodes="$(printf "%s\n" "$rows" | awk -F"\t" '{ printf "%s%s", (NR > 1 ? "," : ""), $3 }')"
   samples="$(printf "%s\n" "$rows" | awk -F"\t" '{ printf "%s%s", (NR > 1 ? "," : ""), $4 }')"
+
+  if ! command -v "${PIC_DEMUX_BIN:-pic-demux}" >/dev/null 2>&1; then
+    handle_error "pic-demux not found. Build it with: bash ${PIC_ROOT:-<toolkit>}/src/pic-demux/install.sh"
+    return 1
+  fi
 
   local fq
   for fq in "${fq_prefix}_R1_001.fastq.gz" "${fq_prefix}_R2_001.fastq.gz"; do
@@ -103,20 +110,18 @@ demux_single_prefix() {
   debug_kv "arg.barcodes" "$barcodes"
   debug_kv "arg.samples" "$samples"
 
-  # R1 は pipefail で、R2 (プロセス置換) は終了コードをファイルに書いて確かめる。
-  r2_status_file="${marker}.r2.tmp"
-  pigz -dc "${fq_prefix}_R1_001.fastq.gz" |
-    paste - <(pigz -dc "${fq_prefix}_R2_001.fastq.gz"; echo $? >"$r2_status_file") |
-    LC_ALL=C awk \
-      -v barcodes="$barcodes" -v samples="$samples" \
-      -v part_suffix="$suffix" -v out_dir="$part_dir" \
-      -v nread_file="${marker}.nread.tmp" -v zthreads="${PIC_DEMUX_ZTHREADS:-2}" \
-      -v barcode_first="${PIC_BARCODE_FIRST:-0}" \
-      -f "$DEMUX_PREFIX_AWK" || rc=$?
-  r2_status="$(cat "$r2_status_file" 2>/dev/null || echo 1)"
-  rm -f "$r2_status_file"
-  if [[ "$rc" != 0 || "$r2_status" != 0 ]]; then
-    handle_error "Demux failed for ${name} (status: R1/awk=${rc}, R2=${r2_status})."
+  # pic-demux (src/pic-demux): R1 と R2 を別々のスレッドで解凍して突き合わせ、サンプルごとの
+  # gzip をスレッドで並べて圧縮する。中身は旧 demux_prefix.awk (paste | awk) と同じ。
+  # 入力の不正 (gzip の破損・途中切れ、R1 と R2 の行数違い、4 行単位でない) は 0 以外で終わる。
+  [[ "${PIC_BARCODE_FIRST:-0}" = 1 ]] && barcode_first_opt=(--barcode-first)
+  "${PIC_DEMUX_BIN:-pic-demux}" \
+    --r1 "${fq_prefix}_R1_001.fastq.gz" --r2 "${fq_prefix}_R2_001.fastq.gz" \
+    --barcodes "$barcodes" --samples "$samples" \
+    --out-dir "$part_dir" --suffix "$suffix" --nread-file "${marker}.nread.tmp" \
+    --threads "$threads" --level "${PIC_DEMUX_LEVEL:-6}" \
+    "${barcode_first_opt[@]}" || rc=$?
+  if [[ "$rc" != 0 ]]; then
+    handle_error "Demux failed for ${name} (pic-demux status: ${rc})."
     while IFS= read -r s; do
       rm -f "${part_dir}/${s}${suffix}.tmp"
     done < <(printf "%s\n" "$rows" | cut -f4 | sort -u)
@@ -178,7 +183,12 @@ collect_demux_parts() {
       continue
     fi
     dest="$(demux_fastq_path "$s")"
-    cat "${parts[@]}" >"${dest}.tmp"
+    # part が 1 つだけなら、写さずにハードリンクする (中身は同じ。part は最後に消すので、途中で
+    # 止まってもやり直せる)。別のファイルシステムなどでリンクできなければ cat で写す。
+    rm -f "${dest}.tmp"
+    if [[ "${#parts[@]}" -ne 1 ]] || ! ln "${parts[0]}" "${dest}.tmp" 2>/dev/null; then
+      cat "${parts[@]}" >"${dest}.tmp"
+    fi
     mv "${dest}.tmp" "$dest"
   done < <(demux_sheet_rows | cut -f4 | sort -u)
 
@@ -195,29 +205,42 @@ collect_demux_parts() {
 }
 
 # 全 prefix を並べて振り分け、まとめる (pic demux / pic mapping / pic all の既定)。
-# 1 つの prefix は gawk 1 本 (律速) + 解凍 + サンプルごとの pigz で約 5〜6 コアを使うので、
-# 同時に回す prefix の数は THREADS / 4 (切り上げ)。
+# pic-demux 1 本は --threads のぶんのコアを使う (解凍と突き合わせに約 2、残りで圧縮を並べる)。
+# 1 本が速くなるのは約 12 コアまで (R2 の解凍と突き合わせが 1 本ずつなので)。1 本に 6 コア以上を
+# 割り当て、同時に回す prefix の数は floor(THREADS / 6) (1 以上、prefix の数まで)。回る順番の
+# 段の数を変えない範囲で同時の数を減らして揃え、1 本の --threads は THREADS / 同時の数。
+# 例: THREADS=40・6 prefix → 6 本 × 6、THREADS=8 → 1 本 × 8 を 6 回、THREADS=24 → 3 本 × 8 を 2 回。
 split_fq_by_barcode() {
   local part_dir="${TMP_DIR}/demux_parts"
   local status_dir="${TMP_DIR}/demux_status"
-  local max_jobs=$(( (THREADS + 3) / 4 ))
-  local prefixes=() p i=0 failed=0
+  local prefixes=() p i=0 failed=0 max_jobs job_threads
 
   validate_demux_prefix_names
   debug_log "STEP=split_fq_by_barcode"
-  debug_kv "arg.parallel_prefixes" "$max_jobs"
   mkdir -p "$part_dir" "$status_dir"
 
   while IFS= read -r p; do
     prefixes+=("$p")
   done < <(list_demux_prefixes)
 
+  local n_prefix=${#prefixes[@]} waves
+  max_jobs=$(( THREADS / 6 ))
+  (( max_jobs > n_prefix )) && max_jobs=$n_prefix
+  (( max_jobs < 1 )) && max_jobs=1
+  waves=$(( (n_prefix + max_jobs - 1) / max_jobs ))
+  (( waves < 1 )) && waves=1
+  max_jobs=$(( (n_prefix + waves - 1) / waves ))
+  (( max_jobs < 1 )) && max_jobs=1
+  job_threads=$(( THREADS / max_jobs ))
+  debug_kv "arg.parallel_prefixes" "$max_jobs"
+  debug_kv "arg.threads_per_prefix" "$job_threads"
+
   for p in "${prefixes[@]}"; do
     i=$((i + 1))
     while (( $(jobs -pr | wc -l) >= max_jobs )); do
       wait -n || true
     done
-    ( rc=0; demux_single_prefix "$p" "$part_dir" || rc=$?; echo "$rc" >"${status_dir}/${i}" ) &
+    ( rc=0; demux_single_prefix "$p" "$part_dir" "$job_threads" || rc=$?; echo "$rc" >"${status_dir}/${i}" ) &
   done
   wait || true
 

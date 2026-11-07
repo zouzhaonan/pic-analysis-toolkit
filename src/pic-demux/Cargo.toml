@@ -1,0 +1,17 @@
+[package]
+name = "pic-demux"
+version = "1.0.0"
+edition = "2021"
+description = "PIC demux: split one R1/R2 FASTQ pair by barcode into per-sample gzip FASTQ"
+publish = false
+
+[dependencies]
+libdeflate-sys = "1.26"
+memchr = "2"
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

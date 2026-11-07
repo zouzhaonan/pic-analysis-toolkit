@@ -9,10 +9,13 @@ source:
   path: ../..
 
 build:
-  noarch: generic
   number: 0
 
 requirements:
+  # pic-demux (src/pic-demux、Rust + libdeflate) を build するので、パッケージは OS ごと (linux-64 / osx-arm64)。
+  build:
+    - {{ compiler('c') }}
+    - {{ compiler('rust') }}
   run:
     - bash =5.2.37
     - pigz =2.8
@@ -60,6 +63,7 @@ requirements:
 test:
   commands:
     - pic
+    - pic-demux --version
 
 about:
   summary: "A toolkit for mapping and statistical analysis of PIC sequencing data"
