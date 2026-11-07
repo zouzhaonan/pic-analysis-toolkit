@@ -5,7 +5,8 @@
 # 入力:
 #   DESeq2 object と sample label。
 # 出力:
-#   PCA_RegLog_<project>.csv, PCA_Variance_<project>.csv, correlation_<project>.csv
+#   PCA_RegLog_<project>.csv, PCA_Variance_<project>.csv, PCA_rlogTop_<project>.csv (gene, gene_name, サンプル…),
+#   correlation_<project>.csv
 
 build_sample_correlation <- function(dds) {
   normalized_matrix <- DESeq2::counts(dds, normalized = TRUE)
@@ -30,7 +31,7 @@ PCA_POOL_GENES <- 2000L
 # dds は DESeq() の前 (--part rlog。サイズ因子だけ設定したもの) でも後 (--part all) でもよい:
 # 相関に使う counts(dds, normalized = TRUE) は カウント / サイズ因子 で、DESeq() はサイズ因子が
 # 設定済みなら変えない (README の確かめ)。
-run_dimension_reduction <- function(dds, label, out_dir, project_name, ntop, rlog_mat = NULL) {
+run_dimension_reduction <- function(dds, label, out_dir, project_name, ntop, rlog_mat = NULL, e2g = NULL) {
   # rlog_mat は main で 1 回だけ計算した rlog(dds, blind = TRUE) の行列 (rlog の既定も blind = TRUE)。
   # 無ければ (rlog が失敗したときなど) ここで計算し直し、失敗ならそのまま止める (前と同じ)。
   if (is.null(rlog_mat)) rlog_mat <- SummarizedExperiment::assay(DESeq2::rlog(dds))
@@ -61,7 +62,10 @@ run_dimension_reduction <- function(dds, label, out_dir, project_name, ntop, rlo
   pool_idx <- rank(-gene_var, ties.method = "first") <= pool
   rld_pool <- round(rld_df[pool_idx, , drop = FALSE], 3)
   f_top <- file.path(pca_plot_dir, sprintf("PCA_rlogTop_%s.csv", project_name))
-  pic_write_csv_atomic(tibble::rownames_to_column(as.data.frame(rld_pool), "gene"), f_top)
+  # gene (ens_gene) のすぐ右に gene_name (deseq2_data.R の pic_gene_name_of)。
+  top_tbl <- tibble::rownames_to_column(as.data.frame(rld_pool), "gene")
+  top_tbl <- tibble::add_column(top_tbl, gene_name = pic_gene_name_of(top_tbl$gene, e2g), .after = "gene")
+  pic_write_csv_atomic(top_tbl, f_top)
 
   f_cor <- save_correlation_outputs(build_sample_correlation(dds), out_dir, project_name)
   invisible(c(f_pca, f_var, f_top, f_cor))

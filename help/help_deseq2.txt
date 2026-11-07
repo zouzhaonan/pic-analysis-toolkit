@@ -11,10 +11,17 @@ deftable_<run>_<genome>.tsv):
   stats_<project>.csv, normalizedCountTable_<project>.csv,
   UMI_count_<project>.csv, correlation_<project>.csv,
   PCA_<project>/PCA_RegLog_<project>.csv, PCA_<project>/PCA_Variance_<project>.csv,
+  PCA_<project>/PCA_rlogTop_<project>.csv,
   DEG_<project>/DEG_count_<project>.csv,
   DEG_<project>/DEG_normalizedCountTable_<project>.csv,
   DEG_<project>/DEGCluster_<project>/DEGCluster_*_<project>.csv,
   DEG_<project>/DEGList_<project>/<contrast>__<group>.txt
+
+Gene names in the tables (from the biomart cache of the genome):
+  Tables keyed by gene ID carry the gene name next to the ID column:
+  ext_gene in stats / UMI_count / normalizedCountTable / DEG_normalizedCountTable /
+  DEGCluster_gene_for_ora, and gene_name in PCA_rlogTop / DEGCluster_profile.
+  gene_name is the gene ID itself when biomart has no name for it.
 
 Prerequisite:
   Target genome must be registered with:

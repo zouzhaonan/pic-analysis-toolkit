@@ -53,6 +53,21 @@ load_umi_tables <- function(def, count_dir) {
     dplyr::select(-"count_prefix", -"barcode")
 }
 
+# ens_gene -> 遺伝子名 (biomart の ext_gene)。ens_gene ごとに空でない最初の ext_gene を使い、
+# 名前の無い ID は ID をそのまま入れる (UMI_count の ext_gene = coalesce(ext_gene, ens_gene) と同じ扱い)。
+# ext_gene を持たない表 (PCA_rlogTop・DEGCluster_profile) に gene_name の列を足すのに使う。
+pic_gene_name_of <- function(ids, e2g) {
+  ids <- as.character(ids)
+  if (is.null(e2g) || nrow(e2g) == 0) return(ids)
+  e <- as.character(e2g$ens_gene)
+  v <- as.character(e2g$ext_gene)
+  ok <- !is.na(e) & e != "" & !is.na(v) & v != ""
+  e <- e[ok]
+  v <- v[ok]
+  keep <- !duplicated(e)
+  dplyr::coalesce(v[keep][match(ids, e[keep])], ids)
+}
+
 build_count_matrix <- function(umi, e2g) {
   # 遺伝子 × サンプルに足し上げて横に広げる。data.table で行う (dplyr の group_by + pivot_wider と
   # 同じ表: 行は ens_gene を C ロケールで並べた順、列はその並びで最初に出てくるサンプルの順、無い組は 0)。
@@ -747,7 +762,8 @@ build_degpattern_outputs <- function(
 
   group_levels <- unique(as.character(sample_meta$group))
   cluster_profile <- profile_long |>
-    dplyr::mutate(group = factor(.data$group, levels = group_levels))
+    dplyr::mutate(group = factor(.data$group, levels = group_levels)) |>
+    dplyr::mutate(gene_name = pic_gene_name_of(.data$ens_gene, e2g), .after = "ens_gene")
 
   # 注: 図 (ggplot) はレポートが DEGCluster_profile から描くので、ここでは作らない。
   list(

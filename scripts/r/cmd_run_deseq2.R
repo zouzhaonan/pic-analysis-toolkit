@@ -136,7 +136,7 @@ run_part_rlog <- function(args, def, e2g, key, parts_dir) {
   message("[INFO] Running PCA/correlation")
   files <- run_dimension_reduction(
     dds = prep$dds, label = prep$label, out_dir = args$out_dir,
-    project_name = args$project_name, ntop = args$ntop, rlog_mat = rlog_mat
+    project_name = args$project_name, ntop = args$ntop, rlog_mat = rlog_mat, e2g = e2g
   )
   f_rlog <- file.path(parts_dir, "rlog.rds")
   save_rds_atomic(list(rlog_mat = rlog_mat, label = prep$label), f_rlog)
@@ -186,7 +186,7 @@ run_part_all <- function(args, deg_dir, def, contrasts, e2g, parts_dir) {
   message("[INFO] Running PCA/correlation")
   run_dimension_reduction(
     dds = fit$dds, label = prep$label, out_dir = args$out_dir,
-    project_name = args$project_name, ntop = args$ntop, rlog_mat = rlog_mat
+    project_name = args$project_name, ntop = args$ntop, rlog_mat = rlog_mat, e2g = e2g
   )
 }
 

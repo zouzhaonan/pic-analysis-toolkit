@@ -184,12 +184,14 @@ reset_method_dir <- function(method_dir, project_name) {
 }
 
 
-ora_result_table <- function(method, cluster_id, cluster_genes, universe_genes, gson_obj, anno_env = NULL) {
+# geneID は遺伝子の symbol を "/" で並べたもの。そのすぐ右に、同じ並びの ens_gene (geneID_ens_gene) を置く
+# (gene_ids: symbol -> ens_gene。load_precomputed_deg_clusters の gene_ids)。
+ora_result_table <- function(method, cluster_id, cluster_genes, universe_genes, gson_obj, anno_env = NULL, gene_ids = NULL) {
   display_label <- cluster_id
   if (length(cluster_genes) == 0) {
     empty_cols <- c(
       "method", "cluster", "ID", "Description", "GeneRatio", "BgRatio",
-      "RichFactor", "FoldEnrichment", "zScore", "pvalue", "p.adjust", "qvalue", "geneID", "Count"
+      "RichFactor", "FoldEnrichment", "zScore", "pvalue", "p.adjust", "qvalue", "geneID", "geneID_ens_gene", "Count"
     )
     empty_tbl <- as.data.frame(setNames(rep(list(character()), length(empty_cols)), empty_cols), stringsAsFactors = FALSE)
     return(tibble::as_tibble(empty_tbl))
@@ -221,7 +223,7 @@ ora_result_table <- function(method, cluster_id, cluster_genes, universe_genes, 
 
   result_cols <- c(
     "cluster", "ID", "Description", "GeneRatio", "BgRatio",
-    "RichFactor", "FoldEnrichment", "zScore", "pvalue", "p.adjust", "qvalue", "geneID", "Count"
+    "RichFactor", "FoldEnrichment", "zScore", "pvalue", "p.adjust", "qvalue", "geneID", "geneID_ens_gene", "Count"
   )
   is_kegg_method <- identical(as.character(method), "KEGG")
   cluster_res |>
@@ -230,12 +232,15 @@ ora_result_table <- function(method, cluster_id, cluster_genes, universe_genes, 
     dplyr::mutate(
       cluster = display_label,
       method = method,
-      Description = if (is_kegg_method) strip_kegg_species_suffix(.data$Description) else as.character(.data$Description)
+      Description = if (is_kegg_method) strip_kegg_species_suffix(.data$Description) else as.character(.data$Description),
+      geneID_ens_gene = pic_genes_to_ids(.data$geneID, gene_ids)
     ) |>
     dplyr::select(dplyr::any_of(c("method", result_cols)))
 }
 
-gsea_result_table <- function(method, numerator, denominator, display_label, gene_list, gson_obj) {
+# core_enrichment は遺伝子の symbol を "/" で並べたもの。そのすぐ右に、同じ並びの ens_gene
+# (core_enrichment_ens_gene) を置く (gene_ids: symbol -> 順位に使った行の ens_gene。ranked_gene_table)。
+gsea_result_table <- function(method, numerator, denominator, display_label, gene_list, gson_obj, gene_ids = NULL) {
   gsea_table_raw <- safe_as_tibble(run_local_gsea(gene_list, gson_obj, seed = pic_gsea_seed()))
 
   required_gsea_cols <- c(
@@ -256,11 +261,12 @@ gsea_result_table <- function(method, numerator, denominator, display_label, gen
         !is.na(.data$NES) & .data$NES > 0 ~ numerator,
         !is.na(.data$NES) & .data$NES < 0 ~ denominator,
         TRUE ~ "neutral"
-      )
+      ),
+      core_enrichment_ens_gene = pic_genes_to_ids(.data$core_enrichment, gene_ids)
     ) |>
     dplyr::select(dplyr::any_of(c(
       "method", "contrast", "direction", "ID", "Description", "setSize", "enrichmentScore", "NES",
-      "pvalue", "p.adjust", "qvalue", "rank", "leading_edge", "core_enrichment"
+      "pvalue", "p.adjust", "qvalue", "rank", "leading_edge", "core_enrichment", "core_enrichment_ens_gene"
     )))
 }
 
@@ -318,11 +324,13 @@ build_ora_jobs <- function(stats, genome, out_dir, project_name, methods,
         univ <- universe_genes
         cluster_id <- as.character(clusters$cluster_id[[idx]])
         cluster_genes <- unique(as.character(clusters$genes[[idx]]))
+        cluster_ids <- clusters$gene_ids[[idx]]
         out_csv <- file.path(method_dir, sprintf("%s_%s_%s.csv", meta$prefix, format_contrast_file_label(cluster_id), project_name))
         jobs[[length(jobs) + 1]] <<- list(
           kind = "ORA", method = m, label = cluster_id, cost = 1,
           run = function() {
-            write_csv_atomic(ora_result_table(m, cluster_id, cluster_genes, univ, gson_cache[[m]], anno_cache[[m]]), out_csv)
+            write_csv_atomic(ora_result_table(m, cluster_id, cluster_genes, univ, gson_cache[[m]], anno_cache[[m]],
+                                              gene_ids = cluster_ids), out_csv)
           }
         )
       })
@@ -361,8 +369,11 @@ build_gsea_jobs <- function(stats, contrasts, genome, out_dir, project_name, met
           run = function() {
             contrast_stats <- stats |>
               dplyr::filter(.data$aspect == display_label)
-            gene_list <- build_ranked_gene_list(contrast_stats, gene_col = gene_col)
-            write_csv_atomic(gsea_result_table(m, numerator, denominator, display_label, gene_list, gson_cache[[m]]), out_csv)
+            rank_tbl <- ranked_gene_table(contrast_stats, gene_col = gene_col)
+            gene_list <- ranked_list_from_table(rank_tbl)
+            gene_ids <- stats::setNames(as.character(rank_tbl$ens_gene), rank_tbl$gene_id)
+            write_csv_atomic(gsea_result_table(m, numerator, denominator, display_label, gene_list, gson_cache[[m]],
+                                               gene_ids = gene_ids), out_csv)
           }
         )
       })
