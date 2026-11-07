@@ -31,7 +31,8 @@ scatter_traces_by_dir <- function(df, x, y, numerator, denominator, hovertemplat
   for (k in c("ns", "down", "up")) {
     sub <- df[df$dir == k, , drop = FALSE]
     if (nrow(sub) == 0) next
-    cd <- lapply(seq_len(nrow(sub)), function(i) list(sub$cd1[[i]], sub$cd2[[i]]))
+    # customdata[2] = 名前の後ろに添える ID (" (ENSMUSG…)")。名前が無く ID で埋めた点は空。
+    cd <- lapply(seq_len(nrow(sub)), function(i) list(sub$cd1[[i]], sub$cd2[[i]], sub$idsuf[[i]]))
     traces[[length(traces) + 1]] <- list(
       x = as.list(as.numeric(sub[[x]])),
       y = as.list(as.numeric(sub[[y]])),
@@ -82,9 +83,10 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     numerator <- group_name_of(numerator, group_pal); denominator <- group_name_of(denominator, group_pal)
     flab <- format_contrast_file_label(a)
 
-    gene <- if ("ext_gene" %in% colnames(cs)) {
-      g <- as.character(cs$ext_gene); g[is.na(g) | g == ""] <- as.character(cs$ens_gene)[is.na(g) | g == ""]; g
-    } else as.character(cs$ens_gene)
+    # 点の名前は遺伝子名 (無ければ ID)。hover では名前の後ろに ID を添える。
+    ens <- as.character(cs$ens_gene)
+    gene <- pic_gene_label(if ("ext_gene" %in% colnames(cs)) cs$ext_gene else NULL, ens)
+    idsuf <- ifelse(gene == ens | is.na(ens), "", sprintf(" (%s)", html_escape(ens)))
 
     lfc <- suppressWarnings(as.numeric(cs$log2FoldChange))
     padj <- suppressWarnings(as.numeric(cs$padj))
@@ -104,9 +106,9 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     idxMA <- downsample_idx(is_sig & keepMA)
     idxMA <- idxMA[keepMA[idxMA]]
     if (length(idxMA) > 0) {
-      dfMA <- data.frame(x = base[idxMA], y = lfc[idxMA], gene = gene[idxMA], dir = dir[idxMA],
+      dfMA <- data.frame(x = base[idxMA], y = lfc[idxMA], gene = gene[idxMA], idsuf = idsuf[idxMA], dir = dir[idxMA],
                          cd1 = padj[idxMA], cd2 = pval[idxMA], stringsAsFactors = FALSE)
-      ht <- "<b>%{text}</b><br>baseMean: %{x:.3g}<br>log<sub>2</sub>FC: %{y:.2f}<br>p.adjust: %{customdata[0]:.3g}<extra></extra>"
+      ht <- "<b>%{text}</b>%{customdata[2]}<br>baseMean: %{x:.3g}<br>log<sub>2</sub>FC: %{y:.2f}<br>p.adjust: %{customdata[0]:.3g}<extra></extra>"
       tr <- scatter_traces_by_dir(dfMA, "x", "y", numerator, denominator, ht, group_pal)
       id <- sprintf("%sma_%s", id_prefix, flab)
       layout <- list(
@@ -124,9 +126,9 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
     idxV <- downsample_idx(is_sig & keepV)
     idxV <- idxV[keepV[idxV]]
     if (length(idxV) > 0) {
-      dfV <- data.frame(x = lfc[idxV], y = -log10(pval[idxV]), gene = gene[idxV], dir = dir[idxV],
+      dfV <- data.frame(x = lfc[idxV], y = -log10(pval[idxV]), gene = gene[idxV], idsuf = idsuf[idxV], dir = dir[idxV],
                         cd1 = padj[idxV], cd2 = pval[idxV], stringsAsFactors = FALSE)
-      ht <- "<b>%{text}</b><br>log<sub>2</sub>FC: %{x:.2f}<br>p-value: %{customdata[1]:.3g}<br>p.adjust: %{customdata[0]:.3g}<extra></extra>"
+      ht <- "<b>%{text}</b>%{customdata[2]}<br>log<sub>2</sub>FC: %{x:.2f}<br>p-value: %{customdata[1]:.3g}<br>p.adjust: %{customdata[0]:.3g}<extra></extra>"
       tr <- scatter_traces_by_dir(dfV, "x", "y", numerator, denominator, ht, group_pal)
       id <- sprintf("%svolcano_%s", id_prefix, flab)
       layout <- list(
@@ -281,7 +283,8 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
   mat <- as.matrix(d[, sample_cols, drop = FALSE]); storage.mode(mat) <- "double"
   mat <- round(mat, 2)
   ens_all <- as.character(d$ens_gene)
-  ext <- if ("ext_gene" %in% colnames(d)) as.character(d$ext_gene) else rep(NA_character_, nrow(d))
+  # 名前が空 (古い出力) なら ID で埋める (deseq2 の出力と同じ規則)。配列の形 (ens / ext の 2 本) は変えない。
+  ext <- pic_gene_label(if ("ext_gene" %in% colnames(d)) d$ext_gene else NULL, ens_all)
 
   # default = pvalue 最小の 5 遺伝子 (contrast 横断で遺伝子ごとに min pvalue)、
   # および contrast ごとの padj (q-value, hover 表示用)。

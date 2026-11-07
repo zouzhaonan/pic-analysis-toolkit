@@ -167,11 +167,78 @@ pic_report_section_job <- function(f) {
 # --- 埋め込みファイルの gzip+base64 を先に並べて作る ------------------------------
 
 # register_file と同じやり方で gz を作る。失敗は NULL。
+# 中身はダウンロード用に整えたもの (pic_report_dl_bytes: 表は CSV にそろえ、遺伝子名を ID の前に)。
 pic_report_file_gz <- function(abs) {
   tryCatch({
-    raw <- readBin(abs, "raw", n = file.info(abs)$size)
+    raw <- pic_report_dl_bytes(abs)
     jsonlite::base64_enc(memCompress(raw, "gzip"))
   }, error = function(e) NULL)
+}
+
+# --- ダウンロードの形をそろえる -----------------------------------------------
+# report の Download で渡す表はすべて CSV にする (TSV と CSV が混ざると迷うため)。
+# 元のファイル (mapping_sum・deftable の .tsv など) は pic の他のコマンドや pic_lanes が読むので変えず、
+# 埋め込む段でだけ形を変える。
+
+# ダウンロードのファイル名 (.tsv / .txt は .csv に)。
+pic_report_dl_name <- function(rel) {
+  sub("\\.(tsv|txt)$", ".csv", basename(rel), ignore.case = TRUE)
+}
+
+# 遺伝子の ID と名前の列 (ID は ens_gene、名前は ext_gene か gene_name)。無ければ NULL。
+pic_gene_cols <- function(cols) {
+  id <- intersect("ens_gene", cols)
+  nm <- intersect(c("ext_gene", "gene_name"), cols)
+  if (length(id) == 0 || length(nm) == 0) return(NULL)
+  list(id = id[[1]], name = nm[[1]])
+}
+
+# 名前の列を ID の列のすぐ前に置いた列の並び。
+pic_name_first_order <- function(cols, gc) {
+  rest <- setdiff(cols, gc$name)
+  i <- match(gc$id, rest)
+  c(rest[seq_len(i - 1L)], gc$name, rest[i:length(rest)])
+}
+
+# 非 ASCII を含むときだけ UTF-8 の BOM を付ける (Excel は BOM なしの UTF-8 CSV を
+# 既定の文字コード (日本語の Windows では Shift_JIS) で読んで化けるため)。
+# ASCII だけのファイルは BOM なしのまま (化けようがなく、BOM を読み飛ばさない base R の read.csv などの列名も汚さない)。
+pic_csv_bom <- function(raw) {
+  bom <- as.raw(c(0xEF, 0xBB, 0xBF))
+  if (length(raw) >= 3 && identical(raw[1:3], bom)) return(raw)
+  if (any(raw >= as.raw(0x80))) c(bom, raw) else raw
+}
+
+# ダウンロードで渡す中身 (raw)。
+#   .tsv / .txt … タブ区切りとして読み、CSV に書き直す (カンマ・引用符・改行を含む値は "" で囲む)。
+#   .csv        … 遺伝子の ID と名前の列が両方あれば、名前を ID のすぐ前に移し、空の名前を ID で埋める
+#                  (deseq2 の出力と同じ規則。古い出力に空の ext_gene が残っていてもそろう)。
+#                  それ以外はバイト列をそのまま渡す。
+# 値はすべて文字列のまま読み書きする (数値の桁や "NA" の表記を変えない。na.strings = NULL で "NA" も文字列のまま読むので、
+# 書くときの na は "" にしておく (na を空でない文字にすると fwrite は文字の列をすべて "" で囲む))。
+pic_report_dl_bytes <- function(abs) {
+  raw <- readBin(abs, "raw", n = file.info(abs)$size)
+  is_tab <- grepl("\\.(tsv|txt)$", abs, ignore.case = TRUE)
+  is_csv <- grepl("\\.csv$", abs, ignore.case = TRUE)
+  if ((!is_tab && !is_csv) || length(raw) == 0) return(raw)
+  if (is_csv) {
+    head1 <- readLines(abs, n = 1L, warn = FALSE, encoding = "UTF-8")
+    hcols <- if (length(head1)) gsub('^"|"$', "", strsplit(sub("^﻿", "", head1), ",", fixed = TRUE)[[1]]) else character(0)
+    if (is.null(pic_gene_cols(hcols))) return(pic_csv_bom(raw))
+  }
+  d <- data.table::fread(abs, sep = if (is_tab) "\t" else ",", quote = if (is_tab) "" else "\"",
+                         header = TRUE, colClasses = "character", na.strings = NULL,
+                         encoding = "UTF-8", showProgress = FALSE, fill = is_tab)
+  gc <- pic_gene_cols(colnames(d))
+  if (!is.null(gc)) {
+    nm <- d[[gc$name]]; idv <- d[[gc$id]]
+    miss <- is.na(nm) | !nzchar(trimws(nm))
+    if (any(miss)) data.table::set(d, which(miss), gc$name, idv[miss])
+    data.table::setcolorder(d, pic_name_first_order(colnames(d), gc))
+  }
+  tf <- tempfile(fileext = ".csv"); on.exit(unlink(tf), add = TRUE)
+  data.table::fwrite(d, tf, sep = ",", quote = "auto", na = "", eol = "\n", showProgress = FALSE)
+  pic_csv_bom(readBin(tf, "raw", n = file.info(tf)$size))
 }
 
 # rel (projdir からの相対パス) の gz を並べて作り、register_file が使う置き場に入れる。

@@ -148,6 +148,17 @@ png_button <- function(cap_id, name) {
           html_escape(cap_id), html_escape(name))
 }
 
+# 画面に出す遺伝子のラベル: 遺伝子名 (ext_gene) を前面に、名前が空 (NA・""・空白) なら ID で埋める
+# (deseq2 の出力と同じ規則。古い出力に空の ext_gene が残っていても同じ見え方にする)。
+pic_gene_label <- function(name, id) {
+  id <- as.character(id)
+  if (is.null(name)) return(id)
+  nm <- as.character(name)
+  miss <- is.na(nm) | !nzchar(trimws(nm))
+  nm[miss] <- id[miss]
+  nm
+}
+
 # ファイル名 (相対パス) から、その中身の短い説明を返す。
 file_desc <- function(rel) {
   b <- basename(rel)
@@ -241,7 +252,8 @@ register_file <- function(rel) {
         else pic_report_file_gz(abs)
   if (is.null(gz)) return(NULL)
   cat_i <- file_category(rel)
-  reg$files[[id]] <- list(name = basename(rel), path = rel, desc = file_desc(rel),
+  # 中身は CSV にそろえてある (pic_report_dl_bytes) ので、名前も .tsv / .txt は .csv にする
+  reg$files[[id]] <- list(name = pic_report_dl_name(rel), path = rel, desc = file_desc(rel),
                           cat = cat_i$title, tab = cat_i$tab, gz = gz)
   id
 }
@@ -253,7 +265,7 @@ register_virtual_file <- function(rel, content, desc = NULL) {
   if (is.null(reg$files)) reg$files <- list()
   id <- gsub("[^A-Za-z0-9]+", "_", rel)
   if (!is.null(reg$files[[id]])) return(id)
-  gz <- tryCatch(jsonlite::base64_enc(memCompress(charToRaw(content), "gzip")), error = function(e) NULL)
+  gz <- tryCatch(jsonlite::base64_enc(memCompress(pic_csv_bom(charToRaw(enc2utf8(content))), "gzip")), error = function(e) NULL)
   if (is.null(gz)) return(NULL)
   cat_i <- file_category(rel)
   reg$files[[id]] <- list(name = basename(rel), path = rel,
@@ -266,7 +278,7 @@ register_virtual_file <- function(rel, content, desc = NULL) {
 src_note <- function(rel) {
   id <- register_file(rel)
   if (is.null(id)) return("")
-  ext <- toupper(tools::file_ext(rel))
+  ext <- toupper(tools::file_ext(pic_report_dl_name(rel)))
   label <- if (nzchar(ext)) sprintf("Download %s", ext) else "Download"
   sprintf('<span class="pic-src"><a class="pic-dlcsv" role="button" tabindex="0" data-file="%s">%s</a></span>',
           id, html_escape(label))

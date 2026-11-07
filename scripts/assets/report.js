@@ -1001,13 +1001,14 @@
       var res = picSubsetPCA(pd, keep, pd.ntop || 500);
       if (!res) { alert("Not enough usable genes for the current selection."); return; }
       var npc = res.coords.length, head = ["sample"], pc, k;
+      var csvq = function (x) { x = String(x); return /[",\r\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
       for (pc = 0; pc < npc; pc++) head.push("PC" + (pc + 1));
       head.push("group");
       var rows = [head.join(",")];
       for (k = 0; k < keep.length; k++) {
-        var row = [pd.samples[keep[k]]];
+        var row = [csvq(pd.samples[keep[k]])];
         for (pc = 0; pc < npc; pc++) row.push(res.coords[pc][k]);
-        row.push(pd.groups[keep[k]]);
+        row.push(csvq(pd.groups[keep[k]]));
         rows.push(row.join(","));
       }
       saveBlob(new Blob([rows.join("\n") + "\n"], { type: "text/csv" }),
