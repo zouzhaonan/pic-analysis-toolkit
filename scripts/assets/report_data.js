@@ -66,12 +66,14 @@
   var waiting = [], booted = false, domReady = document.readyState !== "loading";
   function flush() {
     if (!booted || !domReady) return;
-    if (window.performance && performance.mark) { try { performance.mark("pic-ready"); } catch (e) {} }
+    mark("pic-ready");
     var q = waiting; waiting = [];
     q.forEach(function (fn) { try { fn(); } catch (e) { setTimeout(function () { throw e; }); } });
   }
   window.picReady = function (fn) { waiting.push(fn); flush(); };
   if (!domReady) document.addEventListener("DOMContentLoaded", function () { domReady = true; flush(); });
+
+  function mark(n) { if (window.performance && performance.mark) { try { performance.mark(n); } catch (e) {} } }
 
   function showError(msg) {
     var d = document.createElement("div");
@@ -93,9 +95,10 @@
       var s = document.createElement("script");
       s.text = code;
       document.head.appendChild(s);
+      mark("pic-z:plotly");
     }));
     DATA_NAMES.forEach(function (name) {
-      jobs.push(window.picData(name).then(function (v) { if (v != null) window[name] = v; }));
+      jobs.push(window.picData(name).then(function (v) { if (v != null) window[name] = v; mark("pic-z:" + name); }));
     });
     // 大きな表: 展開して元の場所に戻す
     document.querySelectorAll("template.pic-zfrag").forEach(function (tpl) {
@@ -103,10 +106,11 @@
         if (html == null) return;
         tpl.insertAdjacentHTML("afterend", html);
         tpl.remove();
+        mark("pic-z:" + tpl.dataset.z);
       }));
     });
     return Promise.all(jobs).then(function () {
-      if (window.performance && performance.mark) { try { performance.mark("pic-data-ready"); } catch (e) {} }
+      mark("pic-data-ready");
     }, function (e) {
       showError("埋め込みデータの展開に失敗しました: " + e);
     });
