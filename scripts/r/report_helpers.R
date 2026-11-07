@@ -126,8 +126,7 @@ group_sample_tree_panel <- function(samples, groups, group_pal = NULL, group_map
                    '</summary><div class="pic-tree-s">%s</div></details>'),
             html_escape(g), sw, html_escape(g), length(idx), paste(kids, collapse = ""))
   }, character(1))
-  paste0('<h4>Groups</h4><p class="pic-tree-hint">Uncheck a group or a sample to exclude it. ',
-         'The selection is shared by all tabs.</p><div class="pic-tree">', paste(blocks, collapse = ""), '</div>')
+  paste0('<h4>Groups</h4><div class="pic-tree">', paste(blocks, collapse = ""), '</div>')
 }
 
 # 「ここで選択」を明示する目立つ案内バッジ。

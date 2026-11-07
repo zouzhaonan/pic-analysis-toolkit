@@ -201,7 +201,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
     parts <- c(parts, sprintf(
       paste0('<div class="pic-enrich-ora">',
              '<p class="pic-note">ORA takes the differentially expressed genes in each cluster and asks which biological terms are over-represented among them. ',
-             'Dot color is significance (p.adjust), size the gene ratio. Pick a method next to the tab title to view it.</p>%s</div>'),
+             'Dot color is significance (p.adjust), size the gene ratio.</p>%s</div>'),
       build_select_group(ora_items, prefix = prefix_html, ctrl_title = "Method", view_header = "", ctrl_extra = tree_html,
                          method_src = TRUE)
     ))

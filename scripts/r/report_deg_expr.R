@@ -154,8 +154,7 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
   note <- paste0(
     '<p class="pic-note">Each gene is one point. The <b>M-A plot</b> shows the log<sub>2</sub> fold change vs. mean expression; ',
     'the <b>Volcano plot</b> shows it vs. statistical significance (&minus;log<sub>10</sub> p-value). ',
-    '<b style="color:#d7301f">Red</b> / <b style="color:#2166ac">blue</b> points are significantly up / down (p.adjust below the FDR); grey is not significant. ',
-    'Hover a point for its gene name, log<sub>2</sub> fold change and p.adjust.</p>')
+    '<b style="color:#d7301f">Red</b> / <b style="color:#2166ac">blue</b> points are significantly up / down (p.adjust below the FDR); grey is not significant.</p>')
   # 右パネル先頭: 説明文 (info へ集約) + タイトル行 (Download csv を隣に)
   view_head <- paste0(note, sub_head('M-A &amp; Volcano Plot', src_note(stats_src)))
 
@@ -257,7 +256,7 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL,
   }
   if (length(blocks) == 0) return("")
   paste0('<p class="pic-note">Average read coverage along the gene body, scaled from the transcription start (TSS) to the end (TES) ',
-         'with short flanks on each side. Each line is one sample, colored by group &mdash; click a group in the legend to show or hide it. ',
+         'with short flanks on each side. Each line is one sample, colored by group. ',
          'This shows where reads accumulate along genes (e.g. a 3&prime; bias).</p><div class="pic-plot-grid">',
          paste(blocks, collapse = ""), '</div>')
 }
@@ -349,13 +348,10 @@ build_expression_section <- function(reg, deseq2_dir, project, group_map, group_
   sprintf(paste0(
     '<section id="%s"><h2>%s</h2>',
     '<p class="pic-note">Compare the expression of individual genes across sample groups. ',
-    'Add genes to a gene group on the left: start typing a gene symbol or ID and pick it from the list, or paste a list of genes. ',
-    'Each group is plotted as its own figure; click <b>&times;</b> on a tag (or press Backspace) to remove a gene. ',
     'Each gene gets its own panel with its own y-axis scale (starting at 0), so compare heights within a panel, not across panels. ',
     'Each box shows the distribution of normalized counts for one group; dots are individual samples.</p>',
     '<p class="pic-note">A gene name turns <b style="color:#d7301f">red</b> when its adjusted p-value (padj) ',
-    'is below the significance threshold (FDR = %s) in at least one comparison between the shown groups. ',
-    'Hover over a gene name to see &minus;log<sub>10</sub> p-value and &minus;log<sub>10</sub> padj for every comparison between the shown groups (larger = more significant). Use the Groups panel to narrow the groups and comparisons.</p>',
+    'is below the significance threshold (FDR = %s) in at least one comparison between the shown groups.</p>',
     '%s',
     '<div class="pic-expr" data-expr="%s">',
     '<div class="pic-expr-side"><div class="pic-expr-msg"></div>%s</div>',

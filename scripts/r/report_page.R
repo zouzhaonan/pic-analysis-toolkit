@@ -819,7 +819,7 @@ section_genome_split <- function(summary_df, src = "", geno_map = NULL,
   note <- paste0('<p class="pic-note">Each library was split between the two reference genomes with ',
                  '<b>xengsort</b>. Each bar is one sample (100&thinsp;% stacked): <b>graft</b> / <b>host</b> are reads ',
                  'assigned uniquely to each genome; <b>both</b> map to either, <b>ambiguous</b> are undecided, ',
-                 '<b>neither</b> map to no genome. A clean split is dominated by graft + host. Hover a segment for counts.</p>')
+                 '<b>neither</b> map to no genome. A clean split is dominated by graft + host.</p>')
   parts <- c('<section id="genomesplit"><h2>Genome split</h2>', note, src_note(src))
   if (!have) {
     parts <- c(parts, '<p>classification summary not found.</p></section>')

@@ -412,7 +412,7 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
   }
   paste0('<p class="pic-note">RNA integrity of the input RNA measured on the TapeStation. The electropherogram shows each sample&rsquo;s fluorescence along fragment size; the lower marker and the ',
          '18S / 28S ribosomal RNA peaks are marked. The number next to each trace, in the same colour, is its <b>RINe</b> ',
-         '(1 = degraded, 10 = intact). Click a sample in the legend to show or hide it. ',
+         '(1 = degraded, 10 = intact). ',
          'Sample names follow the TapeStation sample table.',
          if (pc_used) ' The lower panel is the <b>positive control</b>, a reference RNA of known good integrity run on a separate RNA ScreenTape, for comparison (its intensity axis is scaled separately).' else '',
          '</p><div class="pic-rin-panels" style="display:grid;grid-template-columns:1fr;gap:16px">',

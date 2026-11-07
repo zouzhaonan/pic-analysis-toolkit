@@ -519,8 +519,7 @@
       } catch (e) {}
     }
     function gtitle(g) { return g.title && g.title.trim() ? g.title.trim() : "Group " + (sets.indexOf(g) + 1); }
-    function anyGenes() { return sets.some(function (g) { return g.idxs.length > 0; }); }
-    function gmsg() { msg.textContent = anyGenes() ? "" : "Add genes to a group to see their expression across groups."; }
+    function gmsg() { msg.textContent = ""; }   // 操作の説明は出さない (2026-11-07 ユーザーの指示)
     // カードの下の 1 行: 遺伝子数 / 見つからない入力 / 複数の ID に当たった入力
     function gsummary(g) {
       g.sum.innerHTML = "";

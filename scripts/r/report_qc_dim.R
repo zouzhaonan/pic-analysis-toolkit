@@ -704,7 +704,7 @@ build_heatmap_html <- function(deseq2_dir, project, group_map = NULL, group_pal 
              src_note(report_rel_path(f, proj_dir)), png_button(cap_id, "deg_heatmap")),
     '<p class="pic-note">Each row is a gene, each column a sample (grouped by color). ',
     'Cell color is the gene&rsquo;s z-score across samples &mdash; <b style="color:#b2182b">red</b> is higher than that gene&rsquo;s average, ',
-    '<b style="color:#2166ac">blue</b> is lower. Genes are ordered by similarity. Hover a cell for the gene, sample, and z-score.</p>',
+    '<b style="color:#2166ac">blue</b> is lower. Genes are ordered by similarity.</p>',
     sprintf('<div class="pic-capbox" id="%s">', cap_id),
     sprintf('<div class="pic-hm-scroll"><table class="pic-hm"><thead>%s</thead><tbody>%s</tbody></table></div>',
             header, paste(rows, collapse = "")),
