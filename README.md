@@ -39,11 +39,11 @@ Download the latest `pic-channel.zip` from the [Download Page](https://github.co
 
 ## ChIP-Atlas (`pic chipatlas`)
 
-`pic all` の後に、比較ごとの ChIP-Atlas の Enrichment Analysis (EA) と PAGE を DDBJ の WABI で回せます（`pic chipatlas --help`）。/ After `pic all`, `pic chipatlas` runs ChIP-Atlas Enrichment Analysis (EA) and PAGE per comparison on DDBJ WABI (see `pic chipatlas --help`).
+`pic all` の後に、比較ごとの ChIP-Atlas の Enrichment Analysis (EA) と PAGE を DDBJ の WABI で回し、WABI が返す tsv と html をそのまま保存できます（`pic chipatlas --help`）。/ After `pic all`, `pic chipatlas` runs ChIP-Atlas Enrichment Analysis (EA) and PAGE per comparison on DDBJ WABI and saves the tsv and html returned by WABI as-is (see `pic chipatlas --help`).
 
 - EA は比較 A vs B の DEG を「A で高い」「B で高い」に分け、互いを背景にします。全遺伝子を背景にすると組織そのものの性質（脳なら脳関連の feature）が前に出ますが、互いを背景にすると、処理（薬など）で乗り方が変わった feature だけが残ります。両方に同じだけ乗る feature が目立たないのは正しい挙動です。/ EA splits the DEGs of A vs B into "higher in A" and "higher in B" and uses each as the other's background. Against all genes, the tissue's own character dominates; against each other, only features whose binding differs between the two sides remain. Features shared equally by both sides do not stand out, by design.
-- DEG の数で足切りはしません（片方が 0 個のときだけ、計算できないので飛ばして理由を表に残します）。結果の表に各リストの遺伝子数が並ぶので、少ない集合はそれを見て解釈します。/ No cut-off on the number of DEGs (an EA is skipped only when one side is empty, with the reason recorded); gene counts are listed in the tables.
-- PAGE は生カウント表を渡し、全比較で回します。向きは pic の log2FoldChange（分子 / 分母）とそろえます。/ PAGE takes the raw count table and runs for every comparison; its direction matches pic's log2FoldChange (numerator / denominator).
+- DEG の数で足切りはしません（片方が 0 個のときだけ、計算できないので飛ばして理由を `run/jobs.tsv` に残します）。WABI のログに各リストの遺伝子数が出るので、少ない集合はそれを見て解釈します。/ No cut-off on the number of DEGs (an EA is skipped only when one side is empty, with the reason in `run/jobs.tsv`); gene counts are in the WABI log.
+- PAGE は生カウント表を渡し、全比較で回します。列を「分母 → 分子」の順に渡すので、本家の FE > 1 が分子で高い向きです。/ PAGE takes the raw count table and runs for every comparison; columns are passed denominator first, so FE > 1 means higher in the numerator.
 - 既定の実験の種類は TFs and others / Histone / ATAC-Seq、細胞は All cell types、閾値 100、TSS±5 kb。WABI への同時本数は既定で制限しません。/ Defaults: TFs and others / Histone / ATAC-Seq, All cell types, threshold 100, TSS ±5 kb, no limit on concurrent WABI jobs.
 
 ## チュートリアル / Documentation

@@ -1,20 +1,18 @@
 #!/usr/bin/env Rscript
 
 # 役割:
-#   ChIP-Atlas の Enrichment Analysis (EA) と PAGE を DDBJ の WABI に投げ、結果を 1 枚の表と図にまとめる。
+#   ChIP-Atlas の Enrichment Analysis (EA) と PAGE を DDBJ の WABI に投げ、WABI が返す tsv / html / log を
+#   そのまま保存する (まとめの表・図・向きの付け直しは作らない)。
 #   - EA  : 比較ごとに「分子で高い DEG (A)」と「分母で高い DEG (B)」を互いの背景にして投げる
 #           (WABI の typeA=gene / typeB=userlist)。どちらかが 0 個なら計算できないので飛ばし、理由を残す。
 #   - PAGE: 比較の 2 群の生カウント表を投げる (typeA=count)。列は「分母の群 → 分子の群」の順に並べる。
-#           本家の対比は「2 番目の群 − 最初に出てきた群」なので、FE > 1 が分子で高い向きになり、
-#           pic の log2FoldChange (分子 / 分母) と向きがそろう。
+#           本家の対比は「2 番目の群 − 最初に出てきた群」なので、分子 − 分母 の向きになる。
 #   - ジョブの記録 (ID・投げた日時・引数) を <out-dir>/run/ に残し、同じ <out-dir> で再び実行すると続きから再開する。
 # 入力:
 #   stats CSV (deseq2 の stats_<project>.csv)、UMI_count CSV、deftable TSV、genome、出力先。
 # 出力:
-#   <out-dir>/chipatlas_runs.csv     … 比較 × 解析 × 分類ごとの状態・遺伝子数・ジョブ ID・飛ばした理由
-#   <out-dir>/chipatlas_results.csv  … 全ジョブの結果を 1 枚にした表 (遺伝子名ではなく実験 ID・抗原・細胞・p/q・向き・遺伝子数)
-#   <out-dir>/chipatlas_top_<比較>.pdf/png … 比較ごとの上位の抗原
-#   <out-dir>/input/, result/, run/
+#   <out-dir>/<比較>/<比較>__<ea|page>__<種類>.{tsv,html,log} … WABI が返したもの、そのまま
+#   <out-dir>/run/  … 再開用の記録 (jobs.tsv・jobs_history.tsv・run_params.tsv・chipatlas.log) と WABI に渡した入力 (input/)
 
 script_path <- grep("^--file=", commandArgs(), value = TRUE)[[1]]
 script_dir <- dirname(normalizePath(sub("^--file=", "", script_path)))
@@ -40,7 +38,7 @@ parse_args <- function(args) {
             cell_class = "All cell types", threshold = "100",
             distance_up = "5000", distance_down = "5000", fdr = "0.1",
             analyses = "ea,page", max_jobs = "0", timeout_min = "120", retries = "2",
-            poll_sec = "60", dry_run = FALSE, collect_only = FALSE)
+            poll_sec = "60", dry_run = FALSE)
   value_keys <- c("stats", "umi", "deftable", "genome", "out_dir", "comparisons", "classes", "cell_class",
                   "threshold", "distance_up", "distance_down", "fdr", "analyses", "max_jobs",
                   "timeout_min", "retries", "poll_sec")
@@ -54,7 +52,6 @@ parse_args <- function(args) {
     }
     key <- gsub("-", "_", sub("^--", "", a))
     if (identical(a, "--dry-run")) { o$dry_run <- TRUE; i <- i + 1; next }
-    if (identical(a, "--collect-only")) { o$collect_only <- TRUE; i <- i + 1; next }
     if (!startsWith(a, "--") || !(key %in% value_keys)) fail("chipatlas の知らないオプション: %s", a)
     if (i == length(args)) fail("%s に値がありません", a)
     o[[key]] <- args[[i + 1]]
@@ -169,8 +166,8 @@ write_page_input <- function(cmp, umi, path) {
 # ---------------------------------------------------------------------------
 job_cols <- c("job", "comparison", "comparison_id", "numerator", "denominator", "analysis", "antigen_class",
               "n_genes_a", "n_genes_b", "status", "reason", "attempt", "request_id", "submitted_at",
-              "finished_at", "genes_in_a", "genes_in_b", "page_groups", "page_genes_used",
-              "params", "input_a", "input_b", "result_prefix")
+              "finished_at", "params", "input_a", "input_b", "result_prefix")
+result_formats <- c("tsv", "html", "log")
 
 params_string <- function(o, cls, analysis) {
   sprintf("genome=%s;antigenClass=%s;cellClass=%s;threshold=%s;distanceUp=%d;distanceDown=%d;typeA=%s;typeB=%s;fdr=%s",
@@ -179,8 +176,7 @@ params_string <- function(o, cls, analysis) {
 }
 
 build_plan <- function(o, cmps) {
-  in_root <- file.path(o$out_dir, "input")
-  res_root <- file.path(o$out_dir, "result")
+  in_root <- file.path(o$out_dir, "run", "input")
   umi <- NULL
   rows <- list()
   for (cmp in cmps) {
@@ -211,10 +207,9 @@ build_plan <- function(o, cmps) {
         n_genes_a = if (an == "ea") length(cmp$genes_a) else NA,
         n_genes_b = if (an == "ea") length(cmp$genes_b) else NA,
         status = status, reason = reason, attempt = 0L, request_id = "", submitted_at = "", finished_at = "",
-        genes_in_a = NA, genes_in_b = NA, page_groups = "", page_genes_used = "",
         params = params_string(o, cls, an),
         input_a = if (an == "ea") fa else fp, input_b = if (an == "ea") fb else "",
-        result_prefix = file.path(res_root, an, cmp$id, job),
+        result_prefix = file.path(o$out_dir, cmp$id, job),
         stringsAsFactors = FALSE)
     }
   }
@@ -254,10 +249,12 @@ load_or_init_state <- function(o, plan) {
     }
     if (plan$status[[i]] == "skipped") next
     st <- old$status[[k]]
-    keep <- c("status", "reason", "attempt", "request_id", "submitted_at", "finished_at",
-              "genes_in_a", "genes_in_b", "page_groups", "page_genes_used")
+    keep <- c("status", "reason", "attempt", "request_id", "submitted_at", "finished_at")
     if (st %in% c("done", "submitted")) {
       for (c in keep) plan[[c]][[i]] <- old[[c]][[k]]
+      # 終わったのに結果のファイルが無いもの (消した・置き場所が変わった) は、WABI から取り直す
+      have <- file.exists(paste0(plan$result_prefix[[i]], ".", result_formats))
+      if (st == "done" && !all(have)) plan$status[[i]] <- "submitted"
     } else if (st %in% c("failed", "timeout")) {
       # 前に失敗したものは、再試行の回数を戻して投げ直す
       plan$attempt[[i]] <- 0L
@@ -314,30 +311,21 @@ job_status <- function(id) {
   list(status = tolower(sub("^status:\\s*", "", st[[1]])), raw = resp)
 }
 
+# WABI が返す tsv / html / log をそのまま保存する (中身は加工しない)
 download_result <- function(j) {
   dir.create(dirname(j$result_prefix), recursive = TRUE, showWarnings = FALSE)
   base <- paste0(wabi_url, j$request_id, "?info=result&format=")
-  for (f in c("tsv", "html", "log")) {
+  for (f in result_formats) {
     dest <- paste0(j$result_prefix, ".", f)
-    rc <- system2("curl", shQuote(c("-sS", "--max-time", "600", "-o", dest, paste0(base, f))))
-    if (rc != 0) return(list(ok = FALSE, msg = sprintf("%s のダウンロードに失敗 (curl %d)", f, rc)))
+    tmp <- paste0(dest, ".part")
+    rc <- system2("curl", shQuote(c("-fsS", "--max-time", "600", "-o", tmp, paste0(base, f))))
+    if (rc != 0 || !file.exists(tmp) || file.size(tmp) == 0) {
+      unlink(tmp)
+      return(list(ok = FALSE, msg = sprintf("%s を取れなかった (curl %d)", f, rc)))
+    }
+    file.rename(tmp, dest)
   }
-  tsv <- paste0(j$result_prefix, ".tsv")
-  logf <- paste0(j$result_prefix, ".log")
-  first <- if (file.size(tsv) > 0) readLines(tsv, n = 1, warn = FALSE) else ""
-  lg <- if (file.exists(logf)) readLines(logf, warn = FALSE) else character()
-  if (file.size(tsv) == 0 || length(strsplit(first, "\t")[[1]]) < 10) {
-    return(list(ok = FALSE, msg = sprintf("結果の tsv が空か形が違う: %s", substr(first, 1, 200))))
-  }
-  pick <- function(pat) {
-    x <- grep(pat, lg, value = TRUE)
-    if (length(x)) sub(pat, "\\1", x[[1]]) else ""
-  }
-  list(ok = TRUE,
-       genes_in_a = pick("^.*Genes in A: *([0-9]+).*$"),
-       genes_in_b = pick("^.*Genes in B: *([0-9]+).*$"),
-       page_groups = pick("^.*Groups: *(.*)$"),
-       page_genes_used = pick("^.*Genes used: *([0-9]+).*$"))
+  list(ok = TRUE)
 }
 
 run_jobs <- function(o, jobs) {
@@ -353,14 +341,14 @@ run_jobs <- function(o, jobs) {
       if (st$status == "finished") {
         dl <- download_result(j)
         if (isTRUE(dl$ok)) {
-          jobs$status[i] <- "done"; jobs$finished_at[i] <- now_str(); jobs$reason[i] <- ""
-          for (k in c("genes_in_a", "genes_in_b", "page_groups", "page_genes_used")) jobs[[k]][i] <- dl[[k]]
+          jobs$status[i] <- "done"; jobs$reason[i] <- ""
+          if (!nzchar(jobs$finished_at[i])) jobs$finished_at[i] <- now_str()
           append_history(o, jobs[i, ], "done")
           log_info("終わり: %s (%s)", j$job, j$request_id)
         } else {
           jobs$status[i] <- "retry"; jobs$reason[i] <- dl$msg
           append_history(o, jobs[i, ], "bad_result", dl$msg)
-          log_warn("結果が使えない: %s (%s): %s", j$job, j$request_id, dl$msg)
+          log_warn("結果を取れない: %s (%s): %s", j$job, j$request_id, dl$msg)
         }
       } else if (grepl("error|fail|cancel|timeout|not.?found", st$status)) {
         jobs$status[i] <- "retry"; jobs$reason[i] <- paste("WABI の状態:", st$status)
@@ -413,116 +401,6 @@ run_jobs <- function(o, jobs) {
   jobs
 }
 
-# ---------------------------------------------------------------------------
-# まとめ
-# ---------------------------------------------------------------------------
-read_result <- function(j) {
-  f <- paste0(j$result_prefix, ".tsv")
-  if (!file.exists(f) || file.size(f) == 0) return(NULL)
-  x <- utils::read.delim(f, header = FALSE, quote = "", comment.char = "", check.names = FALSE,
-                         stringsAsFactors = FALSE, colClasses = "character")
-  if (ncol(x) < 11) return(NULL)
-  fe <- suppressWarnings(as.numeric(x[[11]]))
-  base <- data.frame(
-    comparison = j$comparison, numerator = j$numerator, denominator = j$denominator,
-    analysis = j$analysis, antigen_class = j$antigen_class,
-    experiment_id = x[[1]], antigen = x[[3]], cell_class = x[[4]], cell_type = x[[5]],
-    num_peaks = suppressWarnings(as.integer(x[[6]])),
-    stringsAsFactors = FALSE)
-  if (j$analysis == "EA") {
-    a <- strsplit(x[[7]], "/", fixed = TRUE); b <- strsplit(x[[8]], "/", fixed = TRUE)
-    base$overlap_a <- suppressWarnings(as.integer(vapply(a, `[`, "", 1)))
-    base$overlap_b <- suppressWarnings(as.integer(vapply(b, `[`, "", 1)))
-    base$overlapping_genes <- NA_integer_
-    base$overlap_fc <- NA_real_; base$background_fc <- NA_real_
-  } else {
-    fc <- strsplit(x[[8]], "/", fixed = TRUE)
-    base$overlap_a <- NA_integer_; base$overlap_b <- NA_integer_
-    base$overlapping_genes <- suppressWarnings(as.integer(x[[7]]))
-    base$overlap_fc <- suppressWarnings(as.numeric(vapply(fc, `[`, "", 1)))
-    base$background_fc <- suppressWarnings(as.numeric(vapply(fc, `[`, "", 2)))
-  }
-  base$log10_p <- suppressWarnings(as.numeric(x[[9]]))
-  base$log10_q <- suppressWarnings(as.numeric(x[[10]]))
-  base$fold_enrichment <- fe
-  # EA: A = 分子で高い DEG。FE > 1 なら A 側 (分子で高い遺伝子) に多い。
-  # PAGE: 列を 分母 → 分子 の順に並べたので、FE > 1 なら分子で高い向き。
-  base$direction <- ifelse(is.na(fe) | fe == 1, "none",
-                           ifelse(fe > 1, paste0("up_in_", j$numerator), paste0("up_in_", j$denominator)))
-  base$n_genes_up_in_numerator <- as.integer(j$n_genes_a)
-  base$n_genes_up_in_denominator <- as.integer(j$n_genes_b)
-  base$genes_matched_a <- suppressWarnings(as.integer(j$genes_in_a))
-  base$genes_matched_b <- suppressWarnings(as.integer(j$genes_in_b))
-  base$request_id <- j$request_id
-  base
-}
-
-plot_top <- function(o, res, top_n = 6) {
-  if (is.null(res) || !nrow(res) || !requireNamespace("ggplot2", quietly = TRUE)) return(invisible())
-  for (cmp in unique(res$comparison)) {
-    x <- res[res$comparison == cmp & is.finite(res$log10_q), , drop = FALSE]
-    if (!nrow(x)) next
-    num <- x$numerator[[1]]; den <- x$denominator[[1]]
-    # パネル (解析 × 種類) ごと、向きごとに上位 top_n。同じ抗原 × 細胞は一番強い実験 1 つ
-    # (ATAC-Seq / DNase-seq は抗原名が種類名と同じなので、細胞で分ける)
-    x$panel <- paste(x$analysis, x$antigen_class, sep = " | ")
-    x <- x[is.finite(x$fold_enrichment) & x$fold_enrichment != 1, , drop = FALSE]
-    if (!nrow(x)) next
-    x$up <- x$fold_enrichment > 1
-    x <- x[order(x$log10_q, x$log10_p), , drop = FALSE]
-    x <- x[!duplicated(paste(x$panel, x$up, x$antigen, x$cell_type)), , drop = FALSE]
-    x <- do.call(rbind, lapply(split(x, list(x$panel, x$up), drop = TRUE), function(d) utils::head(d, top_n)))
-    x$score <- -x$log10_p * ifelse(x$fold_enrichment >= 1, 1, -1)
-    x$sig <- ifelse(x$log10_q < log10(0.05), "q < 0.05", "q >= 0.05")
-    x$side <- ifelse(x$fold_enrichment >= 1, paste("up in", num), paste("up in", den))
-    x$label <- sprintf("%s (%s)", x$antigen, x$cell_type)
-    x$key <- paste(x$panel, x$up, x$label, sep = "\r")
-    x$key <- factor(x$key, levels = unique(x$key[order(x$panel, x$score)]))
-    cols <- stats::setNames(c("#C0392B", "#2E6DB4"), c(paste("up in", num), paste("up in", den)))
-    g <- ggplot2::ggplot(x, ggplot2::aes(x = score, y = key, fill = side, alpha = sig)) +
-      ggplot2::geom_col(width = 0.7) +
-      ggplot2::geom_vline(xintercept = 0, colour = "grey40", linewidth = 0.3) +
-      ggplot2::scale_alpha_manual(values = c("q < 0.05" = 1, "q >= 0.05" = 0.3), drop = FALSE) +
-      ggplot2::scale_y_discrete(labels = function(k) sub("^.*\r", "", k)) +
-      ggplot2::scale_fill_manual(values = cols, drop = FALSE) +
-      ggplot2::facet_wrap(~panel, scales = "free", ncol = 2) +
-      ggplot2::labs(x = "signed -log10(p)  (+: up in numerator, -: up in denominator)", y = NULL, fill = NULL, alpha = NULL,
-                    title = sprintf("ChIP-Atlas: %s  (top %d per direction per panel by q; faded: q >= 0.05)", cmp, top_n)) +
-      ggplot2::theme_bw(base_size = 8) + ggplot2::theme(legend.position = "bottom")
-    npan <- length(unique(x$panel))
-    f <- file.path(o$out_dir, sprintf("chipatlas_top_%s", safe_name(cmp)))
-    h <- 1.5 + 0.17 * 2 * top_n * ceiling(npan / 2) + 0.5 * ceiling(npan / 2)
-    ggplot2::ggsave(paste0(f, ".pdf"), g, width = 10, height = h, limitsize = FALSE)
-    ggplot2::ggsave(paste0(f, ".png"), g, width = 10, height = h, dpi = 120, limitsize = FALSE)
-  }
-}
-
-summarize <- function(o, jobs, cmps) {
-  done <- jobs[jobs$status == "done", , drop = FALSE]
-  res <- do.call(rbind, lapply(seq_len(nrow(done)), function(i) read_result(done[i, ])))
-  runs <- jobs[, setdiff(job_cols, c("input_a", "input_b", "result_prefix")), drop = FALSE]
-  names(runs)[names(runs) == "n_genes_a"] <- "n_genes_up_in_numerator"
-  names(runs)[names(runs) == "n_genes_b"] <- "n_genes_up_in_denominator"
-  if (!is.null(res) && nrow(res)) {
-    sig <- stats::aggregate(log10_q ~ comparison + analysis + antigen_class,
-                            data = res, FUN = function(q) sum(q < log10(0.05), na.rm = TRUE))
-    names(sig)[4] <- "n_experiments_q_lt_0.05"
-    runs <- merge(runs, sig, all.x = TRUE, sort = FALSE)
-    res <- res[order(res$comparison, res$analysis, res$antigen_class, res$log10_q, res$log10_p), , drop = FALSE]
-    res$rank_in_run <- stats::ave(seq_len(nrow(res)), res$comparison, res$analysis, res$antigen_class, FUN = seq_along)
-    # 全行 (1 ジョブ 1 万〜数万行) は gz に、ふだん見る表は q < 0.05 か各ジョブの上位 20 行
-    gz <- gzfile(file.path(o$out_dir, "chipatlas_results_all.csv.gz"), "w")
-    utils::write.csv(res, gz, row.names = FALSE)
-    close(gz)
-    keep <- (is.finite(res$log10_q) & res$log10_q < log10(0.05)) | res$rank_in_run <= 20
-    utils::write.csv(res[keep, , drop = FALSE], file.path(o$out_dir, "chipatlas_results.csv"), row.names = FALSE)
-  }
-  runs <- runs[order(match(runs$job, jobs$job)), , drop = FALSE]
-  utils::write.csv(runs, file.path(o$out_dir, "chipatlas_runs.csv"), row.names = FALSE, na = "")
-  plot_top(o, res)
-  log_info("まとめ: %s", file.path(o$out_dir, "chipatlas_runs.csv"))
-}
-
 main <- function() {
   o <- parse_args(commandArgs(trailingOnly = TRUE))
   cmps <- prepare_comparisons(o)
@@ -546,8 +424,7 @@ main <- function() {
     print(table(jobs$analysis, jobs$status))
     return(invisible())
   }
-  if (!o$collect_only) jobs <- run_jobs(o, jobs)
-  summarize(o, jobs, cmps)
+  jobs <- run_jobs(o, jobs)
   bad <- jobs$status %in% c("failed", "timeout")
   if (any(bad)) {
     log_warn("失敗・時間切れが %d 件あります。同じ引数でもう一度実行すると、その分だけ投げ直します", sum(bad))

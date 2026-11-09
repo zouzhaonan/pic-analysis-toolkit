@@ -100,7 +100,7 @@ pic chipatlas \
   --out-dir "$wd/chipatlas"
 ```
 
-The computation runs on DDBJ WABI (ChIP-Atlas). Results of all comparisons are collected in `<out-dir>/chipatlas_runs.csv` and `<out-dir>/chipatlas_results.csv`. Use `--comparisons` to choose comparisons and `--detach` to run in the background; rerunning with the same `--out-dir` resumes.
+The computation runs on DDBJ WABI (ChIP-Atlas). The tsv and html (and log) returned by WABI are saved as-is to `<out-dir>/<comparison>/<comparison>__<ea|page>__<class>.tsv` etc. (pic makes no extra tables or plots). Job IDs, times and parameters are kept in `<out-dir>/run/`. Use `--comparisons` to choose comparisons and `--detach` to run in the background; rerunning with the same `--out-dir` resumes.
 
 EA splits the DEGs of A vs B into "higher in A" and "higher in B" and uses each as the other's background (against all genes the tissue's own character dominates; against each other only features that changed between the sides remain, and features shared equally do not stand out). There is no cut-off on DEG numbers; an EA is skipped only when one side is empty. PAGE takes the raw count table and runs for every comparison. Defaults: TFs and others / Histone / ATAC-Seq, no limit on concurrent jobs.
 
