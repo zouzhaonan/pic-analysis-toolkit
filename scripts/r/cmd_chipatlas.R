@@ -457,22 +457,26 @@ read_result <- function(j) {
   base
 }
 
-plot_top <- function(o, res, top_n = 10) {
+plot_top <- function(o, res, top_n = 6) {
   if (is.null(res) || !nrow(res) || !requireNamespace("ggplot2", quietly = TRUE)) return(invisible())
   for (cmp in unique(res$comparison)) {
     x <- res[res$comparison == cmp & is.finite(res$log10_q), , drop = FALSE]
     if (!nrow(x)) next
     num <- x$numerator[[1]]; den <- x$denominator[[1]]
-    # 抗原ごとに一番強い実験を 1 つ、パネル (解析 × 分類) ごとに上位 top_n
+    # パネル (解析 × 種類) ごと、向きごとに上位 top_n。同じ抗原 × 細胞は一番強い実験 1 つ
+    # (ATAC-Seq / DNase-seq は抗原名が種類名と同じなので、細胞で分ける)
     x$panel <- paste(x$analysis, x$antigen_class, sep = " | ")
+    x <- x[is.finite(x$fold_enrichment) & x$fold_enrichment != 1, , drop = FALSE]
+    if (!nrow(x)) next
+    x$up <- x$fold_enrichment > 1
     x <- x[order(x$log10_q, x$log10_p), , drop = FALSE]
-    x <- x[!duplicated(paste(x$panel, x$antigen)), , drop = FALSE]
-    x <- do.call(rbind, lapply(split(x, x$panel), function(d) utils::head(d, top_n)))
+    x <- x[!duplicated(paste(x$panel, x$up, x$antigen, x$cell_type)), , drop = FALSE]
+    x <- do.call(rbind, lapply(split(x, list(x$panel, x$up), drop = TRUE), function(d) utils::head(d, top_n)))
     x$score <- -x$log10_p * ifelse(x$fold_enrichment >= 1, 1, -1)
     x$sig <- ifelse(x$log10_q < log10(0.05), "q < 0.05", "q >= 0.05")
     x$side <- ifelse(x$fold_enrichment >= 1, paste("up in", num), paste("up in", den))
     x$label <- sprintf("%s (%s)", x$antigen, x$cell_type)
-    x$key <- paste(x$panel, x$label, sep = "\r")
+    x$key <- paste(x$panel, x$up, x$label, sep = "\r")
     x$key <- factor(x$key, levels = unique(x$key[order(x$panel, x$score)]))
     cols <- stats::setNames(c("#C0392B", "#2E6DB4"), c(paste("up in", num), paste("up in", den)))
     g <- ggplot2::ggplot(x, ggplot2::aes(x = score, y = key, fill = side, alpha = sig)) +
@@ -481,13 +485,13 @@ plot_top <- function(o, res, top_n = 10) {
       ggplot2::scale_alpha_manual(values = c("q < 0.05" = 1, "q >= 0.05" = 0.3), drop = FALSE) +
       ggplot2::scale_y_discrete(labels = function(k) sub("^.*\r", "", k)) +
       ggplot2::scale_fill_manual(values = cols, drop = FALSE) +
-      ggplot2::facet_wrap(~panel, scales = "free_y", ncol = 2) +
+      ggplot2::facet_wrap(~panel, scales = "free", ncol = 2) +
       ggplot2::labs(x = "signed -log10(p)  (+: up in numerator, -: up in denominator)", y = NULL, fill = NULL, alpha = NULL,
-                    title = sprintf("ChIP-Atlas: %s  (top %d antigens per panel by q; faded: q >= 0.05)", cmp, top_n)) +
+                    title = sprintf("ChIP-Atlas: %s  (top %d per direction per panel by q; faded: q >= 0.05)", cmp, top_n)) +
       ggplot2::theme_bw(base_size = 8) + ggplot2::theme(legend.position = "bottom")
     npan <- length(unique(x$panel))
     f <- file.path(o$out_dir, sprintf("chipatlas_top_%s", safe_name(cmp)))
-    h <- 1.5 + 0.17 * top_n * ceiling(npan / 2) + 0.5 * ceiling(npan / 2)
+    h <- 1.5 + 0.17 * 2 * top_n * ceiling(npan / 2) + 0.5 * ceiling(npan / 2)
     ggplot2::ggsave(paste0(f, ".pdf"), g, width = 10, height = h, limitsize = FALSE)
     ggplot2::ggsave(paste0(f, ".png"), g, width = 10, height = h, dpi = 120, limitsize = FALSE)
   }

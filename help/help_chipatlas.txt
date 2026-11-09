@@ -59,7 +59,8 @@ pic chipatlas — ChIP-Atlas の Enrichment Analysis (EA) と PAGE を DDBJ の 
   chipatlas_results.csv         結果を 1 枚にした表 (q < 0.05 か、各ジョブの上位 20 行)。
                                 実験 ID・抗原・細胞・ピーク数・重なり・log10 p/q・FE・向き・遺伝子数・ジョブ ID
   chipatlas_results_all.csv.gz  同じ形で全行
-  chipatlas_top_<比較>.pdf/png  比較ごとの上位の抗原 (解析 × 種類ごと、抗原ごとに一番強い実験)
+  chipatlas_top_<比較>.pdf/png  比較ごとの上位の抗原 (解析 × 種類ごと、向きごとに上位 6。
+                                同じ抗原 × 細胞は一番強い実験 1 つ。棒は符号つき -log10 p、薄い棒は q >= 0.05)
   input/                        WABI に渡したリストとカウント表
   result/{ea,page}/<比較>/      WABI の tsv / html / log
   run/jobs.tsv                  ジョブの今の状態 (再開に使う)
@@ -67,6 +68,8 @@ pic chipatlas — ChIP-Atlas の Enrichment Analysis (EA) と PAGE を DDBJ の 
   run/run_params.tsv            実行の引数
 
 注意:
+  direction (向き) は FE > 1 なら up_in_<分子の群>、FE < 1 なら up_in_<分母の群>、FE = 1 なら none。
+  PAGE では Overlap FC と Background FC が同じ値で FE = 1 なのに p が小さい行が少数ある (本家側の出力のまま)。
   本家の参照データは更新されるので、後日に同じ入力で投げても数字が少し変わりうる。
   run/ の記録 (日時・ジョブ ID・引数) を結果と一緒に残す。
 
