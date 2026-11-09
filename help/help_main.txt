@@ -18,7 +18,7 @@ Subcommands:
     manage-biomart   List/register biomart datasets and cache
     deseq2           Run DESeq2 analysis
     enrich           Run ORA/GSEA enrichment analysis
-    chipatlas        Run ChIP-Atlas enrichment/PAGE from DESeq2 outputs
+    chipatlas        Run ChIP-Atlas EA/PAGE on DDBJ WABI from DESeq2 outputs
     plot-expression  Plot expression of selected genes
     aggregate        Gene-body (TSS-TES) aggregation / metagene plots
 
