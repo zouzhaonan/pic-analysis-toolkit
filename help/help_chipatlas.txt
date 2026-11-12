@@ -1,32 +1,85 @@
-Usage:
-  pic chipatlas --deftable <tsv> --umi <csv> --deg-list-dir <dir> \
-    --genome <name> --out-dir <dir> [options]
+pic chipatlas — ChIP-Atlas の Enrichment Analysis (EA) と PAGE を DDBJ の WABI で回す
 
-Overview:
-  Run ChIP-Atlas enrichment analysis per contrast.
-  For each contrast:
-    1) GOEA-like Enrichment analysis using DEGList
-    2) GSEA-like PAGE using UMI raw-count table
+概要:
+  deseq2 の比較ごとに、ChIP-Atlas (https://chip-atlas.org) の 2 つの解析を
+  DDBJ の WABI (https://dtn1.ddbj.nig.ac.jp/wabi/chipatlas/) に投げ、WABI が返す結果
+  (tsv と html。ほかに log) をそのまま保存する。pic で表や図に加工はしない。
+  計算は WABI (DDBJ のスパコン) で行う。ネット接続が要る。
+    EA   : 「分子で高い DEG (A)」と「分母で高い DEG (B)」の 2 つのリストを、互いの背景にして比べる
+           (typeA=gene / typeB=userlist)。各遺伝子の TSS±距離 と各実験のピークの重なりの
+           Fisher 検定 + BH。A = 分子で高い DEG、B = 分母で高い DEG。
+           どちらかのリストが 0 個なら計算できないので飛ばし、理由を run/jobs.tsv に残す。
+           DEG の数による足切りは無い (1 個以上ずつあれば回す)。表の遺伝子数を見て解釈する。
+    PAGE : 比較の 2 群の生カウント表 (UMI) を渡し、本家が全遺伝子の発現の差から
+           各実験の標的遺伝子集合の偏りを検定する (回転検定)。DEG の数によらず全比較で回す。
+           列は「分母の群 → 分子の群」の順に並べる (本家の対比は 2 番目 − 最初の群 = 分子 − 分母)。
+  ゲノムは本家のもの (mm10 / hg38 など。mm39 は無い)。遺伝子は gene symbol (無ければ Ensembl ID) で渡す。
 
-Required options:
-  --deftable <tsv>           Deftable TSV used for deseq2 input
-  --umi <csv>                UMI_count_*.csv (raw count table)
-  --deg-list-dir <dir>       DEGList directory from deseq2 output
-                             (DEG_<project>/DEGList_<project>)
-  --genome <name>            Supported: hg38, mm10, rn6, dm6, ce11, sacCer3
-  --out-dir <dir>            Output directory
+考え方:
+  EA は比較 A vs B の DEG を「A で高い」「B で高い」に分け、互いを背景にする。
+  全遺伝子を背景にすると、組織そのものの性質 (脳なら脳関連の feature) が前に出る。
+  互いを背景にすると、処理 (薬など) で乗り方が変わった feature だけが残る。
+  両方に同じだけ乗る feature (例: プロモーターの印) が目立たないのは正しい挙動。
+  DEG の数で足切りはしない (片方が 0 個のときだけ飛ばす)。PAGE は全比較で回す。
+  WABI はスパコンで計算するので、同時に投げる本数は既定で制限しない。
 
-Optional options:
-  --antigen-class <text>     (default: TFs and others)
-  --cell-class <text>        (default: All cell types)
-  --threshold <n>            (default: 100)
-  --distance-up <n>          (default: 5000)
-  --distance-down <n>        (default: 5000)
+使い方:
+  pic chipatlas --stats <csv> --umi <csv> --deftable <tsv> --genome <name> --out-dir <dir> [options]
 
-Example:
+必須:
+  --stats <csv>          deseq2 の stats_<project>.csv。DEG はここから --fdr で取る (レポートと同じ基準)
+  --umi <csv>            deseq2 の UMI_count_<project>.csv (生カウント。PAGE の入力)
+  --deftable <tsv>       deseq2 に渡した deftable (sample / group の列)
+  --genome <name>        hg38 hg19 mm10 mm9 rn6 dm6 dm3 ce11 ce10 sacCer3
+  --out-dir <dir>        出力先。同じ所で再び実行すると、記録を読んで続きから再開する
+
+任意:
+  --comparisons <list>   回す比較をカンマ区切りで (既定: stats にある全比較)。
+                         "分子/分母" か "分子_vs_分母"。例: hp_r1/cc_r1,hp_r1/hp_p8
+  --analyses <list>      ea, page, ea,page (既定: ea,page)
+  --classes <list>       実験の種類 (カンマ区切り、名前は完全一致)。
+                         既定: TFs and others,Histone,ATAC-Seq
+                         ほか: DNase-seq, RNA polymerase, Input control, Bisulfite-Seq
+  --cell-class <text>    細胞の種類 (既定: All cell types)
+  --threshold <n>        ピークの閾値 50 / 100 / 200 / 500 (= q < 1e-5 / 1e-10 / 1e-20 / 1e-50。既定 100)
+  --distance-up <bp>     TSS の上流 (既定 5000)
+  --distance-down <bp>   TSS の下流 (既定 5000)
+  --fdr <x>              DEG の padj の閾値 (既定 0.1)
+  --max-jobs <n>         同時に WABI に置くジョブの数の上限 (既定 0 = 制限なし。全部を一度に投げる)
+  --timeout-min <min>    1 ジョブを待つ時間。過ぎたら投げ直す (既定 120)
+  --retries <n>          失敗・時間切れのときに投げ直す回数 (既定 2)
+  --poll-sec <sec>       状態を見に行く間隔 (既定 60)
+  --detach               裏で走らせてすぐ戻る (setsid nohup)。ログは <out-dir>/run/chipatlas.log
+  --dry-run              入力のファイルと計画 (run/jobs.tsv) だけを書き、投げない
+
+出力 (<out-dir>):
+  <比較>/<比較>__<ea|page>__<種類>.tsv   WABI が返した結果の表 (本家の tsv そのまま。見出しの行は無い)
+  <比較>/<比較>__<ea|page>__<種類>.html  WABI が返した結果のページ (本家の html そのまま)
+  <比較>/<比較>__<ea|page>__<種類>.log   WABI のログ (当たった遺伝子数・PAGE の群など)
+      例: hp_r1_vs_cc_r1/hp_r1_vs_cc_r1__ea__TFs_and_others.tsv
+  run/jobs.tsv                ジョブの今の状態・ジョブ ID・日時・引数・飛ばした理由 (再開に使う)
+  run/jobs_history.tsv        投げた・終わった・失敗の履歴
+  run/run_params.tsv          実行の引数
+  run/chipatlas.log           --detach のときのログ
+  run/input/<比較>/           WABI に渡したリストとカウント表
+
+  tsv の列 (本家の形): 実験 ID / 種類 / 抗原 / 細胞の種類 / 細胞 / ピーク数 /
+    EA: A の重なり (n/全体) / B の重なり / log10 p / log10 q / FE
+    PAGE: 重なった遺伝子数 / Overlap FC/Background FC / log10 p / log10 q / FE
+  EA の FE > 1 は A (分子で高い遺伝子) の側に多いこと。PAGE の FE > 1 は分子で高い向き。
+
+再開と取り直し:
+  同じ引数・同じ --out-dir で再び実行すると、終わったものは飛ばし、失敗・時間切れ・未投入の分だけ投げる。
+  終わったのに結果のファイルが無いものは、WABI から取り直す (WABI に残っていなければ投げ直す)。
+
+注意:
+  本家の参照データは更新されるので、後日に同じ入力で投げても数字が少し変わりうる。
+  run/ の記録 (日時・ジョブ ID・引数) を結果と一緒に残す。
+
+例:
   pic chipatlas \
-    --deftable /path/to/out/summary/deftable_test_mm10.tsv \
+    --stats /path/to/out/deseq2/stats_test_mm10.csv \
     --umi /path/to/out/deseq2/UMI_count_test_mm10.csv \
-    --deg-list-dir /path/to/out/deseq2/DEG_test_mm10/DEGList_test_mm10 \
-    --genome mm10 \
-    --out-dir /path/to/chipatlas_out
+    --deftable /path/to/out/summary/deftable_test_mm10.tsv \
+    --genome mm10 --comparisons hp_r1/cc_r1 \
+    --out-dir /path/to/out/chipatlas --detach
