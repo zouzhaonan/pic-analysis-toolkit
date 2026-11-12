@@ -489,6 +489,9 @@ build_overview_section <- function(run, genome, pre_steps = list(), extra_tools 
   }
   score_min <- pic_param(params, "hisat2_score_min")
   if (nzchar(score_min)) hisat2_opts <- paste0(hisat2_opts, " --score-min ", score_min)
+  # 1 本でも 2^29 bp を超える染色体があると BAI を作れないので mapping は CSI (-c) にする。
+  # analysis_params に bam_index=csi があるときだけ表示を変える (通常のゲノムは従来どおり)。
+  idx_opt <- if (identical(pic_param(params, "bam_index"), "csi")) " -c" else ""
   align_note <- if (nzchar(hisat2_opts)) {
     sprintf(' Alignment sensitivity was raised with <code>%s</code>.', html_escape(trimws(hisat2_opts)))
   } else {
@@ -565,7 +568,7 @@ if (blind_disp) '' else 'dds &lt;- DESeq(dds)\n')
 'trim_galore -a GATCGTCGGACT -o trim/ demux/${sample}.fastq.gz\n',
 'hisat2 -x hisat2_index/%s%s -U trim/${sample}_trimmed.fq.gz -S map/${sample}.sam\n',
 'samtools sort -o map/${sample}.bam map/${sample}.sam\n',
-'samtools index map/${sample}.bam'), html_escape(genome), html_escape(hisat2_opts)))),
+'samtools index%s map/${sample}.bam'), html_escape(genome), html_escape(hisat2_opts), idx_opt))),
 
     list(name = "Read-to-Gene Assignment",
       desc = '<code>featureCounts</code> on the forward/sense strand (<code>-s 1</code>); the gene id is stored in each read&#39;s <code>XT</code> tag.',
@@ -573,7 +576,7 @@ if (blind_disp) '' else 'dds &lt;- DESeq(dds)\n')
 'featureCounts -s 1 -t exon -g gene_id -a %s.gtf -R BAM \\\n',
 '    -o count/${sample}.fc.tsv map/${sample}.bam\n',
 'samtools sort -o map/${sample}.assigned.bam map/${sample}.bam.featureCounts.bam\n',
-'samtools index map/${sample}.assigned.bam'), html_escape(genome)))),
+'samtools index%s map/${sample}.assigned.bam'), html_escape(genome), idx_opt))),
 
     list(name = "UMI Counting",
       desc = 'Collapse UMIs per gene (<code>XT</code>) per barcode with <code>UMI-tools</code> (exact-<code>unique</code> method).',
