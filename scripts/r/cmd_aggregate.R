@@ -3,7 +3,8 @@
 # 役割:
 #   遺伝子全体 (TSS→TES) のメタジーン集計プロファイルを計算する。
 #   pic の CPM 正規化 bigwig (bw/<count_prefix>_umi.cpm.bw) を、各遺伝子を N
-#   分割したビンに対して平均取得し、全遺伝子で平均してサンプルごとのプロファイルにする
+#   分割したビンに対して平均取得し、遺伝子で平均してサンプルごとのプロファイルにする。
+#   遺伝子は protein_coding だけ (select_metagene_genes() を参照)
 #   (deepTools 非依存で高速・省メモリ)。
 #   計算は pic-aggregate (src/pic-aggregate、Rust) が PATH にあればそれで行い、無ければ
 #   UCSC bigWigAverageOverBed + data.table で行う。どちらでも CSV は同じ (ビット単位で一致)。
@@ -63,24 +64,62 @@ resolve_gtf <- function(genome) {
   ""
 }
 
-# GTF から遺伝子本体 (chr,start,end,strand,gene) を取り出す。
-# feature == "gene" の行があればそれだけを使う。先に awk で gene の行だけに絞ってから読む
-# (全行を読んで正規表現を掛けるより 20 倍余り速い。結果は同じ)。gene の行が 1 つも無い GTF
-# では全行 (コメント行を除く) の gene_id ごとの範囲を使う。
+# GTF から遺伝子本体 (chr,start,end,strand,gene) と、遺伝子ごとの biotype・CDS の有無を取り出す。
+# awk で 1 回だけ全行を読み、gene_id ごとにまとめた 1 行/遺伝子の表にしてから R に渡す
+# (全行を R に読むより速く、メモリも少ない)。
+#   - 範囲: feature == "gene" の行があればその行だけ。gene の行が 1 つも無い GTF では
+#     全行 (コメント行を除く) の gene_id ごとの範囲。chr・strand は最初の行のもの。
+#   - biotype: gene_biotype (Ensembl/RefSeq) か gene_type (GENCODE)。gene の行に無く
+#     transcript/exon の行にだけある GTF (Talb_v1.0、galGal6 など) もあるので、その gene_id の
+#     どの行からでも最初に見つかった値を使う。無ければ NA。
+#   - cds: その gene_id に feature == "CDS" の行が 1 つでもあれば TRUE。
 read_gene_bodies <- function(gtf) {
   reader <- if (grepl("\\.gz$", gtf)) sprintf("gzip -dc '%s'", gtf) else sprintf("cat '%s'", gtf)
-  rd <- function(cmd) fread(cmd = cmd, sep = "\t", header = FALSE, quote = "", showProgress = FALSE,
-                            select = c(1, 3, 4, 5, 7, 9), colClasses = list(character = 1),
-                            col.names = c("chr", "feature", "start", "end", "strand", "attr"))
-  dt <- rd(sprintf("%s | LC_ALL=C awk -F'\\t' '$3 == \"gene\" && substr($1, 1, 1) != \"#\"'", reader))
-  if (nrow(dt) == 0) dt <- rd(sprintf("%s | grep -v '^#'", reader))
-  dt[, gene := sub('.*gene_id "?([^";]+)"?.*', "\\1", attr)]
-  # gene_biotype (Ensembl/RefSeq) か gene_type (GENCODE)。無ければ NA (cDNA 判定にだけ使う)。
-  dt[, biotype := NA_character_]
-  has_bt <- grepl('gene_(bio)?type "?[^";]', dt$attr)
-  dt[has_bt, biotype := sub('.*gene_(bio)?type "?([^";]+)"?.*', "\\2", attr)]
-  g <- dt[, .(chr = chr[1], start = min(start), end = max(end), strand = strand[1], biotype = biotype[1]), by = gene]
+  awk <- paste(
+    'BEGIN { FS = "\\t"; OFS = "\\t"; hasgene = 0; n = 0 }',
+    'substr($1, 1, 1) == "#" || NF < 9 { next }',
+    '{',
+    '  a = "; " $9',
+    '  if (match(a, /[; ]gene_id "?[^";]+/)) { g = substr(a, RSTART + 9, RLENGTH - 9); gsub(/"/, "", g) } else g = $9',
+    '  if (!(g in ac)) { ac[g] = $1; sx[g] = $4 + 0; ex[g] = $5 + 0; ast[g] = $7; ord[++n] = g }',
+    '  else { if ($4 + 0 < sx[g]) sx[g] = $4 + 0; if ($5 + 0 > ex[g]) ex[g] = $5 + 0 }',
+    '  if ($3 == "gene") { hasgene = 1',
+    '    if (!(g in gc)) { gc[g] = $1; gs[g] = $4 + 0; ge[g] = $5 + 0; gst[g] = $7 }',
+    '    else { if ($4 + 0 < gs[g]) gs[g] = $4 + 0; if ($5 + 0 > ge[g]) ge[g] = $5 + 0 } }',
+    '  if ($3 == "CDS") cds[g] = 1',
+    '  if (!(g in bt) && match(a, /[; ]gene_(bio)?type "?[^";]+/)) {',
+    '    b = substr(a, RSTART + 1, RLENGTH - 1); sub(/^gene_(bio)?type "?/, "", b); if (b != "") bt[g] = b }',
+    '}',
+    'END { for (i = 1; i <= n; i++) { g = ord[i]',
+    '  if (hasgene) { if (!(g in gc)) continue; print g, gc[g], gs[g], ge[g], gst[g], (g in bt) ? bt[g] : "", (g in cds) ? 1 : 0 }',
+    '  else print g, ac[g], sx[g], ex[g], ast[g], (g in bt) ? bt[g] : "", (g in cds) ? 1 : 0 } }',
+    sep = "\n")
+  af <- tempfile(fileext = ".awk"); on.exit(unlink(af), add = TRUE)
+  writeLines(awk, af)
+  g <- fread(cmd = sprintf("%s | LC_ALL=C awk -f '%s'", reader, af), sep = "\t", header = FALSE, quote = "",
+             showProgress = FALSE, na.strings = "",
+             col.names = c("gene", "chr", "start", "end", "strand", "biotype", "cds"),
+             colClasses = c("character", "character", "numeric", "numeric", "character", "character", "integer"))
+  if (nrow(g) == 0) return(data.table(gene = character(), chr = character(), start = integer(), end = integer(),
+                                      strand = character(), biotype = character(), cds = logical()))
+  g[, `:=`(start = as.integer(start), end = as.integer(end), cds = cds == 1L)]
   g[!is.na(chr) & end > start & strand %in% c("+", "-")]
+}
+
+# メタジーンに使う遺伝子を選ぶ (2026-11-12 から protein_coding だけ)。
+#   1. GTF に gene_biotype / gene_type があり protein_coding がいれば、それだけ。
+#   2. biotype が無い (か protein_coding がいない) GTF で CDS の行があれば、CDS を持つ遺伝子
+#      (UCSC ncbiRefSeq の calJac4、AUGUSTUS 予測の Pwal_v1.0、hirota のコンストラクトなど)。
+#   3. どちらも無ければ全遺伝子 (cDNA / 3'断片リファレンスなど。cDNA 判定は呼び出し側)。
+# 戻り値: list(genes, rule, label)。label は報告用の英語の説明。
+select_metagene_genes <- function(genes) {
+  pc <- !is.na(genes$biotype) & genes$biotype == "protein_coding"
+  if (any(pc)) return(list(genes = genes[pc], rule = "protein_coding (gene_biotype/gene_type)",
+                           label = "protein-coding genes (by gene_biotype/gene_type in the GTF)"))
+  if (any(genes$cds)) return(list(genes = genes[genes$cds == TRUE], rule = "protein_coding (CDS)",
+                                  label = "protein-coding genes (genes with a CDS in the GTF; no gene biotype)"))
+  list(genes = genes, rule = "all (no biotype/CDS)",
+       label = "all genes (the GTF has no gene biotype or CDS)")
 }
 
 # globalpos (1..total) -> region / plot 位置 (pos) の対応表。
@@ -209,23 +248,22 @@ aggregate_one_genome <- function(out_dir, genome, project, deftable, engine, nbi
   message(sprintf("[INFO] aggregate: gene bodies を読み込みます (genome=%s)", genome))
   genes <- read_gene_bodies(gtf)
   if (nrow(genes) == 0) { message("[WARN] aggregate: 有効な遺伝子なし"); return(invisible(NULL)) }
+  n_all <- nrow(genes)
+  sel <- select_metagene_genes(genes)
+  genes <- sel$genes
+  message(sprintf("[INFO] aggregate: genes=%s n=%d (GTF の全遺伝子 %d)", sel$rule, nrow(genes), n_all))
 
   # cDNA / 3'断片リファレンス (contig 全長 = 1 遺伝子) では TSS→TES メタジーンが
   # 成立しない。遺伝子本体がフランク幅より短いため、プロファイルの大半が chrom 端で
   # クリップされた「存在しない領域」になり解釈できない。ここで検出してスキップする。
   # (通常のゲノムは遺伝子本体長の中央値が数 kb 以上なのでこの条件には掛からない)
-  # GTF に gene_biotype / gene_type があれば protein_coding だけで中央値を取る。RefSeq の
-  # GTF は tRNA・rRNA・snRNA などの短い遺伝子が多く (例: Pwal_aPleWal1 は 59,059 遺伝子の
-  # 4 割近くが tRNA)、全遺伝子の中央値が 100 bp 台になって cDNA と誤判定されるため。
-  # biotype が無い GTF (cDNA リファレンスなど) は従来どおり全遺伝子の中央値で判定する。
-  # メタジーンに使う遺伝子は従来どおり全遺伝子 (既存ゲノムの出力を変えないため)。
-  pc <- !is.na(genes$biotype) & genes$biotype == "protein_coding"
-  len_basis <- if (any(pc)) "protein_coding 遺伝子" else "遺伝子"
-  med_len <- stats::median(if (any(pc)) genes$end[pc] - genes$start[pc] + 1 else genes$end - genes$start + 1)
+  # 中央値はメタジーンに使う遺伝子 (上の sel) で取る。RefSeq の GTF は tRNA・rRNA などの
+  # 短い遺伝子が多く (例: Pwal_aPleWal1 は 4 割近くが tRNA)、全遺伝子では cDNA と誤判定されるため。
+  med_len <- stats::median(genes$end - genes$start + 1)
   if (is.finite(med_len) && med_len < flank) {
-    message(sprintf(paste0("[INFO] aggregate: skip genome=%s — %s本体長の中央値 %.0f bp < flank %d bp ",
+    message(sprintf(paste0("[INFO] aggregate: skip genome=%s — 遺伝子本体長の中央値 %.0f bp < flank %d bp (genes=%s) ",
                            "(cDNA/3'断片リファレンスと判断。TSS→TES メタジーンは成立しません)"),
-                    genome, len_basis, med_len, flank))
+                    genome, med_len, flank, sel$rule))
     return(invisible(NULL))
   }
   chrom_sizes <- read_chrom_sizes(genome)
@@ -273,6 +311,8 @@ aggregate_one_genome <- function(out_dir, genome, project, deftable, engine, nbi
   d <- rbindlist(rows)
   d <- merge(d, pmap, by = "globalpos", all.x = TRUE)
   d[, flank_bp := flank]
+  # 使った遺伝子の集合と数 (レポートの Aggregation の説明に出す)。n_genes は bin を作れた遺伝子の数。
+  d[, `:=`(gene_set = sel$label, n_genes = n_used)]
   setnames(d, "globalpos", "binpos")
   setorder(d, sample, binpos)
   # PNG は不要 (図はレポートが CSV から plotly で動的生成)。CSV は集計テーブルとして
@@ -280,7 +320,7 @@ aggregate_one_genome <- function(out_dir, genome, project, deftable, engine, nbi
   summary_dir <- file.path(out_dir, "summary")
   dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
   out_csv <- file.path(summary_dir, sprintf("aggregate_profile_%s.csv", project))
-  fwrite(d[, .(sample, group, binpos, region, pos, value, flank_bp)], out_csv)
+  fwrite(d[, .(sample, group, binpos, region, pos, value, flank_bp, gene_set, n_genes)], out_csv)
   message(sprintf("[INFO] aggregate: 出力 -> %s", out_csv))
 }
 

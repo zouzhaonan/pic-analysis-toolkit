@@ -207,12 +207,19 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL,
     if (length(hit) > 0) csvs <- hit
   }
   blocks <- character(0)
+  gene_notes <- character(0)
   for (csv in sort(csvs)) {
     proj <- sub("\\.csv$", "", sub("^aggregate_profile_", "", basename(csv)))
     {
       d <- suppressMessages(readr::read_csv(csv, show_col_types = FALSE, progress = FALSE))
       d <- as.data.frame(d, check.names = FALSE)
       if (nrow(d) == 0 || !all(c("sample", "group", "pos", "value") %in% colnames(d))) next
+      # 使った遺伝子の集合 (gene_set / n_genes 列は 2026-11 以降の CSV だけにある)
+      if (all(c("gene_set", "n_genes") %in% colnames(d))) {
+        n_g <- suppressWarnings(as.numeric(d$n_genes[[1]]))
+        gene_notes[proj] <- sprintf("%s%s", html_escape(as.character(d$gene_set[[1]])),
+                                    if (is.finite(n_g)) sprintf(", n = %s", format(n_g, big.mark = ",")) else "")
+      }
       pal <- ensure_palette(group_pal, unique(as.character(d$group)))
       traces <- list()
       # 凡例は group 単位 (各 group の最初の trace のみ凡例に表示、他は legendgroup で連動)。
@@ -254,9 +261,12 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL,
     }
   }
   if (length(blocks) == 0) return("")
+  genes_txt <- if (length(gene_notes) == 0) "" else if (length(gene_notes) == 1 && length(blocks) == 1)
+    sprintf(" Genes used: %s.", gene_notes[[1]]) else
+    sprintf(" Genes used: %s.", paste(sprintf("%s: %s", html_escape(names(gene_notes)), gene_notes), collapse = "; "))
   paste0('<p class="pic-note">Average read coverage along the gene body, scaled from the transcription start (TSS) to the end (TES) ',
          'with short flanks on each side. Each line is one sample, colored by group. ',
-         'This shows where reads accumulate along genes (e.g. a 3&prime; bias).</p><div class="pic-plot-grid">',
+         'This shows where reads accumulate along genes (e.g. a 3&prime; bias).', genes_txt, '</p><div class="pic-plot-grid">',
          paste(blocks, collapse = ""), '</div>')
 }
 
