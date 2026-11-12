@@ -75,7 +75,11 @@ read_gene_bodies <- function(gtf) {
   dt <- rd(sprintf("%s | LC_ALL=C awk -F'\\t' '$3 == \"gene\" && substr($1, 1, 1) != \"#\"'", reader))
   if (nrow(dt) == 0) dt <- rd(sprintf("%s | grep -v '^#'", reader))
   dt[, gene := sub('.*gene_id "?([^";]+)"?.*', "\\1", attr)]
-  g <- dt[, .(chr = chr[1], start = min(start), end = max(end), strand = strand[1]), by = gene]
+  # gene_biotype (Ensembl/RefSeq) か gene_type (GENCODE)。無ければ NA (cDNA 判定にだけ使う)。
+  dt[, biotype := NA_character_]
+  has_bt <- grepl('gene_(bio)?type "?[^";]', dt$attr)
+  dt[has_bt, biotype := sub('.*gene_(bio)?type "?([^";]+)"?.*', "\\2", attr)]
+  g <- dt[, .(chr = chr[1], start = min(start), end = max(end), strand = strand[1], biotype = biotype[1]), by = gene]
   g[!is.na(chr) & end > start & strand %in% c("+", "-")]
 }
 
@@ -210,11 +214,18 @@ aggregate_one_genome <- function(out_dir, genome, project, deftable, engine, nbi
   # 成立しない。遺伝子本体がフランク幅より短いため、プロファイルの大半が chrom 端で
   # クリップされた「存在しない領域」になり解釈できない。ここで検出してスキップする。
   # (通常のゲノムは遺伝子本体長の中央値が数 kb 以上なのでこの条件には掛からない)
-  med_len <- stats::median(genes$end - genes$start + 1)
+  # GTF に gene_biotype / gene_type があれば protein_coding だけで中央値を取る。RefSeq の
+  # GTF は tRNA・rRNA・snRNA などの短い遺伝子が多く (例: Pwal_aPleWal1 は 59,059 遺伝子の
+  # 4 割近くが tRNA)、全遺伝子の中央値が 100 bp 台になって cDNA と誤判定されるため。
+  # biotype が無い GTF (cDNA リファレンスなど) は従来どおり全遺伝子の中央値で判定する。
+  # メタジーンに使う遺伝子は従来どおり全遺伝子 (既存ゲノムの出力を変えないため)。
+  pc <- !is.na(genes$biotype) & genes$biotype == "protein_coding"
+  len_basis <- if (any(pc)) "protein_coding 遺伝子" else "遺伝子"
+  med_len <- stats::median(if (any(pc)) genes$end[pc] - genes$start[pc] + 1 else genes$end - genes$start + 1)
   if (is.finite(med_len) && med_len < flank) {
-    message(sprintf(paste0("[INFO] aggregate: skip genome=%s — 遺伝子本体長の中央値 %.0f bp < flank %d bp ",
+    message(sprintf(paste0("[INFO] aggregate: skip genome=%s — %s本体長の中央値 %.0f bp < flank %d bp ",
                            "(cDNA/3'断片リファレンスと判断。TSS→TES メタジーンは成立しません)"),
-                    genome, med_len, flank))
+                    genome, len_basis, med_len, flank))
     return(invisible(NULL))
   }
   chrom_sizes <- read_chrom_sizes(genome)
