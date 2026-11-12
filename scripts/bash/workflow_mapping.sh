@@ -168,6 +168,10 @@ write_analysis_params() {
     printf "filter_primer_reads\t%s\n" "${FILTER_PRIMER_READS:-0}"
     printf "trim_adapter\t%s\n" "GATCGTCGGACT"
     printf "featurecounts_strand\t%s\n" "1"
+    # 大きな染色体で CSI にしたときだけ書く (BAI の通常のゲノムではこの行は無く、従来と同じ)。
+    if compgen -G "${BAM_DIR}/*.bam.csi" >/dev/null; then
+      printf "bam_index\t%s\n" "csi"
+    fi
   } >"$f"
 }
 
@@ -217,10 +221,42 @@ run_feature_counts() {
   mv "${MAPPING_JOB_PREFIX}.feature.tsv.summary" "${MAPPING_JOB_FC_SUMMARY}"
 }
 
+# BAM の索引を作る。BAI は 2^29 (536,870,912) bp より先の位置を持てないので、
+# 参照配列 (@SQ LN) にそれ以上長いものがある BAM (例: Pleurodeles waltl aPleWal1 の
+# 1 Gb を超える染色体) だけ CSI (samtools index -c, <bam>.csi) にする。
+# それ以外 (mouse・human など) は従来どおり BAI (<bam>.bai) で、出力は変わらない。
+# 読む側 (umi_tools / pysam・samtools) は .bai と .csi のどちらも自動で探す。
+# 使い方: index_bam <bam> [samtools index に足す引数 ...]
+BAI_MAX_REF_LEN=536870912
+
+bam_max_ref_len() {
+  samtools view -H "$1" | awk -F'\t' '$1 == "@SQ" {
+    for (i = 2; i <= NF; i++) if ($i ~ /^LN:/) { l = substr($i, 4) + 0; if (l > m) m = l }
+  } END { printf "%.0f\n", m + 0 }'
+}
+
+bam_needs_csi() {
+  local max_len
+  max_len="$(bam_max_ref_len "$1")" || return 1
+  [[ -n "$max_len" ]] && (( max_len >= BAI_MAX_REF_LEN ))
+}
+
+index_bam() {
+  local bam="$1"
+  shift
+  if bam_needs_csi "$bam"; then
+    rm -f "${bam}.bai"
+    samtools index -c "$@" "$bam"
+  else
+    rm -f "${bam}.csi"
+    samtools index "$@" "$bam"
+  fi
+}
+
 finalize_mapping_bam() {
   samtools sort -@ "$THREADS" -o "$OUTPUT_BAM" \
     "${MAPPING_JOB_PREFIX}.bam.featureCounts.bam" >>"$MAPPING_JOB_LOG" 2>&1
-  samtools index -@ "$THREADS" "$OUTPUT_BAM" >>"$MAPPING_JOB_LOG" 2>&1
+  index_bam "$OUTPUT_BAM" -@ "$THREADS" >>"$MAPPING_JOB_LOG" 2>&1
 }
 
 cleanup_mapping_job_files() {
@@ -475,7 +511,7 @@ run_umi_dedup() {
 
 index_umi_bam() {
   local umi_bam="$1"
-  samtools index "$umi_bam" >/dev/null 2>&1
+  index_bam "$umi_bam" >/dev/null 2>&1
 }
 
 convert_to_umi() {
@@ -572,6 +608,8 @@ run_primary_command() {
 
   log_info "Running mapping and counting"
   map_and_count_feature
+  # 索引の種類 (bai / csi) は bam ができてから分かるので、ここで書き直す。
+  write_analysis_params
   log_info "Running UMI counting"
   umi_count
   log_info "Generating deftables and mapping summary"
@@ -601,7 +639,7 @@ run_primary_command() {
 # - 作業ファイルは tmp/<sample>/ に分ける。一括の tmp/ は RETURN trap と
 #   finalize_outputs で丸ごと消えるので、同じ out-dir で別々のサンプルを
 #   同時に処理するには、サンプルごとの場所が要る。
-# - 済んだ印は log/<sample>.done。bam・bai・counts・bw ができたあと最後に書く。
+# - 済んだ印は log/<sample>.done。bam・索引 (bai か csi)・counts・bw ができたあと最後に書く。
 #   印があるサンプルは何もしない。無いサンプルは、途中の出力を消してからやり直す。
 # - 既存の bam/・counts/・log/ は消さない (prepare_workspace_for_run を呼ばない)。
 # - 集計 (deftable・mapping_sum・analysis_params・counts の圧縮) は --collect で 1 回だけ行う。
@@ -635,7 +673,7 @@ reset_sample_outputs() {
   local sample_name="$1"
 
   safe_rm_rf "$TMP_DIR"
-  rm -f "${BAM_DIR}/${sample_name}.bam" "${BAM_DIR}/${sample_name}.bam.bai" \
+  rm -f "${BAM_DIR}/${sample_name}.bam" "${BAM_DIR}/${sample_name}.bam.bai" "${BAM_DIR}/${sample_name}.bam.csi" \
     "${BAM_DIR}/${sample_name}.bam.tmp."*.bam \
     "${COUNTS_DIR}/${sample_name}.txt" "${COUNTS_DIR}/${sample_name}.txt.gz" \
     "${BIGWIG_DIR}/${sample_name}_umi.cpm.bw" \
