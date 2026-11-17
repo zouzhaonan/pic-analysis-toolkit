@@ -316,11 +316,20 @@ fit_deseq <- function(dds, contrasts, threads = 1L, mem_gb = Inf, master_pid = S
     DESeq2::design(ref) <- ~1
     ref <- DESeq2::estimateDispersionsFit(DESeq2::estimateDispersionsGeneEst(ref))
     DESeq2::dispersions(dds) <- pmax(DESeq2::dispersionFunction(ref)(rowMeans(nc)), 1e-8)
-    dds <- DESeq2::nbinomWaldTest(dds)
+    # mu の下限 (minmu) を「いちばん深いサンプルの 0.5 カウント」に合わせる。
+    # DESeq2 の既定 minmu = 0.5 は生カウントの尺度なので、深さが大きく違う (n = 1 で
+    # ライブラリサイズ正規化になったときなど) と、浅いサンプルの下限が正規化値で深いサンプルの
+    # 1 カウントを上回り、浅いサンプルで 0 の遺伝子の LFC が逆向き (浅い側が高い) になる。
+    # 深さがそろっていれば 0.5 のまま (既定と同じ)。
+    sf <- DESeq2::sizeFactors(dds)
+    minmu <- min(0.5, 0.5 * min(sf) / max(sf))
+    dds <- DESeq2::nbinomWaldTest(dds, minmu = minmu)
     assign("pic_dispersion_method", "stable_trend", envir = globalenv())
+    assign("pic_wald_minmu", minmu, envir = globalenv())
   } else {
     dds <- deseq_fit
     assign("pic_dispersion_method", "group", envir = globalenv())
+    assign("pic_wald_minmu", 0.5, envir = globalenv())
   }
 
   one_result <- function(cv) {

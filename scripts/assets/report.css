@@ -303,13 +303,6 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-excl-btn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--accent);font-size:12px;font-weight:600;font-family:inherit;padding:3px 10px;border-radius:5px;cursor:pointer}
 .pic-excl-btn:hover{background:#eef3fb}
 .pic-excl-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
-/* 相関の色の凡例 (カラーバーと数字)。除外して色の幅を引き直したときは枠で示す */
-.pic-cor-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:6px 0 2px;font-size:12px;color:var(--muted)}
-.pic-cor-leg-t{font-weight:700;color:var(--fg)}
-.pic-cor-leg-scale{display:inline-flex;flex-direction:column;width:220px}
-.pic-cor-leg-bar{display:block;height:12px;border-radius:2px;background:linear-gradient(to right,#2166ac,#f7f7f7,#b2182b);border:1px solid #d7dee6}
-.pic-cor-leg-ticks{display:flex;justify-content:space-between;font-variant-numeric:tabular-nums;color:var(--fg);margin-top:1px}
-.pic-cor-legend.pic-cor-leg-refit .pic-cor-leg-n{color:#7a4a05;background:#fff8eb;border:1px solid #f0c987;border-radius:4px;padding:1px 6px}
 /* Expression: 遺伝子のグループ (貼り付け) */
 .pic-expr-pastemsg:empty{display:none}
 .pic-expr-pastemsg{font-size:12px;margin:4px 0;line-height:1.45}

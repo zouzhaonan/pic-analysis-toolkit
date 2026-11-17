@@ -47,6 +47,12 @@ write_fit_outputs <- function(args, deg_dir, mat, fit, contrasts, e2g, label) {
       get("pic_dispersion_method", envir = globalenv())
     } else "group"
   )
+  pic_write_analysis_param(
+    args$out_dir, paste0("wald_minmu__", args$genome),
+    if (exists("pic_wald_minmu", envir = globalenv())) {
+      signif(get("pic_wald_minmu", envir = globalenv()), 4)
+    } else 0.5
+  )
   message("[INFO] Building stats and summary tables")
   stats_tables <- build_stats_tables(fit$stats, contrasts, e2g, args$fdr)
   normcount <- build_normalized_counts(fit$dds, e2g)

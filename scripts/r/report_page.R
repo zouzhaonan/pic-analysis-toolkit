@@ -515,6 +515,10 @@ if (blind_disp) '' else 'dds &lt;- DESeq(dds)\n')
     sf_code <- if (blind_disp) 'dds &lt;- estimateSizeFactors(dds, type = "poscounts")\n'
                else 'dds &lt;- DESeq(dds, sfType = "poscounts")\n'
   }
+  # n = 1 の Wald 検定で使った mu の下限 (deseq2_data.R の fit_deseq)。記録の無い旧出力は既定 0.5。
+  wald_minmu <- suppressWarnings(as.numeric(pic_param(params, paste0("wald_minmu__", genome), "0.5")))
+  if (!is.finite(wald_minmu)) wald_minmu <- 0.5
+  low_minmu <- blind_disp && wald_minmu < 0.5
   if (blind_disp) {
     sf_code <- paste0(sf_code,
 'nc &lt;- counts(dds, normalized = TRUE)\n',
@@ -524,11 +528,16 @@ if (blind_disp) '' else 'dds &lt;- DESeq(dds)\n')
 'design(ref) &lt;- ~1\n',
 'ref &lt;- estimateDispersionsFit(estimateDispersionsGeneEst(ref))\n',
 'dispersions(dds) &lt;- dispersionFunction(ref)(rowMeans(nc))\n',
-'dds &lt;- nbinomWaldTest(dds)\n')
+if (low_minmu) sprintf('dds &lt;- nbinomWaldTest(dds, minmu = %s)  # 0.5 &times; min/max size factor\n', format(wald_minmu))
+else 'dds &lt;- nbinomWaldTest(dds)\n')
   }
   blind_desc <- if (blind_disp) {
     paste0(' With no replicates (n&nbsp;=&nbsp;1 per group), the dispersion trend is fitted on the most stable half ',
-           'of expressed genes (smallest between-sample change, mean normalized count &gt;&nbsp;5) and applied to all genes.')
+           'of expressed genes (smallest between-sample change, mean normalized count &gt;&nbsp;5) and applied to all genes.',
+           if (low_minmu) sprintf(paste0(' Because sequencing depth differs between samples, the lower bound on fitted counts ',
+                                         '(<code>minmu</code>) is set to the equivalent of 0.5 count in the deepest library (minmu&nbsp;=&nbsp;%s) instead of the default 0.5, ',
+                                         'so that a gene absent from a shallow sample is not given a fold change in the wrong direction.'),
+                                  format(wald_minmu)) else '')
   } else ""
 
   # DESeq2 の design / batch 補正を analysis_params から反映する

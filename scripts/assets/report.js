@@ -1454,26 +1454,6 @@
       ths.forEach(function (th, k) { if (th.dataset && th.dataset.sample != null) cols.push({ k: k, s: th.dataset.sample, g: th.dataset.gcol || "" }); });
       return cols;
     }
-    // 色の幅の凡例 (カラーバーと数字)。表の下 (PNG に写る .pic-capbox の中) に置く。
-    // 全部表示のときは R と同じ幅 (全セルの最小 .. 1)、除外したときは表示中のサンプルの
-    // 対角を除く値の最小 .. 最大。
-    function exCorLegend(tbl, lo, hi, refit) {
-      var wrap = tbl.closest(".pic-cor-wrap") || tbl;
-      var leg = wrap.parentNode.querySelector(":scope > .pic-cor-legend");
-      if (!leg) {
-        leg = document.createElement("div"); leg.className = "pic-cor-legend";
-        wrap.parentNode.insertBefore(leg, wrap.nextSibling);
-      }
-      var d = (hi - lo) < 0.02 ? 4 : 3;
-      var f = function (x) { return isFinite(x) ? x.toFixed(d) : "NA"; };
-      leg.innerHTML = '<span class="pic-cor-leg-t">Pearson r</span>' +
-        '<span class="pic-cor-leg-scale"><span class="pic-cor-leg-bar"></span>' +
-        '<span class="pic-cor-leg-ticks"><span>' + f(lo) + '</span><span>' + f((lo + hi) / 2) + '</span><span>' + f(hi) + '</span></span></span>' +
-        '<span class="pic-cor-leg-n">' + (refit
-          ? "color scale refit to the shown samples (off-diagonal min&ndash;max)"
-          : "color scale: all samples (minimum&ndash;1)") + '</span>';
-      leg.classList.toggle("pic-cor-leg-refit", !!refit);
-    }
     function exApplyCor(tab) {
       var any = exAny();
       tab.querySelectorAll("table.pic-cor").forEach(function (tbl) {
@@ -1503,7 +1483,6 @@
         });
         if (!any) hi = 1;
         if (!isFinite(lo) || !isFinite(hi)) { lo = 0; hi = 1; }
-        exCorLegend(tbl, lo, hi, any);
         cols.forEach(function (c, j) {
           var th = hdr.children[c.k];
           if (th._picCls0 === undefined) th._picCls0 = th.className;
