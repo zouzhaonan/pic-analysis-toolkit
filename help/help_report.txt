@@ -27,7 +27,7 @@ pic report — 解析結果から自己完結型 HTML レポートを生成す�
                     HS RNA ScreenTape 用ポジティブコントロールのフォルダ (任意)。
                     テープが HS RNA (assay 名 HSRNA) のときは毎回、このフォルダの
                     最初のサンプル (ladder を除いた sampleTable の先頭) を
-                    「Positive control (HS RNA)」として出す。省略時は PIC_RIN_PC_HS_DIR →
+                    「Positive control」として出す。省略時は PIC_RIN_PC_HS_DIR →
                     <rin-dir>/HSRNA_posicont_2026-05-20 - 15-43-17-HSRNA (無ければ
                     <rin-dir>/HSRNA_posicont*) → 既定パスで同じ順。
                     空白を含むパスは引用符で囲む。

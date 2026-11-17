@@ -40,6 +40,19 @@ pic_rin_pc_dir <- function(rin_dir = pic_rin_dir()) {
   file.path(path.expand(PIC_RIN_DEFAULT_DIR), "RNA_positive_control")
 }
 
+# electropherogram の横軸 (size) の範囲。
+# 右端は固定せず、波形が基線近くまで下がるところにする: 各波形で、その波形の最大値の
+# PIC_RIN_X_TAIL_FRAC (2%) 以上ある最後の点を取り、全パネルでの最大を共通の右端にする。
+# HS RNA ScreenTape では 28S が大きく出て (HS PC で 5,368 nt。普通の RNA の PC は 3,754 nt)、
+# 最大の ladder (6000 nt) の 1.25 倍 (7,500 nt) で切ると右側の信号 (最大の 28% ほど) が欠けていた。
+# 上限は最大の ladder の PIC_RIN_X_CAP (5) 倍 (6000 nt なら 30,000 nt)。最大の ladder より右の
+# size は最後の区間 (4000-6000 nt) の傾きで外挿した値で、遠くまで伸ばすほど当てにならないため。
+# 実測 (2026-11-17): 2% を切る位置は HS PC 25,000 nt・pic186 17,800 nt、普通の RNA は 9,000-20,000 nt。
+# 下限は従来どおり最大の ladder の 1.25 倍。目盛りの数字は ladder の大きさ (最大 6000 nt) だけに付ける
+# (TapeStation の画面と同じ。波形はその右まで描く)。
+PIC_RIN_X_CAP <- 5
+PIC_RIN_X_TAIL_FRAC <- 0.02
+
 # HS RNA ScreenTape 用ポジティブコントロールのフォルダ (名前に空白を含む)。
 PIC_RIN_PC_HS_NAME <- "HSRNA_posicont_2026-05-20 - 15-43-17-HSRNA"
 
@@ -209,7 +222,7 @@ pic_rin_load <- function(ds) {
           win <- max(1L, lm_pos - 15L):min(length(y), lm_pos + 15L)
           shift <- win[[which.max(y[win])]] - lm_pos
           size <- 10^pic_rin_interp(seq_along(y) - shift, lpos, log10(lsz))
-          keep <- is.finite(y) & size >= lsz[[1]] * 0.8 & size <= lsz[[length(lsz)]] * 1.25
+          keep <- is.finite(y) & size >= lsz[[1]] * 0.8 & size <= lsz[[length(lsz)]] * PIC_RIN_X_CAP
           sp <- peaks[peaks$well == samples$well[[i]] & is.finite(peaks$size) & nzchar(peaks$label), , drop = FALSE]
           # 注釈の高さ: ピーク位置付近 (±3 点) の最大値
           sp$y <- vapply(sp$size, function(s) {
@@ -335,6 +348,9 @@ pic_rin_panel <- function(reg, id, r, x_lim, colour = NULL, legend = TRUE) {
   traces <- list()
   for (i in seq_len(nrow(s))) {
     tr <- r$traces[[s$well[[i]]]]
+    # 共通の右端より右は描かない (RINe ラベルの列と重ねない)
+    tr_in <- tr$size <= x_lim[[2]]
+    tr$size <- tr$size[tr_in]; tr$y <- tr$y[tr_in]
     nm <- s$sample[[i]]; col <- unname(pal[[nm]])
     traces[[length(traces) + 1]] <- list(
       x = as.list(round(tr$size, 1)), y = as.list(round(tr$y, 3)),
@@ -432,8 +448,14 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
   # x 軸はパネル間で揃える
   all_tr <- unlist(lapply(c(runs, if (!is.null(pc)) list(pc), if (!is.null(pc_hs)) list(pc_hs)),
                           function(r) r$traces), recursive = FALSE)
+  # 右端は、波形が最大値の PIC_RIN_X_TAIL_FRAC を切るところ (上の PIC_RIN_X_CAP の説明を参照)
+  lmax <- max(unlist(lapply(c(runs, list(pc, pc_hs)), function(r) r$ladder_sizes)))
+  x_tail <- max(vapply(all_tr, function(t) {
+    k <- which(t$y >= PIC_RIN_X_TAIL_FRAC * max(t$y, na.rm = TRUE))
+    if (length(k) > 0) max(t$size[k]) else max(t$size)
+  }, numeric(1)))
   x_lim <- c(min(vapply(all_tr, function(t) min(t$size), numeric(1))),
-             max(vapply(all_tr, function(t) max(t$size), numeric(1))))
+             min(max(x_tail, lmax * 1.25), lmax * PIC_RIN_X_CAP))
   blocks <- character(0)
   for (k in seq_along(runs)) {
     plot <- pic_rin_panel(reg, sprintf("%srin_%d", id_prefix, k), runs[[k]], x_lim)
@@ -456,7 +478,7 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
     plot <- pic_rin_panel(reg, sprintf("%srin_pc_hs", id_prefix), pc_hs, x_lim, colour = PIC_RIN_PC_COLOUR, legend = FALSE)
     if (nzchar(plot)) {
       pc_hs_used <- TRUE
-      blocks <- c(blocks, sprintf('<div class="pic-plot-cell"><h4>Positive control (HS RNA)</h4>%s</div>', plot))
+      blocks <- c(blocks, sprintf('<div class="pic-plot-cell"><h4>Positive control</h4>%s</div>', plot))
     }
   }
   paste0('<p class="pic-note">RNA integrity of the input RNA measured on the TapeStation. The electropherogram shows each sample&rsquo;s fluorescence along fragment size; the lower marker and the ',
@@ -465,7 +487,8 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
          'Sample names follow the TapeStation sample table.',
          if (pc_used) ' The lower panel is the <b>positive control</b>, a reference RNA of known good integrity run on a separate RNA ScreenTape, for comparison (its intensity axis is scaled separately).' else '',
          if (pc_hs_used) sprintf(' The %s panel is the <b>positive control</b> for the High Sensitivity RNA ScreenTape, a reference RNA of known good integrity run on a separate HS RNA ScreenTape, for comparison (its intensity axis is scaled separately).',
-                                 if (pc_used) '&ldquo;Positive control (HS RNA)&rdquo;' else 'lower') else '',
+                                 if (pc_used) 'last' else 'lower') else '',
+         ' Tick labels on the size axis are the ladder sizes; the traces continue to the right of the largest ladder, where sizes are extrapolated.',
          '</p><div class="pic-rin-panels" style="display:grid;grid-template-columns:1fr;gap:16px">',
          paste(blocks, collapse = ""), '</div>')
 }
