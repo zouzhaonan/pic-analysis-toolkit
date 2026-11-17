@@ -7,6 +7,9 @@
 #   --rin-dir <dir>      : TapeStation RIN データセットのフォルダ (任意。既定は PIC_RIN_DIR / 既定パス)
 #   --rin-pc-dir <dir>   : RNA ScreenTape 用ポジティブコントロールのフォルダ (任意。既定は PIC_RIN_PC_DIR /
 #                          <rin-dir>/RNA_positive_control / 既定パス/RNA_positive_control)
+#   --rin-pc-hs-dir <dir>: HS RNA ScreenTape 用ポジティブコントロールのフォルダ (任意。既定は PIC_RIN_PC_HS_DIR /
+#                          <rin-dir> か既定パスの "HSRNA_posicont_2026-05-20 - 15-43-17-HSRNA" (無ければ
+#                          HSRNA_posicont*))。最初のサンプル (ladder を除く) を PC に使う
 #   --threads <n>        : 並べる worker の数 (任意。既定 1)。節の組み立て・GSEA/ORA の読み・埋め込みファイルの
 #                          gzip を fork で並べる。出力は --threads によらず同じ
 #   --mem-gb <gb>        : 並べる worker のメモリの上限 (任意。既定は環境変数 PIC_MEM_GB、無ければ制限なし)
@@ -23,13 +26,14 @@ source(file.path(script_dir, "enrichment_plots.R"))
 source(file.path(script_dir, "report_build.R"))
 
 parse_report_args <- function(args) {
-  out <- list(out_dir = NULL, rin_dir = NULL, rin_pc_dir = NULL, threads = 1L, mem_gb = NULL)
+  out <- list(out_dir = NULL, rin_dir = NULL, rin_pc_dir = NULL, rin_pc_hs_dir = NULL, threads = 1L, mem_gb = NULL)
   i <- 1
   while (i <= length(args)) {
     a <- args[[i]]
     if (a == "--out-dir") { out$out_dir <- args[[i + 1]]; i <- i + 2 }
     else if (a == "--rin-dir") { out$rin_dir <- args[[i + 1]]; i <- i + 2 }
     else if (a == "--rin-pc-dir") { out$rin_pc_dir <- args[[i + 1]]; i <- i + 2 }
+    else if (a == "--rin-pc-hs-dir") { out$rin_pc_hs_dir <- args[[i + 1]]; i <- i + 2 }
     else if (a == "--threads") { out$threads <- suppressWarnings(as.integer(args[[i + 1]])); i <- i + 2 }
     else if (a == "--mem-gb") { out$mem_gb <- suppressWarnings(as.numeric(args[[i + 1]])); i <- i + 2 }
     else { stop(sprintf("Unknown option: %s", a), call. = FALSE) }
@@ -52,6 +56,7 @@ main <- function() {
   out_dir <- normalizePath(args$out_dir, mustWork = TRUE)
   if (!is.null(args$rin_dir)) options(pic.report.rin_dir = args$rin_dir)
   if (!is.null(args$rin_pc_dir)) options(pic.report.rin_pc_dir = args$rin_pc_dir)
+  if (!is.null(args$rin_pc_hs_dir)) options(pic.report.rin_pc_hs_dir = args$rin_pc_hs_dir)
   options(pic.report.threads = args$threads, pic.report.mem_gb = args$mem_gb)
 
   # xenograft 統合レポート (分類サマリ + graft/host) を優先判定

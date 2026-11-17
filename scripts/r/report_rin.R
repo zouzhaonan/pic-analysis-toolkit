@@ -8,9 +8,10 @@
 #         見つからなければサブタブを出さない。
 # サンプル名は sampleTable の Sample Description に従う (sample_sheet とは突き合わせない)。
 # ladder は electropherogram の横軸 (データ点 -> nt) の較正だけに使い、描画しない。
-# テープが普通の RNA ScreenTape (assay 名 "RNA"。HS RNA は "HSRNA") のときは、
-# ポジティブコントロール (pic_rin_pc_dir() の泳動) を毎回、本番サンプルの下の別パネルに出す
-# (y 軸は別に autoscale)。HS RNA には入れない。
+# テープが普通の RNA ScreenTape (assay 名 "RNA") のときは、ポジティブコントロール
+# (pic_rin_pc_dir() の泳動) を毎回、本番サンプルの下の別パネルに出す (y 軸は別に autoscale)。
+# HS RNA ScreenTape (assay 名 "HSRNA") のときも同様に、pic_rin_pc_hs_dir() の泳動の
+# 最初のサンプル (ladder を除いた sampleTable の先頭) を PC として出す (2026-11-17)。
 # 1 run に複数 genome があるときは、レポートの genome のサンプルに当たる測定だけ出す
 # (pic_rin_filter_genome)。
 
@@ -37,6 +38,27 @@ pic_rin_pc_dir <- function(rin_dir = pic_rin_dir()) {
   d <- file.path(rin_dir, "RNA_positive_control")
   if (dir.exists(d)) return(d)
   file.path(path.expand(PIC_RIN_DEFAULT_DIR), "RNA_positive_control")
+}
+
+# HS RNA ScreenTape 用ポジティブコントロールのフォルダ (名前に空白を含む)。
+PIC_RIN_PC_HS_NAME <- "HSRNA_posicont_2026-05-20 - 15-43-17-HSRNA"
+
+# 優先: pic report --rin-pc-hs-dir → 環境変数 PIC_RIN_PC_HS_DIR → <rin_dir>/<PIC_RIN_PC_HS_NAME>
+#       → <rin_dir>/HSRNA_posicont* (名前順で最初) → 既定パスで同じ順。どれも無ければ
+#       <既定パス>/<PIC_RIN_PC_HS_NAME> を返す (呼び出し側が [WARN] を出す)。
+pic_rin_pc_hs_dir <- function(rin_dir = pic_rin_dir()) {
+  d <- getOption("pic.report.rin_pc_hs_dir", default = NULL)
+  if (is.null(d)) d <- Sys.getenv("PIC_RIN_PC_HS_DIR", unset = "")
+  if (nzchar(d)) return(path.expand(d))
+  for (base in unique(c(rin_dir, path.expand(PIC_RIN_DEFAULT_DIR)))) {
+    d <- file.path(base, PIC_RIN_PC_HS_NAME)
+    if (dir.exists(d)) return(d)
+    if (!dir.exists(base)) next
+    hits <- sort(list.files(base, pattern = "^HSRNA_posicont", full.names = TRUE))
+    hits <- hits[dir.exists(hits)]
+    if (length(hits) > 0) return(hits[[1]])
+  }
+  file.path(path.expand(PIC_RIN_DEFAULT_DIR), PIC_RIN_PC_HS_NAME)
 }
 
 # CSV の一覧を TapeStation の 1 回の泳動 (stem) ごとに 3 種のファイルへまとめる。
@@ -205,9 +227,16 @@ pic_rin_load <- function(ds) {
 
 # ポジティブコントロール (pc_dir の泳動すべて) を 1 つの泳動のように読む (well は "PC<n>:<well>")。
 # 名前は "Positive control" (PC が複数あれば " (<sample>)" を付ける)。無ければ NULL。
-pic_rin_load_pc <- function(pc_dir) {
+# first_only = TRUE なら最初の泳動の最初のサンプル (ladder を除く sampleTable の先頭) だけ使う。
+pic_rin_load_pc <- function(pc_dir, first_only = FALSE) {
   pls <- Filter(Negate(is.null), lapply(pic_rin_find_pc(pc_dir), pic_rin_load))
   if (length(pls) == 0) return(NULL)
+  if (first_only) {
+    p <- pls[[1]]
+    p$samples <- p$samples[1, , drop = FALSE]
+    p$traces <- p$traces[intersect(names(p$traces), p$samples$well)]
+    pls <- list(p)
+  }
   n_pc <- sum(vapply(pls, function(p) nrow(p$samples), integer(1)))
   out <- list(stem = "positive control", samples = NULL, traces = list(), ladder_sizes = pls[[1]]$ladder_sizes)
   for (j in seq_along(pls)) {
@@ -370,13 +399,15 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
   dss <- pic_rin_find_datasets(rin_dir, project_id)
   if (length(dss) == 0) return("")
   gnames <- pic_rin_genome_names(base_dir, project_id)
-  runs <- list(); rna_tape <- FALSE
+  runs <- list(); rna_tape <- FALSE; hs_tape <- FALSE
   for (k in seq_along(dss)) {
     r <- pic_rin_load(dss[[k]])
     if (is.null(r)) next
     r <- pic_rin_filter_genome(r, project, gnames)
     if (nrow(r$samples) == 0 || length(r$traces) == 0) next
-    if (identical(pic_rin_assay(dss[[k]]), "RNA")) rna_tape <- TRUE
+    assay <- pic_rin_assay(dss[[k]])
+    if (identical(assay, "RNA")) rna_tape <- TRUE
+    if (identical(assay, "HSRNA")) hs_tape <- TRUE
     runs[[length(runs) + 1]] <- r
   }
   if (length(runs) == 0) return("")
@@ -389,8 +420,18 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
       pc <- NULL
     }
   }
+  pc_hs <- NULL
+  if (hs_tape) {
+    pc_hs_dir <- pic_rin_pc_hs_dir(rin_dir)
+    pc_hs <- pic_rin_load_pc(pc_hs_dir, first_only = TRUE)
+    if (is.null(pc_hs) || length(pc_hs$traces) == 0) {
+      message(sprintf("[WARN] RIN: HS RNA ScreenTape ですが、ポジティブコントロールが見つかりません: %s", pc_hs_dir))
+      pc_hs <- NULL
+    }
+  }
   # x 軸はパネル間で揃える
-  all_tr <- unlist(lapply(c(runs, if (!is.null(pc)) list(pc)), function(r) r$traces), recursive = FALSE)
+  all_tr <- unlist(lapply(c(runs, if (!is.null(pc)) list(pc), if (!is.null(pc_hs)) list(pc_hs)),
+                          function(r) r$traces), recursive = FALSE)
   x_lim <- c(min(vapply(all_tr, function(t) min(t$size), numeric(1))),
              max(vapply(all_tr, function(t) max(t$size), numeric(1))))
   blocks <- character(0)
@@ -410,11 +451,21 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
       blocks <- c(blocks, sprintf('<div class="pic-plot-cell"><h4>Positive control</h4>%s</div>', plot))
     }
   }
+  pc_hs_used <- FALSE
+  if (!is.null(pc_hs)) {
+    plot <- pic_rin_panel(reg, sprintf("%srin_pc_hs", id_prefix), pc_hs, x_lim, colour = PIC_RIN_PC_COLOUR, legend = FALSE)
+    if (nzchar(plot)) {
+      pc_hs_used <- TRUE
+      blocks <- c(blocks, sprintf('<div class="pic-plot-cell"><h4>Positive control (HS RNA)</h4>%s</div>', plot))
+    }
+  }
   paste0('<p class="pic-note">RNA integrity of the input RNA measured on the TapeStation. The electropherogram shows each sample&rsquo;s fluorescence along fragment size; the lower marker and the ',
          '18S / 28S ribosomal RNA peaks are marked. The number next to each trace, in the same colour, is its <b>RINe</b> ',
          '(1 = degraded, 10 = intact). ',
          'Sample names follow the TapeStation sample table.',
          if (pc_used) ' The lower panel is the <b>positive control</b>, a reference RNA of known good integrity run on a separate RNA ScreenTape, for comparison (its intensity axis is scaled separately).' else '',
+         if (pc_hs_used) sprintf(' The %s panel is the <b>positive control</b> for the High Sensitivity RNA ScreenTape, a reference RNA of known good integrity run on a separate HS RNA ScreenTape, for comparison (its intensity axis is scaled separately).',
+                                 if (pc_used) '&ldquo;Positive control (HS RNA)&rdquo;' else 'lower') else '',
          '</p><div class="pic-rin-panels" style="display:grid;grid-template-columns:1fr;gap:16px">',
          paste(blocks, collapse = ""), '</div>')
 }
