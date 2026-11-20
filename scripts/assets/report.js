@@ -49,9 +49,57 @@
         }, 60);
         return true;
       });
+      // Enrichment の点 (ジーンセット) を押すと、その遺伝子を Expression に出す
+      if ((spec.data || []).some(function (t) { return t.meta && t.meta.pic_gs; })) {
+        el.classList.add("pic-gs-clickable");
+        el.on("plotly_click", function (ev) {
+          var pt = ev && ev.points && ev.points[0];
+          var gs = pt && pt.data && pt.data.meta && pt.data.meta.pic_gs;
+          if (gs) picEnrichClick(el, pt, gs);
+        });
+        // 点の上だけ指のカーソルにする (plotly の既定は十字)
+        el.on("plotly_hover", function () { el.classList.add("pic-gs-hover"); });
+        el.on("plotly_unhover", function () { el.classList.remove("pic-gs-hover"); });
+      }
     } catch (e) {
       el.innerHTML = '<div style="color:#b00;padding:8px">plot 描画エラー: ' + e + '</div>';
     }
+  }
+
+  // Enrichment の点 → Expression の遺伝子のグループ。
+  // customdata: [0] term, [4] 記号 "A/B/C", [5] ID "E1/E2;E3/..." (記号と同じ並び), [6] cluster / enriched group
+  // グループ名は「term (GSEA KEGG, A / B)」「term (ORA KEGG, c1)」。Expression タブに移って、そのグループの図まで送る。
+  function picEnrichClick(el, pt, gs) {
+    var cd = pt.customdata || [];
+    var sym = String(cd[4] || ""), ens = String(cd[5] || "");
+    if (!sym && !ens) return;
+    var syms = sym ? sym.split("/") : [], enss = ens ? ens.split("/") : [];
+    var n = Math.max(syms.length, enss.length), genes = [];
+    for (var i = 0; i < n; i++) {
+      var s = (syms[i] || "").trim();
+      var e = (enss[i] || "").split(";").map(function (x) { return x.trim(); })
+        .filter(function (x) { return x && x !== "NA"; });
+      if (s || e.length) genes.push({ sym: s, ens: e });
+    }
+    var ctx = gs.kind === "GSEA" ? (gs.context || "") : String(cd[6] || "");
+    var title = String(cd[0] || "gene set") + " (" + [gs.kind, gs.method].filter(Boolean).join(" ") +
+      (ctx ? ", " + ctx : "") + ")";
+    var tab = el.closest && el.closest("section.pic-tab");
+    var exprSec = tab ? document.getElementById(tab.id.replace(/enrich$/, "expr")) : null;
+    var box = exprSec && exprSec.querySelector(".pic-expr");
+    if (!box || !box._picAddGeneSet) return;
+    var tip = document.querySelector(".pic-expr-tip"); if (tip) tip.style.display = "none";
+    activateTab("expr");
+    var g = box._picAddGeneSet(title, genes);
+    if (!g || !g.blk) return;
+    // 描き終わってから、そのグループの図までスクロールし、少しの間だけ枠を光らせる
+    setTimeout(function () {
+      var top = g.blk.getBoundingClientRect().top + window.pageYOffset - 70;
+      window.scrollTo(0, Math.max(0, top));
+      g.blk.classList.add("pic-expr-gblock-new");
+      g.card.classList.add("pic-expr-gblock-new");
+      setTimeout(function () { g.blk.classList.remove("pic-expr-gblock-new"); g.card.classList.remove("pic-expr-gblock-new"); }, 1600);
+    }, 60);
   }
 
   function renderWithin(root) {
@@ -508,21 +556,15 @@
     }
 
     // 遺伝子ごとに独立した y 軸 (下端 0、各遺伝子で最適スケール) を持つ小パネルを並べる。
-    // 列数はコンテナ幅から決め (1 行に最大 PANEL_MAXCOL)、幅が変わって列数が変わるときだけ描き直す。
-    // 列数は全グループでそろえる (遺伝子の少ないグループだけが横いっぱいに広がらないように、
-    // 左から詰めて右は空ける)。そろえる列数 = min(幅で入る列数, 一番遺伝子の多いグループの遺伝子数)。
+    // 1 行の図の数は左の「Panels per row」スライダー (1–10、最初は 5) で決め、全グループで同じにする。
+    // 図の幅はいつも「全体の幅 / 設定値」(遺伝子の少ないグループも幅は変えず、右を空ける)。
+    // 設定は保存しない (開き直すと 5 に戻る)。
     // 図は遺伝子のグループごとに 1 枚。図ごとに状態 st = {el, idxs, ncol, shown, title} を持つ。
-    var PANEL_ROW_H = 174, PANEL_VGAP = 56, PANEL_HGAP = 40, PANEL_MAXCOL = 5;
+    var PANEL_ROW_H = 174, PANEL_VGAP = 56, PANEL_HGAP = 40;
+    var PANEL_COLS_MIN = 1, PANEL_COLS_MAX = 10, PANEL_COLS_DEFAULT = 5;
+    var panelColsSet = PANEL_COLS_DEFAULT;
     var setStates = [];   // 遺伝子のグループの図の状態
-    function panelCols(width) {
-      var minW = Math.max(120, 30 + groups.length * 20);
-      return Math.max(1, Math.min(PANEL_MAXCOL, Math.floor((width + PANEL_HGAP) / (minW + PANEL_HGAP))));
-    }
-    function commonCols(width) {
-      var nmax = 1;
-      setStates.forEach(function (st) { if (st.idxs.length > nmax) nmax = st.idxs.length; });
-      return Math.min(panelCols(width), nmax);
-    }
+    function commonCols() { return panelColsSet; }
     function axId(i) { return i === 0 ? "" : String(i + 1); }
     function plotInto(st, idxs) {
       var target = st.el;
@@ -536,14 +578,16 @@
       var shownGroups = groups.filter(function (g) {
         return data.samples.some(function (sm, s) { return data.groups[s] === g && on[sm]; });
       });
-      var n = idxs.length, ncol = commonCols(width), nrow = Math.ceil(n / ncol);
+      var n = idxs.length, ncol = commonCols(), nrow = Math.ceil(n / ncol);
       st.ncol = ncol;
       st.shown = shownGroups;
       // タイトル付きの図 (遺伝子のグループ) は、タイトルの分だけ上を空ける
       var mar = { l: 78, r: 12, t: st.title != null ? 64 : 34, b: 50 };
       var H = mar.t + mar.b + nrow * PANEL_ROW_H + (nrow - 1) * PANEL_VGAP;
       var plotW = Math.max(1, width - mar.l - mar.r), plotH = H - mar.t - mar.b;
-      var colW = (plotW - (ncol - 1) * PANEL_HGAP) / ncol;
+      // 列が多くて狭いときは、図の間を縮める (間が図の幅の 3 割を超えないように)
+      var hgap = ncol > 1 ? Math.min(PANEL_HGAP, plotW * 0.3 / (ncol - 1)) : 0;
+      var colW = (plotW - (ncol - 1) * hgap) / ncol;
       var div = document.createElement("div");
       div.className = "pic-plot";
       div.style.height = H + "px";
@@ -564,7 +608,7 @@
       var traces = [];
       idxs.forEach(function (gi, k) {
         var r = Math.floor(k / ncol), c = k % ncol, id = axId(k);
-        var x0 = c * (colW + PANEL_HGAP) / plotW, x1 = (c * (colW + PANEL_HGAP) + colW) / plotW;
+        var x0 = c * (colW + hgap) / plotW, x1 = (c * (colW + hgap) + colW) / plotW;
         var yTop = 1 - r * (PANEL_ROW_H + PANEL_VGAP) / plotH, yBot = yTop - PANEL_ROW_H / plotH;
         var gl = shortLabel(gi);
         // x は群 (色で区別できるので目盛りは出さない)。遺伝子名は x 軸タイトルに置く
@@ -622,7 +666,7 @@
     box._picRefit = function () {
       allStates().forEach(function (st) {
         if (!st.idxs.length || !st.el.clientWidth) return;
-        if (commonCols(st.el.clientWidth) !== st.ncol) plotInto(st, st.idxs);
+        if (commonCols() !== st.ncol) plotInto(st, st.idxs);
       });
     };
 
@@ -714,7 +758,22 @@
     // 中身は保存しない (開き直すと「Top 10 DEGs」だけに戻る)。
     var gplots = plots;
     var gside = document.createElement("div"); gside.className = "pic-expr-gsets";
-    gside.innerHTML = '<h4>Gene groups</h4><div class="pic-expr-gset-list"></div>';
+    gside.innerHTML = '<h4>Panels per row</h4>' +
+      '<div class="pic-expr-ncol"><input type="range" min="' + PANEL_COLS_MIN + '" max="' + PANEL_COLS_MAX +
+      '" step="1" value="' + PANEL_COLS_DEFAULT + '" aria-label="Panels per row">' +
+      '<span class="pic-expr-ncol-val">' + PANEL_COLS_DEFAULT + '</span></div>' +
+      '<h4>Gene groups</h4><div class="pic-expr-gset-list"></div>';
+    var ncolIn = gside.querySelector(".pic-expr-ncol input"), ncolVal = gside.querySelector(".pic-expr-ncol-val");
+    var ncolTmr = null;
+    ncolIn.addEventListener("input", function () {
+      var v = Math.max(PANEL_COLS_MIN, Math.min(PANEL_COLS_MAX, parseInt(ncolIn.value, 10) || PANEL_COLS_DEFAULT));
+      ncolVal.textContent = String(v);
+      if (v === panelColsSet) return;
+      panelColsSet = v;
+      // つまみを動かしている間に何度も描き直さないよう、少し待ってから描く
+      clearTimeout(ncolTmr);
+      ncolTmr = setTimeout(function () { if (box._picRefilter) box._picRefilter(); }, 80);
+    });
     var gaddBtn = document.createElement("button"); gaddBtn.type = "button"; gaddBtn.className = "pic-excl-btn pic-expr-gset-add";
     gaddBtn.textContent = "Add group"; gside.appendChild(gaddBtn);
     // 左の並び: 群とサンプルの除外 (全タブ共通) を一番上、その下に Gene groups
@@ -728,6 +787,11 @@
       g.sum.innerHTML = "";
       var n = g.idxs.length;
       if (n) g.sum.appendChild(document.createTextNode(n + " gene" + (n === 1 ? "" : "s")));
+      if (g.note) {
+        var nt = document.createElement("div"); nt.className = "pic-expr-multi";
+        nt.appendChild(document.createTextNode(g.note));
+        g.sum.appendChild(nt);
+      }
       if (g.miss.length) {
         var m = document.createElement("div"); m.className = "pic-expr-miss";
         m.appendChild(document.createTextNode("Not found: " + g.miss.join(", ")));
@@ -878,6 +942,35 @@
       return g;
     }
     gaddBtn.addEventListener("click", function () { gadd("", [], [], true); });
+
+    // Enrichment の点 (ジーンセット) から遺伝子のグループを足す (picEnrichClick が呼ぶ)。
+    // genes: [{sym, ens: [ID...]}] (ジーンセットの並び)。表の遺伝子へは ID (ens) で引き、
+    // ID で当たらなければ記号で引く (human_ortholog のセットは記号が人のものでも ID は表の遺伝子)。
+    // 同じタイトルのグループが既にあれば足さずにそれを返す。
+    var GSET_MAX_GENES = 100;   // 図が重くなりすぎないよう、ジーンセットの並びの先頭からこの数まで
+    box._picAddGeneSet = function (title, genes) {
+      for (var j = 0; j < sets.length; j++) if (gtitle(sets[j]) === title) return sets[j];
+      var idxs = [], miss = [], multi = [];
+      genes.forEach(function (ge) {
+        var hits = [];
+        (ge.ens || []).forEach(function (e) {
+          var k = String(e).toLowerCase();
+          var h = lutAll[k] || (/\.\d+$/.test(k) ? lutAll[k.replace(/\.\d+$/, "")] : null);
+          (h || []).forEach(function (x) { if (hits.indexOf(x) === -1) hits.push(x); });
+        });
+        if (!hits.length && ge.sym) hits = (lutAll[String(ge.sym).toLowerCase()] || []).slice();
+        if (!hits.length) { if (ge.sym && miss.indexOf(ge.sym) === -1) miss.push(ge.sym); return; }
+        if (hits.length > 1) multi.push({ tok: ge.sym || ge.ens[0], idxs: hits });
+        hits.forEach(function (h) { if (idxs.indexOf(h) === -1) idxs.push(h); });
+      });
+      var total = idxs.length;
+      var g = gadd(title, idxs.slice(0, GSET_MAX_GENES), miss);
+      g.multi = multi;
+      g.note = total > GSET_MAX_GENES ? ("Showing the first " + GSET_MAX_GENES + " of " + total +
+        " genes (gene-set order). Add more by typing or pasting.") : "";
+      gsummary(g);
+      return g;
+    };
 
     // 既定: pvalue 最小の 10 遺伝子を 1 つのグループに
     function defaultIdxs() {

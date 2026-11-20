@@ -151,7 +151,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
   if (nzchar(gsea_html)) {
     parts <- c(parts, sprintf(
       paste0('<div class="pic-enrich-gsea">',
-             '<p class="pic-note">GSEA asks which biological terms (GO, pathways&hellip;) are shifted up or down in a comparison, using the whole ranked gene list. Each dot is a term: position is its enrichment score (NES), color its significance (padj), size the number of genes.</p>',
+             '<p class="pic-note">GSEA asks which biological terms (GO, pathways&hellip;) are shifted up or down in a comparison, using the whole ranked gene list. Each dot is a term: position is its enrichment score (NES), color its significance (padj), size the number of genes. Click a dot to plot the expression of its leading-edge genes (the genes that drive the enrichment) in the Expression tab.</p>',
              '%s</div>'),
       gsea_html
     ))
@@ -218,7 +218,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
     parts <- c(parts, sprintf(
       paste0('<div class="pic-enrich-ora">',
              '<p class="pic-note">ORA takes the differentially expressed genes in each cluster and asks which biological terms are over-represented among them. ',
-             'Dot color is significance (p.adjust), size the gene ratio.</p>%s</div>'),
+             'Dot color is significance (p.adjust), size the gene ratio. Click a dot to plot the expression of that cluster&rsquo;s genes in the term in the Expression tab.</p>%s</div>'),
       build_select_group(ora_items, prefix = prefix_html, ctrl_title = "Method", view_header = "", ctrl_extra = tree_html,
                          method_src = TRUE)
     ))

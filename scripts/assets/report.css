@@ -380,3 +380,10 @@ table.pic-cmatrix.pic-cmx-nocount{--cmx:20px;--cmx-pad:6px}
 .pic-cmatrix.pic-cmx-nocount th.pic-cmx-h.pic-cmx-selhd{background:#cfe2f6;box-shadow:inset 0 -3px 0 #17518f}
 .pic-cmatrix.pic-cmx-nocount .pic-cmx-cell.pic-cmx-sel label{background:radial-gradient(circle at 50% 50%,#fff 0 3.2px,#111827 3.4px 4.6px,transparent 4.8px)}
 .pic-cmatrix.pic-cmx-nocount .pic-cmx-cell:has(input:focus-visible) label{outline:1px dashed #1f2933;outline-offset:-5px}
+/* Expression: 1 行の図の数 (スライダー) と、Enrichment から足したグループの目印 */
+.pic-expr-ncol{display:flex;align-items:center;gap:8px;margin:0 0 12px}
+.pic-expr-ncol input[type=range]{flex:1;min-width:0;accent-color:var(--accent)}
+.pic-expr-ncol-val{min-width:1.6em;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.pic-expr-gblock,.pic-expr-gset{transition:box-shadow .3s}
+.pic-expr-gblock-new{box-shadow:0 0 0 3px rgba(33,102,172,.35);border-radius:6px}
+.pic-gs-hover .nsewdrag{cursor:pointer!important}

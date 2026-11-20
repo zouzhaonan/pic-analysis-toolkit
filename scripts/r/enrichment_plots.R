@@ -193,6 +193,21 @@ build_cluster_ora_plot <- function(ora_df) {
 # plotly 用 dot plot spec (report のインタラクティブ描画)
 # ---------------------------------------------------------------------------
 
+# ジーンセットの遺伝子 (レポートで点を押すと Expression にグループとして足す)。
+# sym: "A/B/C" (gson の記号。human_ortholog のライブラリでは人の記号)、
+# ens: 同じ並びの "ENS1/ENS2;ENS3/..." (表の遺伝子 ID。列が無ければ空)。
+# 列が無い / 値が NA の行は空文字にする (JS 側はそのとき何もしない)。
+pic_gs_gene_cols <- function(df, idx, sym_col) {
+  ens_col <- paste0(sym_col, "_ens_gene")
+  get <- function(col) {
+    if (!(col %in% colnames(df))) return(rep("", length(idx)))
+    v <- as.character(df[[col]][idx])
+    v[is.na(v)] <- ""
+    v
+  }
+  list(sym = get(sym_col), ens = get(ens_col))
+}
+
 # 連続値を plotly マーカーの px サイズに線形写像する。
 plotly_marker_size <- function(v, min_px = 8, max_px = 24) {
   v <- suppressWarnings(as.numeric(v))
@@ -259,8 +274,15 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator, group_pal = NULL)
   size_all <- plotly_marker_size(as.numeric(plot_df$setSize))
   cmin <- min(padj_all); cmax <- max(padj_all)
 
+  # 点を押すと leading edge (core_enrichment) の遺伝子を Expression に出す (report.js の picEnrichClick)
+  has_genes <- "core_enrichment" %in% colnames(plot_df)
+  gs_genes <- pic_gs_gene_cols(plot_df, seq_len(nrow(plot_df)), "core_enrichment")
+  gs_method <- if ("method" %in% colnames(plot_df)) as.character(plot_df$method[[1]]) else ""
+  gs_contrast <- paste(grp_label(numerator), grp_label(denominator), sep = " / ")
   ht <- paste0("<b>%{customdata[0]}</b><br>enriched in: %{customdata[3]}<br>",
-               "NES: %{x:.2f}<br>setSize: %{customdata[1]}<br>p.adjust: %{customdata[2]:.3g}<extra></extra>")
+               "NES: %{x:.2f}<br>setSize: %{customdata[1]}<br>p.adjust: %{customdata[2]:.3g}",
+               if (has_genes) "<br><i>click: plot the leading-edge genes in Expression</i>" else "",
+               "<extra></extra>")
 
   dirs <- levels(plot_df$direction)
   dirs <- dirs[dirs %in% unique(as.character(plot_df$direction))]
@@ -298,8 +320,11 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator, group_pal = NULL)
     traces[[length(traces) + 1L]] <- list(
       x = as.list(as.numeric(plot_df$NES[idx])), y = as.list(ypos_all[idx]),
       xaxis = axref, yaxis = "y", showlegend = FALSE,
-      customdata = lapply(idx, function(j) list(desc_full[j], as.numeric(plot_df$setSize[j]), padj_all[j], d)),
-      mode = "markers", type = "scatter", marker = mk, hovertemplate = ht
+      customdata = lapply(idx, function(j) list(desc_full[j], as.numeric(plot_df$setSize[j]), padj_all[j], d,
+                                                gs_genes$sym[j], gs_genes$ens[j], grp_label(d))),
+      mode = "markers", type = "scatter", marker = mk, hovertemplate = ht,
+      meta = list(pic_gs = list(kind = "GSEA", method = gs_method, context = gs_contrast,
+                                scope = "leading edge"))
     )
     # パネルを囲む枠 (左右が別の x 軸であることを明示)
     shapes[[length(shapes) + 1L]] <- list(
@@ -398,10 +423,17 @@ build_ora_plotly <- function(ora_df, cluster_n = NULL) {
   gr <- as.numeric(plot_df$GeneRatio_num)
   padj <- as.numeric(plot_df$p_adj_plot)
 
+  # 点を押すと、その cluster で当たった遺伝子 (geneID) を Expression に出す (report.js の picEnrichClick)
+  has_genes <- "geneID" %in% colnames(plot_df)
+  gs_genes <- pic_gs_gene_cols(plot_df, seq_len(nrow(plot_df)), "geneID")
+  gs_method <- if ("method" %in% colnames(plot_df)) as.character(plot_df$method[[1]]) else ""
   cd <- lapply(seq_len(nrow(plot_df)), function(i)
-    list(as.character(plot_df$Description_plot[i]), gr[i], padj[i], xx[i]))
+    list(as.character(plot_df$Description_plot[i]), gr[i], padj[i], xx[i],
+         gs_genes$sym[i], gs_genes$ens[i], pic_cluster_short(plot_df$cluster[i])))
   ht <- paste0("<b>%{customdata[0]}</b><br>%{customdata[3]}<br>",
-               "GeneRatio: %{customdata[1]:.3g}<br>p.adjust: %{customdata[2]:.3g}<extra></extra>")
+               "GeneRatio: %{customdata[1]:.3g}<br>p.adjust: %{customdata[2]:.3g}",
+               if (has_genes) "<br><i>click: plot these genes in Expression</i>" else "",
+               "<extra></extra>")
 
   trace <- list(
     x = as.list(xx), y = as.list(yy), customdata = cd,
@@ -413,7 +445,8 @@ build_ora_plotly <- function(ora_df, cluster_n = NULL) {
       showscale = TRUE, line = list(width = 0.5, color = "rgba(0,0,0,.35)"),
       opacity = ecfg$point_alpha
     ),
-    hovertemplate = ht
+    hovertemplate = ht,
+    meta = list(pic_gs = list(kind = "ORA", method = gs_method, scope = "cluster genes"))
   )
   layout <- list(
     showlegend = FALSE,
