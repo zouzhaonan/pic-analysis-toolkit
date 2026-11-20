@@ -193,7 +193,7 @@ build_cluster_ora_plot <- function(ora_df) {
 # plotly 用 dot plot spec (report のインタラクティブ描画)
 # ---------------------------------------------------------------------------
 
-# ジーンセットの遺伝子 (レポートで点を押すと Expression にグループとして足す)。
+# ジーンセットの遺伝子 (レポートで y 軸のジーンセット名を押すと、図に出ている列の和集合を Expression にグループとして足す)。
 # sym: "A/B/C" (gson の記号。human_ortholog のライブラリでは人の記号)、
 # ens: 同じ並びの "ENS1/ENS2;ENS3/..." (表の遺伝子 ID。列が無ければ空)。
 # 列が無い / 値が NA の行は空文字にする (JS 側はそのとき何もしない)。
@@ -274,14 +274,14 @@ build_gsea_plotly <- function(gsea_df, numerator, denominator, group_pal = NULL)
   size_all <- plotly_marker_size(as.numeric(plot_df$setSize))
   cmin <- min(padj_all); cmax <- max(padj_all)
 
-  # 点を押すと leading edge (core_enrichment) の遺伝子を Expression に出す (report.js の picEnrichClick)
+  # y 軸の term 名を押すと leading edge (core_enrichment) の遺伝子を Expression に出す (report.js の picEnrichLabelClick)
   has_genes <- "core_enrichment" %in% colnames(plot_df)
   gs_genes <- pic_gs_gene_cols(plot_df, seq_len(nrow(plot_df)), "core_enrichment")
   gs_method <- if ("method" %in% colnames(plot_df)) as.character(plot_df$method[[1]]) else ""
   gs_contrast <- paste(grp_label(numerator), grp_label(denominator), sep = " / ")
   ht <- paste0("<b>%{customdata[0]}</b><br>enriched in: %{customdata[3]}<br>",
                "NES: %{x:.2f}<br>setSize: %{customdata[1]}<br>p.adjust: %{customdata[2]:.3g}",
-               if (has_genes) "<br><i>click: plot the leading-edge genes in Expression</i>" else "",
+               if (has_genes) "<br><i>click the term name (left) to plot its leading-edge genes in Expression</i>" else "",
                "<extra></extra>")
 
   dirs <- levels(plot_df$direction)
@@ -423,7 +423,8 @@ build_ora_plotly <- function(ora_df, cluster_n = NULL) {
   gr <- as.numeric(plot_df$GeneRatio_num)
   padj <- as.numeric(plot_df$p_adj_plot)
 
-  # 点を押すと、その cluster で当たった遺伝子 (geneID) を Expression に出す (report.js の picEnrichClick)
+  # y 軸の term 名を押すと、図に出ている cluster で当たった遺伝子 (geneID) の和集合を Expression に出す
+  # (report.js の picEnrichLabelClick)
   has_genes <- "geneID" %in% colnames(plot_df)
   gs_genes <- pic_gs_gene_cols(plot_df, seq_len(nrow(plot_df)), "geneID")
   gs_method <- if ("method" %in% colnames(plot_df)) as.character(plot_df$method[[1]]) else ""
@@ -432,7 +433,7 @@ build_ora_plotly <- function(ora_df, cluster_n = NULL) {
          gs_genes$sym[i], gs_genes$ens[i], pic_cluster_short(plot_df$cluster[i])))
   ht <- paste0("<b>%{customdata[0]}</b><br>%{customdata[3]}<br>",
                "GeneRatio: %{customdata[1]:.3g}<br>p.adjust: %{customdata[2]:.3g}",
-               if (has_genes) "<br><i>click: plot these genes in Expression</i>" else "",
+               if (has_genes) "<br><i>click the term name (left) to plot its genes in Expression</i>" else "",
                "<extra></extra>")
 
   trace <- list(
@@ -452,14 +453,16 @@ build_ora_plotly <- function(ora_df, cluster_n = NULL) {
     showlegend = FALSE,
     xaxis = list(type = "category", categoryorder = "array",
                  categoryarray = as.list(levels(plot_df$cluster_label)),
-                 # 1 行の見出しを 45 度に (cluster が多くても隣と重ならない)
-                 tickangle = -45, automargin = TRUE, showline = TRUE, mirror = TRUE,
+                 # cluster 名は図の上に出す。1 行の見出しを 45 度に (cluster が多くても隣と重ならない)
+                 side = "top", tickangle = -45, automargin = TRUE, showline = TRUE, mirror = TRUE,
                  linecolor = "#cdd7e2"),
     yaxis = list(tickmode = "array", tickvals = as.list(seq_along(ylab_levels)),
                  ticktext = as.list(ylab_levels), automargin = TRUE,
                  range = list(0.5, length(ylab_levels) + 0.5), showline = TRUE, mirror = TRUE,
                  linecolor = "#cdd7e2"),
-    margin = list(l = 10, r = 10, t = 44, b = 80), hovermode = "closest"
+    # 上は cluster 名 (45 度) の高さ + 右上の modebar の分 (約 30px) を空ける。名前の高さは
+    # 1 文字およそ 7px で見積もる (足りなければ automargin が広げる)
+    margin = list(l = 10, r = 10, t = 34 + 7 * max(nchar(cluster_labels)), b = 20), hovermode = "closest"
   )
   list(data = list(trace), layout = layout, n_terms = length(ylab_levels),
        config = list(responsive = TRUE, displaylogo = FALSE, displayModeBar = TRUE))

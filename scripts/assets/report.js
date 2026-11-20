@@ -49,41 +49,91 @@
         }, 60);
         return true;
       });
-      // Enrichment の点 (ジーンセット) を押すと、その遺伝子を Expression に出す
-      if ((spec.data || []).some(function (t) { return t.meta && t.meta.pic_gs; })) {
-        el.classList.add("pic-gs-clickable");
-        el.on("plotly_click", function (ev) {
-          var pt = ev && ev.points && ev.points[0];
-          var gs = pt && pt.data && pt.data.meta && pt.data.meta.pic_gs;
-          if (gs) picEnrichClick(el, pt, gs);
-        });
-        // 点の上だけ指のカーソルにする (plotly の既定は十字)
-        el.on("plotly_hover", function () { el.classList.add("pic-gs-hover"); });
-        el.on("plotly_unhover", function () { el.classList.remove("pic-gs-hover"); });
-      }
+      // Enrichment の y 軸のラベル (ジーンセット名) を押すと、その遺伝子を Expression に出す (点は押せない)
+      if ((spec.data || []).some(function (t) { return t.meta && t.meta.pic_gs; })) picWireGsLabels(el);
     } catch (e) {
       el.innerHTML = '<div style="color:#b00;padding:8px">plot 描画エラー: ' + e + '</div>';
     }
   }
 
-  // Enrichment の点 → Expression の遺伝子のグループ。
-  // customdata: [0] term, [4] 記号 "A/B/C", [5] ID "E1/E2;E3/..." (記号と同じ並び), [6] cluster / enriched group
-  // グループ名は「term (GSEA KEGG, A / B)」「term (ORA KEGG, c1)」。Expression タブに移って、そのグループの図まで送る。
-  function picEnrichClick(el, pt, gs) {
-    var cd = pt.customdata || [];
-    var sym = String(cd[4] || ""), ens = String(cd[5] || "");
-    if (!sym && !ens) return;
-    var syms = sym ? sym.split("/") : [], enss = ens ? ens.split("/") : [];
-    var n = Math.max(syms.length, enss.length), genes = [];
-    for (var i = 0; i < n; i++) {
-      var s = (syms[i] || "").trim();
-      var e = (enss[i] || "").split(";").map(function (x) { return x.trim(); })
-        .filter(function (x) { return x && x !== "NA"; });
-      if (s || e.length) genes.push({ sym: s, ens: e });
+  // Enrichment の y 軸のラベル → Expression の遺伝子のグループ。
+  // plotly の tick ラベルはクリックを受けない (上に軸のドラッグ用の透明な四角が重なる) ので、
+  // 図の div で座標を受け、いま描かれている y の tick (.ytick text) の箱に当たるかを調べる。
+  // tick は描き直しのたびに作り直されるが、毎回 DOM から探すので、描き直し・除外のあとも効く。
+  function picGsTickAt(el, x, y) {
+    var ts = el.querySelectorAll(".yaxislayer-above .ytick text");
+    for (var i = 0; i < ts.length; i++) {
+      var r = ts[i].getBoundingClientRect();
+      if (r.width && x >= r.left - 2 && x <= r.right + 2 && y >= r.top - 1 && y <= r.bottom + 1) return ts[i];
     }
-    var ctx = gs.kind === "GSEA" ? (gs.context || "") : String(cd[6] || "");
-    var title = String(cd[0] || "gene set") + " (" + [gs.kind, gs.method].filter(Boolean).join(" ") +
-      (ctx ? ", " + ctx : "") + ")";
+    return null;
+  }
+  function picWireGsLabels(el) {
+    el.classList.add("pic-gs-clickable");
+    var hot = null;
+    function setHot(t) {
+      if (hot === t) return;
+      if (hot) hot.classList.remove("pic-gs-ylab-hot");
+      hot = t;
+      if (hot) hot.classList.add("pic-gs-ylab-hot");
+      el.classList.toggle("pic-gs-ylab-hover", !!hot);
+    }
+    el.addEventListener("mousemove", function (ev) { setHot(picGsTickAt(el, ev.clientX, ev.clientY)); });
+    el.addEventListener("mouseleave", function () { setHot(null); });
+    // 軸のドラッグ (y の範囲を動かす) より先に受ける
+    el.addEventListener("mousedown", function (ev) {
+      if (picGsTickAt(el, ev.clientX, ev.clientY)) { ev.stopPropagation(); ev.preventDefault(); }
+    }, true);
+    el.addEventListener("click", function (ev) {
+      var t = picGsTickAt(el, ev.clientX, ev.clientY);
+      if (!t) return;
+      ev.stopPropagation(); ev.preventDefault();
+      var d = t.__data__;
+      if (!d || d.x == null) return;
+      setHot(null);
+      picEnrichLabelClick(el, d.x);
+    }, true);
+  }
+  // y の値 yv の行にある点のうち、図にいま出ている列 (見えている trace・category) の遺伝子の和集合を出す。
+  // customdata: [0] term, [4] 記号 "A/B/C", [5] ID "E1/E2;E3/..." (記号と同じ並び)
+  // 列の順: trace の順 (GSEA は左のパネルから)、同じ trace の中は x の category の並び (ORA は c1, c2, ...)。
+  // グループ名は「(KEGG) term」。Expression タブに移って、そのグループの図まで送る。
+  function picEnrichLabelClick(el, yv) {
+    var fl = el._fullLayout || {}, term = "", gs = null, genes = [], seen = {};
+    var pts = [];
+    (el.data || []).forEach(function (t, ti) {
+      if (!t.meta || !t.meta.pic_gs || t.visible === false || t.visible === "legendonly") return;
+      var xa = fl[(t.xaxis || "x").replace(/^x/, "xaxis")] || {};
+      var cats = xa.type === "category" ? (xa.categoryarray && xa.categoryarray.length ? xa.categoryarray : null) : null;
+      (t.y || []).forEach(function (y, k) {
+        if (+y !== +yv) return;
+        var ord = 0;
+        if (cats) { ord = cats.indexOf(t.x[k]); if (ord < 0) return; }   // 列が隠れている
+        pts.push({ ti: ti, ord: ord, cd: (t.customdata || [])[k] || [], gs: t.meta.pic_gs });
+      });
+    });
+    pts.sort(function (a, b) { return a.ti - b.ti || a.ord - b.ord; });
+    pts.forEach(function (p) {
+      if (!gs) gs = p.gs;
+      if (!term) term = String(p.cd[0] || "");
+      var syms = String(p.cd[4] || "").split("/"), enss = String(p.cd[5] || "").split("/");
+      if (!p.cd[4]) syms = [];
+      if (!p.cd[5]) enss = [];
+      var n = Math.max(syms.length, enss.length);
+      for (var i = 0; i < n; i++) {
+        var s = (syms[i] || "").trim();
+        var e = (enss[i] || "").split(";").map(function (x) { return x.trim(); })
+          .filter(function (x) { return x && x !== "NA"; });
+        if (!s && !e.length) continue;
+        var key = (e.length ? e.join(";") : s).toLowerCase();
+        if (seen[key]) continue;
+        seen[key] = 1;
+        genes.push({ sym: s, ens: e });
+      }
+    });
+    if (!gs || !genes.length) return;
+    // 名前は GSEA / ORA を問わず「(method) term」(term は両方に共通なので、GSEA / ORA は入れない)
+    var title = (gs.method ? "(" + gs.method + ") " : "") + (term || "gene set");
     var tab = el.closest && el.closest("section.pic-tab");
     var exprSec = tab ? document.getElementById(tab.id.replace(/enrich$/, "expr")) : null;
     var box = exprSec && exprSec.querySelector(".pic-expr");
@@ -566,6 +616,12 @@
     var setStates = [];   // 遺伝子のグループの図の状態
     function commonCols() { return panelColsSet; }
     function axId(i) { return i === 0 ? "" : String(i + 1); }
+    // 1 つのグループで同時に描く図は PAGE_SIZE 個まで。多いグループ (ジーンセットの数百遺伝子など) は
+    // ページに分け、図の上の「Prev / Next」と「21–40 / 154」で送る (1 枚に数百のパネルを入れると描くのに
+    // 何十秒もかかり、ブラウザが固まるため)。ページはグループごとに持ち (st.page)、描くのは今のページだけ。
+    // PAGE_SIZE 個以下のグループにはページ送りを出さない。
+    var PAGE_SIZE = 20;
+    function pageCount(n) { return Math.max(1, Math.ceil(n / PAGE_SIZE)); }
     function plotInto(st, idxs) {
       var target = st.el;
       st.idxs = idxs.slice();
@@ -574,6 +630,23 @@
       if (!idxs.length) return;
       var width = target.clientWidth;
       if (!width) return;   // 非表示タブ: 表示されたら ResizeObserver が描く
+      var npage = pageCount(idxs.length);
+      st.page = Math.max(0, Math.min(npage - 1, st.page || 0));
+      var p0 = st.page * PAGE_SIZE;
+      if (npage > 1) {
+        var pg = document.createElement("div"); pg.className = "pic-expr-pager";
+        var prev = document.createElement("button"); prev.type = "button"; prev.className = "pic-excl-btn pic-expr-pager-prev";
+        prev.textContent = "‹ Prev"; prev.disabled = st.page === 0;
+        var next = document.createElement("button"); next.type = "button"; next.className = "pic-excl-btn pic-expr-pager-next";
+        next.textContent = "Next ›"; next.disabled = st.page >= npage - 1;
+        var pos = document.createElement("span"); pos.className = "pic-expr-pager-pos";
+        pos.textContent = (p0 + 1) + "–" + Math.min(idxs.length, p0 + PAGE_SIZE) + " / " + idxs.length;
+        prev.addEventListener("click", function () { if (st.page > 0) { st.page--; plotInto(st, st.idxs); } });
+        next.addEventListener("click", function () { if (st.page < npage - 1) { st.page++; plotInto(st, st.idxs); } });
+        pg.appendChild(prev); pg.appendChild(pos); pg.appendChild(next);
+        target.appendChild(pg);
+      }
+      idxs = idxs.slice(p0, p0 + PAGE_SIZE);   // 以下は今のページの遺伝子だけ
       var on = activeSamples();
       var shownGroups = groups.filter(function (g) {
         return data.samples.some(function (sm, s) { return data.groups[s] === g && on[sm]; });
@@ -633,7 +706,8 @@
         });
       });
       var cfg = { responsive: true, displaylogo: false };
-      if (st.title != null) cfg.toImageButtonOptions = { filename: String(st.title).replace(/[^A-Za-z0-9_.-]+/g, "_") || "genes" };
+      if (st.title != null) cfg.toImageButtonOptions = { filename: (String(st.title).replace(/[^A-Za-z0-9_.-]+/g, "_") || "genes") +
+        (npage > 1 ? "_" + (p0 + 1) + "-" + (p0 + n) : "") };
       Plotly.newPlot(div, traces, layout, cfg).then(function () {
         attachTickTips(div, idxs, st);
         div.on("plotly_afterplot", function () { attachTickTips(div, idxs, st); });
@@ -787,11 +861,6 @@
       g.sum.innerHTML = "";
       var n = g.idxs.length;
       if (n) g.sum.appendChild(document.createTextNode(n + " gene" + (n === 1 ? "" : "s")));
-      if (g.note) {
-        var nt = document.createElement("div"); nt.className = "pic-expr-multi";
-        nt.appendChild(document.createTextNode(g.note));
-        g.sum.appendChild(nt);
-      }
       if (g.miss.length) {
         var m = document.createElement("div"); m.className = "pic-expr-miss";
         m.appendChild(document.createTextNode("Not found: " + g.miss.join(", ")));
@@ -943,13 +1012,11 @@
     }
     gaddBtn.addEventListener("click", function () { gadd("", [], [], true); });
 
-    // Enrichment の点 (ジーンセット) から遺伝子のグループを足す (picEnrichClick が呼ぶ)。
+    // Enrichment の y 軸のラベル (ジーンセット) から遺伝子のグループを足す (picEnrichLabelClick が呼ぶ)。
     // genes: [{sym, ens: [ID...]}] (ジーンセットの並び)。表の遺伝子へは ID (ens) で引き、
     // ID で当たらなければ記号で引く (human_ortholog のセットは記号が人のものでも ID は表の遺伝子)。
-    // 同じタイトルのグループが既にあれば足さずにそれを返す。
-    var GSET_MAX_GENES = 100;   // 図が重くなりすぎないよう、ジーンセットの並びの先頭からこの数まで
+    // 同じ名前で同じ遺伝子の集合のグループが既にあれば足さずにそれを返す。遺伝子が違えば同じ名前でも別に足す。
     box._picAddGeneSet = function (title, genes) {
-      for (var j = 0; j < sets.length; j++) if (gtitle(sets[j]) === title) return sets[j];
       var idxs = [], miss = [], multi = [];
       genes.forEach(function (ge) {
         var hits = [];
@@ -963,11 +1030,15 @@
         if (hits.length > 1) multi.push({ tok: ge.sym || ge.ens[0], idxs: hits });
         hits.forEach(function (h) { if (idxs.indexOf(h) === -1) idxs.push(h); });
       });
-      var total = idxs.length;
-      var g = gadd(title, idxs.slice(0, GSET_MAX_GENES), miss);
+      var keep = idxs;   // 全部入れる (多いときは plotInto がページに分け、今のページだけ描く)
+      // 同じ名前で同じ遺伝子の集合のグループがあれば、足さずにそれを返す。名前が同じでも遺伝子が違えば
+      // (ORA の geneID と GSEA の core_enrichment、GSEA の別の比較など) 別のグループとして足す (名前の重複を許す)
+      var key = keep.slice().sort(function (a, b) { return a - b; }).join(",");
+      for (var j = 0; j < sets.length; j++) {
+        if (gtitle(sets[j]) === title && sets[j].idxs.slice().sort(function (a, b) { return a - b; }).join(",") === key) return sets[j];
+      }
+      var g = gadd(title, keep, miss);
       g.multi = multi;
-      g.note = total > GSET_MAX_GENES ? ("Showing the first " + GSET_MAX_GENES + " of " + total +
-        " genes (gene-set order). Add more by typing or pasting.") : "";
       gsummary(g);
       return g;
     };

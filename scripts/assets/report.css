@@ -386,7 +386,14 @@ table.pic-cmatrix.pic-cmx-nocount{--cmx:20px;--cmx-pad:6px}
 .pic-expr-ncol-val{min-width:1.6em;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
 .pic-expr-gblock,.pic-expr-gset{transition:box-shadow .3s}
 .pic-expr-gblock-new{box-shadow:0 0 0 3px rgba(33,102,172,.35);border-radius:6px}
-.pic-gs-hover .nsewdrag{cursor:pointer!important}
+/* Enrichment: y 軸のジーンセット名を押せる (押すと Expression に出す)。指のカーソル・下線・色 */
+.pic-gs-clickable .yaxislayer-above .ytick text{cursor:pointer}
+.pic-gs-ylab-hover,.pic-gs-ylab-hover .draglayer *{cursor:pointer!important}
+.pic-gs-clickable .ytick text.pic-gs-ylab-hot{fill:#17518f!important;text-decoration:underline}
 /* group だけを選ぶ木 (DEG の M-A / Volcano・Enrichment): 矢印の分だけ左を詰める */
 .pic-tree-g1{display:flex;align-items:center;gap:5px;padding:2px 0;cursor:pointer}
 .pic-tree-g1>input{flex:none;cursor:pointer;margin:0}
+/* Expression: 1 グループの図のページ送り (20 個ずつ) */
+.pic-expr-pager{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin:0 0 4px;font-size:13px}
+.pic-expr-pager-pos{min-width:7em;text-align:center;font-variant-numeric:tabular-nums;color:var(--muted,#52606d)}
+.pic-expr-pager button:disabled{opacity:.4;cursor:default}
