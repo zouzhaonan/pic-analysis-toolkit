@@ -331,7 +331,9 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-expr-gset-sum{font-size:11px;color:var(--muted);margin-top:3px}
 .pic-expr-gset-sum.pic-expr-gset-warn{color:#b45309}
 .pic-expr-gplots{margin-top:14px}
-.pic-expr-gblock{margin:0 0 18px;padding-top:10px;border-top:1px solid var(--line)}
+.pic-expr-gblock{margin:0 0 18px;padding-top:0;border-top:none}
+/* 区切り線は、前に表示中のグループがあるときだけ (先頭のグループを消しても次の上に線が残らない) */
+.pic-expr-gblock:not([hidden])~.pic-expr-gblock{padding-top:10px;border-top:1px solid var(--line)}
 .pic-expr-gmsg{font-size:12px;line-height:1.45;margin:0 0 4px}
 .pic-expr-gmsg:empty{display:none}
 .pic-expr-gtitle{font-size:16px;font-weight:700;color:var(--fg);margin:0 0 4px}
@@ -353,7 +355,6 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-expr-gsets{margin:0 0 4px}
 /* 左のカラム: 一番上の Groups の下に、各タブの選択を少し離して置く */
 .pic-expr-gplots,.pic-expr-plots{display:block}
-.pic-expr-plots>.pic-expr-gblock:first-child{border-top:none;padding-top:0}
 /* ---- 左のカラム: 全タブで同じ部品・同じ余白 (2026-11-07) ----
    QC / Correlation / PCA (.pic-ctrl)、DEG heatmap (.pic-hmsel-ctrl)、M-A / Volcano (.pic-degsel-ctrl)、
    Expression (.pic-expr-side)、GSEA (.pic-matrix-sel)、ORA (.pic-selgrid-ctrl)。

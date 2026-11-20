@@ -20,6 +20,15 @@ script_path <- grep("^--file=", commandArgs(), value = TRUE)[[1]]
 script_dir <- dirname(normalizePath(sub("^--file=", "", script_path)))
 asset_dir <- normalizePath(file.path(script_dir, "..", "assets"), winslash = "/", mustWork = TRUE)
 
+# 文字の扱いを UTF-8 にする (source より前)。LANG が空 / C のままだと、R のコードの「−」「↑」などや
+# plotly.min.js の U+2212 (負の目盛りの記号) が enc2utf8 で "<e2><88><92>" という文字列に化ける。
+if (!isTRUE(l10n_info()[["UTF-8"]])) {
+  for (loc in c("C.UTF-8", "en_US.UTF-8", "ja_JP.UTF-8", "C.utf8", "en_US.utf8")) {
+    if (nzchar(suppressWarnings(Sys.setlocale("LC_CTYPE", loc))) && isTRUE(l10n_info()[["UTF-8"]])) break
+  }
+  if (!isTRUE(l10n_info()[["UTF-8"]])) warning("UTF-8 locale is not available; non-ASCII text in the report may be garbled", call. = FALSE)
+}
+
 source(file.path(script_dir, "analysis_plot_spec.R"))
 source(file.path(script_dir, "plot_common.R"))
 source(file.path(script_dir, "enrichment_plots.R"))

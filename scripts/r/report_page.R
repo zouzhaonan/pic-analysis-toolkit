@@ -7,7 +7,7 @@
 # ---------------------------------------------------------------------------
 
 report_css <- function() {
-  paste(readLines(file.path(pic_report_asset_dir(), "report.css"), warn = FALSE), collapse = "\n")
+  paste(readLines(file.path(pic_report_asset_dir(), "report.css"), warn = FALSE, encoding = "UTF-8"), collapse = "\n")
 }
 
 # ---------------------------------------------------------------------------
@@ -775,7 +775,7 @@ render_report_page <- function(title, nav_html, body_html, reg, asset_dir, out_h
     f <- reg$files[[id]]
     pic_z_block(paste0("pic-f-", id), f$gz, c(`data-n` = f$name))
   }, character(1)) else character(0)
-  plotly_js <- paste(readLines(file.path(asset_dir, "plotly.min.js"), warn = FALSE), collapse = "\n")
+  plotly_js <- paste(readLines(file.path(asset_dir, "plotly.min.js"), warn = FALSE, encoding = "UTF-8"), collapse = "\n")
   meta_json <- if (is.null(reg$meta)) "null" else
     jsonlite::toJSON(reg$meta, auto_unbox = TRUE, null = "null", na = "null")
   # 大きな表 (DEG の heatmap など) の HTML も縮めて、開いたときに戻す
@@ -1044,10 +1044,10 @@ pic_load_deg_counts <- function(deseq2_dir, project) {
 }
 
 report_data_js <- function() {
-  paste(readLines(file.path(pic_report_asset_dir(), "report_data.js"), warn = FALSE), collapse = "\n")
+  paste(readLines(file.path(pic_report_asset_dir(), "report_data.js"), warn = FALSE, encoding = "UTF-8"), collapse = "\n")
 }
 
 report_runtime_js <- function() {
-  paste(readLines(file.path(pic_report_asset_dir(), "report.js"), warn = FALSE), collapse = "\n")
+  paste(readLines(file.path(pic_report_asset_dir(), "report.js"), warn = FALSE, encoding = "UTF-8"), collapse = "\n")
 }
 
