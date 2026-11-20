@@ -311,7 +311,18 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-expr-gsets{margin:12px 0 4px}
 .pic-expr-gsets+h4,.pic-expr-gsets+.pic-ctrl h4{margin-top:12px}
 .pic-expr-gset{border:1px solid var(--line);border-radius:6px;background:#fff;padding:6px;margin:0 0 8px}
-.pic-expr-gset-head{display:flex;gap:4px;align-items:center;margin:0 0 4px}
+.pic-expr-gset-head{display:flex;gap:6px;align-items:center;margin:0;cursor:pointer;min-height:24px}
+/* 左のグループ: 畳んだ 1 行 (チェック・名前・遺伝子数・×)。開いたときだけ名前の入力欄と札の欄を出す */
+.pic-expr-gset-on{margin:0;flex:none;cursor:pointer}
+.pic-expr-gset-name{flex:1;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pic-expr-gset-n{flex:none;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.pic-expr-gset-off .pic-expr-gset-name{color:var(--muted);font-weight:400}
+.pic-expr-gset:not(.pic-expr-gset-open) .pic-expr-gset-title,.pic-expr-gset:not(.pic-expr-gset-open) .pic-expr-typeahead{display:none}
+.pic-expr-gset-open .pic-expr-gset-name{display:none}
+.pic-expr-gset-open .pic-expr-gset-head{margin:0 0 4px}
+.pic-expr-gset-open{border-color:var(--accent)}
+.pic-expr-gset:not(.pic-expr-gset-open):hover{background:#eef3f9}
+.pic-expr-gset-sum:empty{display:none}
 .pic-expr-gset-title{flex:1;min-width:0;border:1px solid var(--line);border-radius:4px;padding:3px 6px;font-size:13px;font-weight:600;font-family:inherit}
 .pic-expr-gset-del{border:none;background:#e3e8ef;color:#1f2933;width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:14px;line-height:1;padding:0;flex:none}
 .pic-expr-gset-del:hover{background:#d7301f;color:#fff}
@@ -334,7 +345,7 @@ code{background:#eef1f5;padding:1px 4px;border-radius:3px;font-size:.92em}
 .pic-method-sel select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(33,102,172,.12)}
 .pic-method-src{display:none!important}
 /* Expression のグループの入力欄 (タグ + 補完) */
-.pic-expr-gset .pic-expr-tagbox{min-height:36px;padding:4px 6px;gap:4px}
+.pic-expr-gset .pic-expr-tagbox{min-height:36px;max-height:260px;overflow:auto;padding:4px 6px;gap:4px}
 .pic-expr-gset .pic-expr-chip{font-size:12px;padding:2px 5px 2px 9px}
 .pic-expr-gset .pic-expr-input{min-width:110px;font-size:13px}
 .pic-expr-gset-sum .pic-expr-miss,.pic-expr-gset-sum .pic-expr-multi{font-size:11px;margin-top:2px}
@@ -393,7 +404,7 @@ table.pic-cmatrix.pic-cmx-nocount{--cmx:20px;--cmx-pad:6px}
 /* group だけを選ぶ木 (DEG の M-A / Volcano・Enrichment): 矢印の分だけ左を詰める */
 .pic-tree-g1{display:flex;align-items:center;gap:5px;padding:2px 0;cursor:pointer}
 .pic-tree-g1>input{flex:none;cursor:pointer;margin:0}
-/* Expression: 1 グループの図のページ送り (20 個ずつ) */
+/* Expression: 1 グループの図のページ送り (4 行分 = 4 × Panels per row 個ずつ) */
 .pic-expr-pager{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin:0 0 4px;font-size:13px}
 .pic-expr-pager-pos{min-width:7em;text-align:center;font-variant-numeric:tabular-nums;color:var(--muted,#52606d)}
 .pic-expr-pager button:disabled{opacity:.4;cursor:default}

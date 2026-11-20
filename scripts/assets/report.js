@@ -628,23 +628,41 @@
     var setStates = [];   // 遺伝子のグループの図の状態
     function commonCols() { return panelColsSet; }
     function axId(i) { return i === 0 ? "" : String(i + 1); }
-    // 1 つのグループで同時に描く図は PAGE_SIZE 個まで。多いグループ (ジーンセットの数百遺伝子など) は
-    // ページに分け、図の上の「Prev / Next」と「21–40 / 154」で送る (1 枚に数百のパネルを入れると描くのに
-    // 何十秒もかかり、ブラウザが固まるため)。ページはグループごとに持ち (st.page)、描くのは今のページだけ。
-    // PAGE_SIZE 個以下のグループにはページ送りを出さない。
-    var PAGE_SIZE = 20;
-    function pageCount(n) { return Math.max(1, Math.ceil(n / PAGE_SIZE)); }
+    // 1 つのグループで同時に描く図は 4 行分 (PAGE_ROWS × Panels per row) まで。多いグループ (ジーンセットの
+    // 数百遺伝子など) はページに分け、図の上の「Prev / Next」と「21–40 / 154」で送る (1 枚に数百のパネルを
+    // 入れると描くのに何十秒もかかり、ブラウザが固まるため)。ページはグループごとに持ち (st.page)、描くのは
+    // 今のページだけ。上限以下のグループにはページ送りを出さない。Enrichment から入れたグループも、
+    // 手で入れたグループも、最初の Top 10 DEGs も同じ (全部 plotInto を通る)。
+    // スライダーを動かしたら、各グループで今のページの先頭にあった遺伝子を含むページに移る (st.p0 から)。
+    var PAGE_ROWS = 4;
+    function pageSize() { return PAGE_ROWS * commonCols(); }
+    function pageCount(n) { return Math.max(1, Math.ceil(n / pageSize())); }
+    // st.off: 右に出さないグループ (左のチェックを外したもの)。描かず、計算もしない。
+    // 描き直しの間に図の領域の高さが一度 0 になると、ページの高さが縮んでスクロール位置が切り詰められ、
+    // 左の欄とページが動く (2026-11-20 の不具合)。消す前の高さを min-height で保ち、描いてから外す。
+    // Prev / Next: そのグループの図だけを入れ替え、ページのスクロール位置は変えない
+    function turnPage(st, d) {
+      var sx = window.pageXOffset, sy = window.pageYOffset;
+      st.page += d;
+      plotInto(st, st.idxs);
+      if (window.pageYOffset !== sy || window.pageXOffset !== sx) window.scrollTo(sx, sy);
+      var b = st.el.querySelector(".pic-expr-pager-" + (d < 0 ? "prev" : "next"));
+      if (b && !b.disabled) { try { b.focus({ preventScroll: true }); } catch (e) {} }
+    }
     function plotInto(st, idxs) {
       var target = st.el;
       st.idxs = idxs.slice();
+      var keepH = target.offsetHeight;
+      if (keepH) target.style.minHeight = keepH + "px";
       target.innerHTML = "";
       st.ncol = 0;
-      if (!idxs.length) return;
+      if (!idxs.length || st.off) { target.style.minHeight = ""; return; }
       var width = target.clientWidth;
-      if (!width) return;   // 非表示タブ: 表示されたら ResizeObserver が描く
+      if (!width) { target.style.minHeight = ""; return; }   // 非表示タブ: 表示されたら ResizeObserver が描く
       var npage = pageCount(idxs.length);
       st.page = Math.max(0, Math.min(npage - 1, st.page || 0));
-      var p0 = st.page * PAGE_SIZE;
+      var psz = pageSize(), p0 = st.page * psz;
+      st.p0 = p0;
       if (npage > 1) {
         var pg = document.createElement("div"); pg.className = "pic-expr-pager";
         var prev = document.createElement("button"); prev.type = "button"; prev.className = "pic-excl-btn pic-expr-pager-prev";
@@ -652,18 +670,19 @@
         var next = document.createElement("button"); next.type = "button"; next.className = "pic-excl-btn pic-expr-pager-next";
         next.textContent = "Next ›"; next.disabled = st.page >= npage - 1;
         var pos = document.createElement("span"); pos.className = "pic-expr-pager-pos";
-        pos.textContent = (p0 + 1) + "–" + Math.min(idxs.length, p0 + PAGE_SIZE) + " / " + idxs.length;
-        prev.addEventListener("click", function () { if (st.page > 0) { st.page--; plotInto(st, st.idxs); } });
-        next.addEventListener("click", function () { if (st.page < npage - 1) { st.page++; plotInto(st, st.idxs); } });
+        pos.textContent = (p0 + 1) + "–" + Math.min(idxs.length, p0 + psz) + " / " + idxs.length;
+        prev.addEventListener("click", function () { if (st.page > 0) turnPage(st, -1); });
+        next.addEventListener("click", function () { if (st.page < npage - 1) turnPage(st, 1); });
         pg.appendChild(prev); pg.appendChild(pos); pg.appendChild(next);
         target.appendChild(pg);
       }
-      idxs = idxs.slice(p0, p0 + PAGE_SIZE);   // 以下は今のページの遺伝子だけ
+      idxs = idxs.slice(p0, p0 + psz);   // 以下は今のページの遺伝子だけ
       var on = activeSamples();
       var shownGroups = groups.filter(function (g) {
         return data.samples.some(function (sm, s) { return data.groups[s] === g && on[sm]; });
       });
-      var n = idxs.length, ncol = commonCols(), nrow = Math.ceil(n / ncol);
+      // ページ送りのあるグループは、最後のページで図が少なくても 4 行分の高さを取る (送ってもガタつかない)
+      var n = idxs.length, ncol = commonCols(), nrow = npage > 1 ? PAGE_ROWS : Math.ceil(n / ncol);
       st.ncol = ncol;
       st.shown = shownGroups;
       // タイトル付きの図 (遺伝子のグループ) は、タイトルの分だけ上を空ける
@@ -677,6 +696,7 @@
       div.className = "pic-plot";
       div.style.height = H + "px";
       target.appendChild(div);
+      target.style.minHeight = "";
       var layout = {
         showlegend: true, hovermode: false,
         legend: { orientation: "h", yanchor: "bottom", y: 1 + 6 / plotH, x: 0 },
@@ -748,10 +768,10 @@
       return on;
     }
     function allStates() { return setStates; }
-    box._picRefilter = function () { allStates().forEach(function (st) { if (st.idxs.length) plotInto(st, st.idxs); }); };
+    box._picRefilter = function () { allStates().forEach(function (st) { if (st.idxs.length && !st.off) plotInto(st, st.idxs); }); };
     box._picRefit = function () {
       allStates().forEach(function (st) {
-        if (!st.idxs.length || !st.el.clientWidth) return;
+        if (!st.idxs.length || st.off || !st.el.clientWidth) return;
         if (commonCols() !== st.ncol) plotInto(st, st.idxs);
       });
     };
@@ -856,6 +876,8 @@
       ncolVal.textContent = String(v);
       if (v === panelColsSet) return;
       panelColsSet = v;
+      // 各グループの今のページの先頭の遺伝子を含むページへ
+      allStates().forEach(function (st) { st.page = Math.floor((st.p0 || 0) / pageSize()); });
       // つまみを動かしている間に何度も描き直さないよう、少し待ってから描く
       clearTimeout(ncolTmr);
       ncolTmr = setTimeout(function () { if (box._picRefilter) box._picRefilter(); }, 80);
@@ -872,7 +894,7 @@
     function gsummary(g) {
       g.sum.innerHTML = "";
       var n = g.idxs.length;
-      if (n) g.sum.appendChild(document.createTextNode(n + " gene" + (n === 1 ? "" : "s")));
+      g.cnt.textContent = n + " gene" + (n === 1 ? "" : "s");
       if (g.miss.length) {
         var m = document.createElement("div"); m.className = "pic-expr-miss";
         m.appendChild(document.createTextNode("Not found: " + g.miss.join(", ")));
@@ -893,7 +915,11 @@
     function gplot(g) {
       g.st.title = gtitle(g);
       g.ti.placeholder = "Group " + (sets.indexOf(g) + 1);
-      g.blk.hidden = !g.idxs.length;
+      g.name.textContent = gtitle(g);
+      g.st.off = !g.on;
+      g.cb.checked = !!g.on;
+      g.card.classList.toggle("pic-expr-gset-off", !g.on);
+      g.blk.hidden = !g.idxs.length || !g.on;
       plotInto(g.st, g.idxs);
       // 遺伝子の数が変わって、そろえる列数が変わったら、ほかのグループも描き直す
       if (box._picRefit) box._picRefit();
@@ -920,14 +946,30 @@
     }
     function gremove(g, gi) { g.idxs = g.idxs.filter(function (x) { return x !== gi; }); grefresh(g); }
     // 区切りの混ざったリスト (貼り付け / Enter) をまとめて足す。見つからない入力は覚えておく
-    function gaddList(g, text) {
+    function gaddList(g, text, fold) {
       var r = resolveList(picSplitGeneList(text));
       r.idxs.forEach(function (gi) { if (g.idxs.indexOf(gi) === -1) g.idxs.push(gi); });
       r.missing.forEach(function (t) { if (g.miss.indexOf(t) === -1) g.miss.push(t); });
       g.multi = r.multi;
       g.input.value = ""; hideAc(g);
       grefresh(g);
+      if (fold) gcollapse(g);   // リストを貼り付け終わったら畳む (1 つずつ打つ間は開いたまま)
     }
+    // 左の各グループは 1 行 (チェック・名前・遺伝子数・×) に畳んでおき、行を押すと開いて札の追加・削除と
+    // 名前の変更ができる。開くのは 1 つだけで、開いたグループの外を押すと畳む。
+    function gexpand(g) {
+      sets.forEach(function (x) { if (x !== g) gcollapse(x); });
+      g.open = true; g.card.classList.add("pic-expr-gset-open");
+    }
+    function gcollapse(g) {
+      if (!g.open) return;
+      g.open = false; g.card.classList.remove("pic-expr-gset-open"); hideAc(g);
+      if (document.activeElement && g.card.contains(document.activeElement)) document.activeElement.blur();
+    }
+    // mousedown ではなく click で畳む (mousedown で畳むと、押した行が mouseup までに上へずれて click にならない)
+    document.addEventListener("click", function (e) {
+      sets.forEach(function (g) { if (g.open && !g.card.contains(e.target)) gcollapse(g); });
+    }, true);
     // ---- 補完 (名前でも ID でも。選択済みは除く) ----
     function hideAc(g) { g.ac.style.display = "none"; g.ac.innerHTML = ""; }
     function showAc(g) {
@@ -958,14 +1000,27 @@
       g.ac.style.display = "block";
     }
     function gadd(title, idxs, miss, focus) {
-      var g = { title: title || "", idxs: (idxs || []).slice(), miss: (miss || []).slice(), multi: [] };
+      // on: 右に描くか (チェック)。足したグループは描く (それまでのグループのチェックは変えない)
+      var g = { title: title || "", idxs: (idxs || []).slice(), miss: (miss || []).slice(), multi: [], on: true, open: false };
       var card = document.createElement("div"); card.className = "pic-expr-gset";
       var head = document.createElement("div"); head.className = "pic-expr-gset-head";
+      head.title = "Click to edit";
+      var cb = document.createElement("input"); cb.type = "checkbox"; cb.className = "pic-expr-gset-on"; cb.checked = true;
+      cb.title = "Show this group"; cb.setAttribute("aria-label", "Show this group");
+      var name = document.createElement("span"); name.className = "pic-expr-gset-name";
       var ti = document.createElement("input"); ti.type = "text"; ti.className = "pic-expr-gset-title"; ti.value = g.title;
       ti.setAttribute("aria-label", "Group title");
+      var cnt = document.createElement("span"); cnt.className = "pic-expr-gset-n";
       var del = document.createElement("button"); del.type = "button"; del.className = "pic-expr-gset-del"; del.textContent = "×";
       del.title = "Remove this group";
-      head.appendChild(ti); head.appendChild(del);
+      head.appendChild(cb); head.appendChild(name); head.appendChild(ti); head.appendChild(cnt); head.appendChild(del);
+      head.addEventListener("click", function (e) {
+        if (e.target === cb || e.target === del || e.target === ti) return;
+        if (g.open) gcollapse(g); else { gexpand(g); g.input.focus(); }
+      });
+      cb.addEventListener("change", function () {
+        g.on = cb.checked; gplot(g);
+      });
       var ta = document.createElement("div"); ta.className = "pic-expr-typeahead";
       var tagbox = document.createElement("div"); tagbox.className = "pic-expr-tagbox";
       var input = document.createElement("input"); input.type = "text"; input.className = "pic-expr-input";
@@ -980,7 +1035,7 @@
       var blk = document.createElement("div"); blk.className = "pic-expr-gblock"; blk.hidden = true;
       var gp = document.createElement("div"); gp.className = "pic-expr-gplot";
       blk.appendChild(gp); gplots.appendChild(blk);
-      g.card = card; g.ti = ti; g.tagbox = tagbox; g.input = input; g.ac = acel; g.sum = sum; g.blk = blk;
+      g.card = card; g.ti = ti; g.cb = cb; g.name = name; g.cnt = cnt; g.tagbox = tagbox; g.input = input; g.ac = acel; g.sum = sum; g.blk = blk;
       g.st = { el: gp, idxs: [], ncol: 0, title: "" };
       sets.push(g); setStates.push(g.st);
       var tmr = null;
@@ -1000,14 +1055,14 @@
         t = t ? t.getData("text") : "";
         if (!t || !SEP_RE.test(t.trim())) return;   // 1 つだけなら候補から選ぶ
         e.preventDefault();
-        gaddList(g, (input.value ? input.value + " " : "") + t);
+        gaddList(g, (input.value ? input.value + " " : "") + t, true);
       });
       input.addEventListener("keydown", function (e) {
         if (e.key === "Enter") {
           e.preventDefault();
           var t = (input.value || "").trim();
           if (!t) return;
-          if (SEP_RE.test(t)) { gaddList(g, t); return; }
+          if (SEP_RE.test(t)) { gaddList(g, t, true); return; }
           var first = g.ac.querySelector(".pic-expr-ac-item");
           var r = resolveList([t]);
           if (r.idxs.length) gaddList(g, t);
@@ -1019,7 +1074,7 @@
       });
       input.addEventListener("blur", function () { setTimeout(function () { hideAc(g); }, 150); });
       gchips(g); gsummary(g); gplot(g);
-      if (focus) input.focus();
+      if (focus) { gexpand(g); input.focus(); }
       return g;
     }
     gaddBtn.addEventListener("click", function () { gadd("", [], [], true); });
@@ -1068,7 +1123,10 @@
       // (ORA の geneID と GSEA の core_enrichment、GSEA の別の比較など) 別のグループとして足す (名前の重複を許す)
       var key = keep.slice().sort(function (a, b) { return a - b; }).join(",");
       for (var j = 0; j < sets.length; j++) {
-        if (gtitle(sets[j]) === title && sets[j].idxs.slice().sort(function (a, b) { return a - b; }).join(",") === key) return sets[j];
+        if (gtitle(sets[j]) === title && sets[j].idxs.slice().sort(function (a, b) { return a - b; }).join(",") === key) {
+          if (!sets[j].on) { sets[j].on = true; gplot(sets[j]); }
+          return sets[j];
+        }
       }
       var g = gadd(title, keep, miss);
       g.multi = multi;
