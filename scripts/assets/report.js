@@ -109,26 +109,38 @@
         if (+y !== +yv) return;
         var ord = 0;
         if (cats) { ord = cats.indexOf(t.x[k]); if (ord < 0) return; }   // 列が隠れている
-        pts.push({ ti: ti, ord: ord, cd: (t.customdata || [])[k] || [], gs: t.meta.pic_gs });
+        pts.push({ ti: ti, ord: ord, cd: (t.customdata || [])[k] || [], gs: t.meta.pic_gs, xv: +t.x[k] });
       });
     });
     pts.sort(function (a, b) { return a.ti - b.ti || a.ord - b.ord; });
+    // GSEA の core_enrichment は順位のリスト (DESeq2 の stat の大きい順) の並び。ES < 0 (NES < 0) では
+    // リストの下の端に近いほど寄与が大きいので逆にし、端から数えた順 (rk) を遺伝子に持たせる。
+    // 和集合の遺伝子は、出てくる点の中でいちばん端に近い rk を使う (_picAddGeneSet がこの順に並べる)。
+    var byKey = {};
     pts.forEach(function (p) {
+      var isGsea = p.gs.kind === "GSEA";
       if (!gs) gs = p.gs;
       if (!term) term = String(p.cd[0] || "");
       var syms = String(p.cd[4] || "").split("/"), enss = String(p.cd[5] || "").split("/");
       if (!p.cd[4]) syms = [];
       if (!p.cd[5]) enss = [];
       var n = Math.max(syms.length, enss.length);
-      for (var i = 0; i < n; i++) {
+      for (var i0 = 0; i0 < n; i0++) {
+        var i = isGsea && p.xv < 0 ? n - 1 - i0 : i0;
         var s = (syms[i] || "").trim();
         var e = (enss[i] || "").split(";").map(function (x) { return x.trim(); })
           .filter(function (x) { return x && x !== "NA"; });
         if (!s && !e.length) continue;
         var key = (e.length ? e.join(";") : s).toLowerCase();
-        if (seen[key]) continue;
+        if (seen[key]) {
+          if (isGsea && i0 < byKey[key].rk) byKey[key].rk = i0;
+          continue;
+        }
         seen[key] = 1;
-        genes.push({ sym: s, ens: e });
+        var ge = { sym: s, ens: e };
+        if (isGsea) ge.rk = i0;
+        byKey[key] = ge;
+        genes.push(ge);
       }
     });
     if (!gs || !genes.length) return;
@@ -1016,8 +1028,26 @@
     // genes: [{sym, ens: [ID...]}] (ジーンセットの並び)。表の遺伝子へは ID (ens) で引き、
     // ID で当たらなければ記号で引く (human_ortholog のセットは記号が人のものでも ID は表の遺伝子)。
     // 同じ名前で同じ遺伝子の集合のグループが既にあれば足さずにそれを返す。遺伝子が違えば同じ名前でも別に足す。
+    // 並び順: 遺伝子に rk (GSEA の端から数えた順) があればその小さい順。無ければ (ORA)、全比較での
+    // DESeq2 の pvalue の最小値が小さい順 (Top 10 DEGs と同じ基準)。値の無い遺伝子は最後。
+    // 同じ値どうし (と値の無いものどうし) はジーンセットの並びのまま。
+    function minPval(gi) {
+      var pp = (data.pval && data.pval[gi]) || [], m = Infinity;
+      pp.forEach(function (v) { if (v !== null && v !== undefined && isFinite(v) && +v < m) m = +v; });
+      return m;
+    }
+    function sortGeneIdxs(idxs, rks) {
+      var useRk = idxs.some(function (gi) { return rks[gi] !== undefined; });
+      return idxs.map(function (gi, o) {
+        var k = useRk ? (rks[gi] !== undefined ? rks[gi] : Infinity) : minPval(gi);
+        return { gi: gi, o: o, k: k };
+      }).sort(function (a, b) {
+        if (a.k !== b.k) return a.k === Infinity ? 1 : b.k === Infinity ? -1 : a.k - b.k;
+        return a.o - b.o;
+      }).map(function (x) { return x.gi; });
+    }
     box._picAddGeneSet = function (title, genes) {
-      var idxs = [], miss = [], multi = [];
+      var idxs = [], miss = [], multi = [], rks = {};
       genes.forEach(function (ge) {
         var hits = [];
         (ge.ens || []).forEach(function (e) {
@@ -1028,9 +1058,12 @@
         if (!hits.length && ge.sym) hits = (lutAll[String(ge.sym).toLowerCase()] || []).slice();
         if (!hits.length) { if (ge.sym && miss.indexOf(ge.sym) === -1) miss.push(ge.sym); return; }
         if (hits.length > 1) multi.push({ tok: ge.sym || ge.ens[0], idxs: hits });
-        hits.forEach(function (h) { if (idxs.indexOf(h) === -1) idxs.push(h); });
+        hits.forEach(function (h) {
+          if (idxs.indexOf(h) === -1) idxs.push(h);
+          if (ge.rk !== undefined && !(rks[h] <= ge.rk)) rks[h] = ge.rk;
+        });
       });
-      var keep = idxs;   // 全部入れる (多いときは plotInto がページに分け、今のページだけ描く)
+      var keep = sortGeneIdxs(idxs, rks);   // 全部入れる (多いときは plotInto がページに分け、今のページだけ描く)
       // 同じ名前で同じ遺伝子の集合のグループがあれば、足さずにそれを返す。名前が同じでも遺伝子が違えば
       // (ORA の geneID と GSEA の core_enrichment、GSEA の別の比較など) 別のグループとして足す (名前の重複を許す)
       var key = keep.slice().sort(function (a, b) { return a - b; }).join(",");
