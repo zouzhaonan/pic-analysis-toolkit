@@ -108,10 +108,27 @@ pic_replicate_labels <- function(samples) {
 #
 # 全タブ共通のサンプル除外 (report.js の picExcl*) もこのパネルで操作する。どのタブの
 # パネルを触っても、除外の状態は 1 つにまとめられ、全タブのパネルと図に反映される。
-group_sample_tree_panel <- function(samples, groups, group_pal = NULL, group_map = NULL) {
+#
+# group_only = TRUE: group だけを選ぶ木 (サンプルの行・開閉の矢印を出さない)。DEG の M-A / Volcano と
+# Enrichment のように、結果が group 単位で個々のサンプルを外しても意味がないタブ用。除外の状態は
+# ほかのタブと同じ 1 つで、group は配下のサンプルが 1 つでも残っていれば「含む」(チェックあり) と表示し、
+# チェックを外すと配下を全部外す (report.js の exSyncTrees / pic-tree-gonly)。
+group_sample_tree_panel <- function(samples, groups, group_pal = NULL, group_map = NULL, group_only = FALSE) {
   if (length(samples) == 0 || length(samples) != length(groups)) return("")
   ug <- unique(groups)
   if (!is.null(group_pal)) ug <- pic_reorder_vec(ug, names(group_pal))
+  if (isTRUE(group_only)) {
+    blocks <- vapply(ug, function(g) {
+      n <- sum(groups == g)
+      sw <- if (!is.null(group_pal) && g %in% names(group_pal))
+        sprintf('<span class="pic-swatch" style="background:%s"></span>', unname(group_pal[[g]])) else ""
+      sprintf(paste0('<label class="pic-tree-g pic-tree-g1">',
+                     '<input type="checkbox" class="pic-gtoggle" data-group="%s" checked>',
+                     '%s<span class="pic-tree-name">%s</span><span class="pic-tree-n">%d</span></label>'),
+              html_escape(g), sw, html_escape(g), n)
+    }, character(1))
+    return(paste0('<h4>Groups</h4><div class="pic-tree pic-tree-gonly">', paste(blocks, collapse = ""), '</div>'))
+  }
   blocks <- vapply(ug, function(g) {
     idx <- which(groups == g)
     sw <- if (!is.null(group_pal) && g %in% names(group_pal))

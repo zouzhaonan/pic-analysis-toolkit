@@ -387,3 +387,6 @@ table.pic-cmatrix.pic-cmx-nocount{--cmx:20px;--cmx-pad:6px}
 .pic-expr-gblock,.pic-expr-gset{transition:box-shadow .3s}
 .pic-expr-gblock-new{box-shadow:0 0 0 3px rgba(33,102,172,.35);border-radius:6px}
 .pic-gs-hover .nsewdrag{cursor:pointer!important}
+/* group だけを選ぶ木 (DEG の M-A / Volcano・Enrichment): 矢印の分だけ左を詰める */
+.pic-tree-g1{display:flex;align-items:center;gap:5px;padding:2px 0;cursor:pointer}
+.pic-tree-g1>input{flex:none;cursor:pointer;margin:0}

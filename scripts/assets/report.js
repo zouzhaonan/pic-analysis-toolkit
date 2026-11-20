@@ -1437,23 +1437,28 @@
     // 木のチェックを状態に合わせる (group は配下から checked / indeterminate)
     function exSyncTrees() {
       document.querySelectorAll(".pic-tree .pic-stoggle").forEach(function (c) { c.checked = !EX.excl[c.dataset.sample]; });
+      // group だけの木 (DEG の M-A / Volcano・Enrichment) は、配下が 1 つでも残っていれば「含む」(半端の表示なし)
       document.querySelectorAll(".pic-tree .pic-gtoggle").forEach(function (g) {
         var m = EX.members[g.dataset.group] || [];
         var on = m.filter(function (s) { return !EX.excl[s]; }).length;
         g.checked = on > 0;
-        g.indeterminate = on > 0 && on < m.length;
+        g.indeterminate = !g.closest(".pic-tree-gonly") && on > 0 && on < m.length;
       });
       document.querySelectorAll(".pic-tree").forEach(function (t) {
         var foot = t.nextElementSibling && t.nextElementSibling.classList.contains("pic-excl-foot") ? t.nextElementSibling : null;
         var l = exList();
-        if (!l.length) { if (foot) foot.parentNode.removeChild(foot); return; }
+        var gonly = t.classList.contains("pic-tree-gonly");
+        // group だけの木では、丸ごと外れた group があるときだけ「k of n groups excluded」を出す
+        var outG = gonly ? exOutGroups() : [];
+        if (!l.length || (gonly && !outG.length)) { if (foot) foot.parentNode.removeChild(foot); return; }
         if (!foot) {
           foot = document.createElement("div"); foot.className = "pic-excl-foot";
           t.parentNode.insertBefore(foot, t.nextSibling);
         }
         foot.innerHTML = "";
         var txt = document.createElement("span");
-        txt.textContent = l.length + " of " + EX.samples.length + " samples excluded";
+        txt.textContent = gonly ? (outG.length + " of " + EX.groups.length + " groups excluded")
+          : (l.length + " of " + EX.samples.length + " samples excluded");
         foot.appendChild(txt);
         var rb = document.createElement("button"); rb.type = "button"; rb.className = "pic-excl-btn"; rb.textContent = "Reset";
         rb.title = "Include all samples again";

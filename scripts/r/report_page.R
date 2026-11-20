@@ -59,6 +59,9 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
   tree <- if (!is.null(msum) && all(c("sample", "group") %in% colnames(msum)))
     group_sample_tree_panel(as.character(msum$sample), as.character(msum$group), group_pal, group_map) else ""
   tree_or_null <- if (nzchar(tree)) tree else NULL
+  # DEG の M-A / Volcano と Enrichment は group だけを選ぶ木 (結果が group 単位で、個々のサンプルの除外は効かない)
+  tree_g <- if (nzchar(tree))
+    group_sample_tree_panel(as.character(msum$sample), as.character(msum$group), group_pal, group_map, group_only = TRUE) else ""
   sec_jobs <- list(
     # 1. Mapping QC
     qc = function(r) if (!is.null(msum)) section_mapping_qc(msum, sid("qc"), "1. Mapping QC", report_rel_path(msum_file, out_dir), group_map, group_pal) else "",
@@ -87,7 +90,7 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
     hm = function(r) build_heatmap_html(desc$deseq2_dir, project, group_map, group_pal, out_dir, sample_order, id_prefix, deg_counts,
                                         ctrl_html = tree_or_null),
     contrast = function(r) build_contrast_plots(r, stats, deg_counts, fdr, id_prefix, report_rel_path(desc$stats_csv, out_dir), group_order, group_pal,
-                                                ctrl_html = tree),
+                                                ctrl_html = tree_g),
     # 5. Gene expression (normalized counts, interactive)
     expr = function(r) build_expression_section(r, desc$deseq2_dir, project, group_map, group_pal, stats, sid("expr"), sid("expr"), "5. Gene Expression", out_dir, sample_order, group_order,
                                                 ctrl_html = tree_or_null)
@@ -185,7 +188,7 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
 
   # 6. Enrichment (section_enrichment は id="enrich" を埋め込むので prefix 付けは後処理)
   sec_enrich <- section_enrichment(desc$enrich_dir, project, tmp_dir, deg_counts, desc$deseq2_dir, group_pal, "6. Enrichment", out_dir, id_prefix, reg, group_order, pre = pre,
-                                   tree_html = tree)
+                                   tree_html = tree_g)
   if (is.null(sec_enrich)) sec_enrich <- ""
   sec_enrich <- sub('<section id="enrich">', sprintf('<section id="%s">', sid("enrich")), sec_enrich, fixed = TRUE)
 
