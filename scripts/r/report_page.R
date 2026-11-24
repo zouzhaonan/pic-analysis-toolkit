@@ -656,7 +656,7 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL, geno_ma
   cats <- unique(vapply(files, function(f) f$cat, character(1)))
   cats <- cats[order(vapply(cats, ct_frac, integer(1)),
                      vapply(cats, function(ct) { r <- match(ct_base(ct), order_cats); if (is.na(r)) length(order_cats) + 1L else r }, integer(1)),
-                     cats)]
+                     cats, method = "radix")]
 
   secs <- character(0); sec_cts <- character(0)
   for (ct in cats) {
@@ -666,7 +666,7 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL, geno_ma
     open_this <- !(ct_base(ct) %in% c("Enrichment — GSEA", "Enrichment — ORA"))
     if (identical(ct_base(ct), "Enrichment — GSEA")) {
       meth_order <- strsplit(pic_plot_spec()$defaults$enrich_methods_csv, ",", fixed = TRUE)[[1]]
-      order_meths <- function(ms) c(meth_order[meth_order %in% ms], sort(setdiff(ms, meth_order)))
+      order_meths <- function(ms) c(meth_order[meth_order %in% ms], sort(setdiff(ms, meth_order), method = "radix"))
       meth <- vapply(ids, meth_of, character(1))
       subs <- character(0)
       for (mth in order_meths(unique(meth))) {
@@ -683,7 +683,7 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL, geno_ma
     } else if (identical(ct_base(ct), "Enrichment — ORA")) {
       # ORA は method ごとに 1 本の結合 CSV。method 順に並べ、名前 + Download を列挙
       meth_order <- strsplit(pic_plot_spec()$defaults$enrich_methods_csv, ",", fixed = TRUE)[[1]]
-      order_meths <- function(ms) c(meth_order[meth_order %in% ms], sort(setdiff(ms, meth_order)))
+      order_meths <- function(ms) c(meth_order[meth_order %in% ms], sort(setdiff(ms, meth_order), method = "radix"))
       meth <- vapply(ids, meth_of, character(1))
       lis <- unlist(lapply(order_meths(unique(meth)), function(mth) {
         vapply(ids[meth == mth], function(i)
@@ -692,7 +692,7 @@ build_downloads_section <- function(tabs, run, genome, group_pal = NULL, geno_ma
       }))
       body <- sprintf('<ul class="pic-ov-list">%s</ul>', paste(lis, collapse = ""))
     } else {
-      ids <- ids[order(vapply(ids, function(i) files[[i]]$name, character(1)))]
+      ids <- ids[order(vapply(ids, function(i) files[[i]]$name, character(1)), method = "radix")]
       ids <- ids[!duplicated(vapply(ids, function(i) files[[i]]$name, character(1)))]  # 同名は 1 つに
       body <- sprintf('<ul class="pic-ov-list">%s</ul>', paste(vapply(ids, file_li, character(1)), collapse = ""))
     }

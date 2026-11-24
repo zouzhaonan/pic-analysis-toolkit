@@ -28,7 +28,7 @@ pic_aggregate_csvs <- function(base_dir, project = NULL) {
     hit <- csvs[basename(csvs) == sprintf("aggregate_profile_%s.csv", project)]
     if (length(hit) > 0) csvs <- hit
   }
-  sort(csvs)
+  sort(csvs, method = "radix")
 }
 
 # pic report が HTML に埋め込む表 (= Downloads に並べる表) の一覧。out_dir からの相対パスで返す。
