@@ -9,7 +9,7 @@
 # <out_dir>/deseq2/stats_<project>.csv ごとに、プロジェクト単位の記述子を返す (out_dir は走査しない)。
 pic_report_discover_projects <- function(out_dir) {
   deseq2_dir <- file.path(out_dir, "deseq2")
-  stats_files <- sort(list.files(deseq2_dir, pattern = "^stats_.*\\.csv$", full.names = TRUE))
+  stats_files <- sort(list.files(deseq2_dir, pattern = "^stats_.*\\.csv$", full.names = TRUE), method = "radix")
   lapply(stats_files, function(sf) {
     project <- sub("\\.csv$", "", sub("^stats_", "", basename(sf)))
     list(project = project, deseq2_dir = deseq2_dir,

@@ -7,11 +7,11 @@ pic_gsea_csvs <- function(enrich_dir, project) {
   gsea_root <- file.path(enrich_dir, "GSEA")
   if (is.null(enrich_dir) || is.na(enrich_dir) || !dir.exists(gsea_root)) return(list())
   out <- list()
-  for (mdir in list.dirs(gsea_root, recursive = FALSE, full.names = TRUE)) {
+  for (mdir in sort(list.dirs(gsea_root, recursive = FALSE, full.names = TRUE), method = "radix")) {
     m <- basename(mdir)
     csvs <- list.files(mdir, pattern = sprintf("^GSEA_%s_.+_%s\\.csv$", pic_re_escape(m), pic_re_escape(project)),
                        full.names = TRUE)
-    for (csv in sort(csvs)) out[[length(out) + 1L]] <- list(csv = csv, method = basename(mdir))
+    for (csv in sort(csvs, method = "radix")) out[[length(out) + 1L]] <- list(csv = csv, method = basename(mdir))
   }
   out
 }
@@ -52,7 +52,7 @@ pic_gsea_job <- function(csv, method, group_pal, proj_dir) {
 pic_ora_mdirs <- function(enrich_dir) {
   ora_root <- file.path(enrich_dir, "ORA")
   if (is.null(enrich_dir) || is.na(enrich_dir) || !dir.exists(ora_root)) return(character(0))
-  list.dirs(ora_root, recursive = FALSE, full.names = TRUE)
+  sort(list.dirs(ora_root, recursive = FALSE, full.names = TRUE), method = "radix")
 }
 
 # ORA の method 1 つ分: cluster の CSV を合わせて読み、図の spec と結合 CSV の中身を作る。図にしないものは NULL。
@@ -61,7 +61,7 @@ pic_ora_mdirs <- function(enrich_dir) {
 pic_ora_item <- function(mdir, project, cluster_n = NULL) {
   csvs <- list.files(mdir, pattern = sprintf("^%s_.+_%s\\.csv$", pic_re_escape(basename(mdir)), pic_re_escape(project)),
                      full.names = TRUE)
-  csvs <- csvs[!grepl("^ORA_", basename(csvs))]   # 結合 CSV は cluster から集計するため除外
+  csvs <- sort(csvs[!grepl("^ORA_", basename(csvs))], method = "radix")   # 結合 CSV は cluster から集計するため除外
   if (length(csvs) == 0) return(NULL)
   # 見出しだけ (term 0 件) の cluster の CSV は、readr が全列を文字として読むため、そのまま合わせると
   # 数値の列 (RichFactor など) と型がぶつかって method ごと落ちる (KEGG / HPO で起きた)。0 行の表は除いて合わせる。
@@ -95,7 +95,7 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
 
   method_order <- strsplit(pic_plot_spec()$defaults$enrich_methods_csv, ",", fixed = TRUE)[[1]]
   order_methods <- function(ms) {
-    c(method_order[method_order %in% ms], sort(setdiff(ms, method_order)))
+    c(method_order[method_order %in% ms], sort(setdiff(ms, method_order), method = "radix"))
   }
 
   # ---- GSEA: contrast × method の 2 軸をチェックボックスで選択 ----
@@ -124,9 +124,9 @@ enrichment_blocks <- function(enrich_dir, project, tmp_dir, deg_counts = NULL, d
         contrasts <- pic_order_contrasts(contrasts, group_order)
       } else if (!is.null(deg_counts)) {
         keyv <- vapply(contrasts, function(a) if (a %in% names(deg_counts)) deg_counts[[a]] else 0, numeric(1))
-        contrasts <- contrasts[order(keyv, decreasing = TRUE)]
+        contrasts <- contrasts[order(keyv, decreasing = TRUE, method = "radix")]
       } else {
-        contrasts <- sort(contrasts)
+        contrasts <- sort(contrasts, method = "radix")
       }
       methods <- order_methods(methods_seen)
       rows <- lapply(contrasts, function(cc) list(key = format_contrast_file_label(cc), label = cc))

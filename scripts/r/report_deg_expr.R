@@ -62,7 +62,7 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
         sum(stats$aspect == a & !is.na(stats$padj) & stats$padj < fdr)
       }
     }, numeric(1))
-    aspects <- aspects[order(deg_per, decreasing = TRUE)]
+    aspects <- aspects[order(deg_per, decreasing = TRUE, method = "radix")]
   }
   deg_per <- vapply(aspects, function(a) {
     if (!is.null(deg_counts) && a %in% names(deg_counts)) deg_counts[[a]] else {
@@ -203,7 +203,7 @@ build_aggregate_html <- function(reg, base_dir, id_prefix = "", proj_dir = NULL,
   # この project のものだけ使う (一致が無ければ従来どおり全部)。
   csvs <- pic_aggregate_csvs(base_dir, project)
   blocks <- character(0)
-  for (csv in sort(csvs)) {
+  for (csv in sort(csvs, method = "radix")) {
     proj <- sub("\\.csv$", "", sub("^aggregate_profile_", "", basename(csv)))
     {
       d <- suppressMessages(readr::read_csv(csv, show_col_types = FALSE, progress = FALSE))
@@ -268,9 +268,9 @@ register_expr_data <- function(reg, id, deseq2_dir, project, group_map, group_pa
   if (length(sample_cols) < 1 || nrow(d) < 1) return(FALSE)
   # サンプルを group 順 -> sample_sheet 順に並べる
   grp <- vapply(sample_cols, function(s) if (!is.null(group_map) && s %in% names(group_map)) group_map[[s]] else "all", character(1))
-  grank <- if (!is.null(group_order)) { r <- match(grp, group_order); r[is.na(r)] <- length(group_order) + 1L; r } else match(grp, sort(unique(grp)))
+  grank <- if (!is.null(group_order)) { r <- match(grp, group_order); r[is.na(r)] <- length(group_order) + 1L; r } else match(grp, sort(unique(grp), method = "radix"))
   srank <- if (!is.null(sample_order)) { r <- match(sample_cols, sample_order); r[is.na(r)] <- length(sample_order) + 1L; r } else seq_along(sample_cols)
-  ord <- order(grank, srank, sample_cols)
+  ord <- order(grank, srank, sample_cols, method = "radix")
   sample_cols <- sample_cols[ord]; grp <- unname(grp[ord])
   ug <- unique(grp)
   pal <- ensure_palette(group_pal, ug)

@@ -26,7 +26,7 @@ pic_cluster_order <- function(cl) {
   cl <- unique(as.character(cl))
   num <- suppressWarnings(as.numeric(sub("^(cluster_?|c)([0-9]+)$", "\\2", cl)))
   num[!grepl("^(cluster_?|c)[0-9]+$", cl)] <- NA_real_
-  cl[order(is.na(num), num, cl)]
+  cl[order(is.na(num), num, cl, method = "radix")]
 }
 
 format_contrast_file_label <- function(display_label) {

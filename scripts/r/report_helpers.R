@@ -70,7 +70,7 @@ pic_report_file_defined <- function(rel) {
 pic_list_summary <- function(base_dir, pattern) {
   hits <- list.files(file.path(base_dir, "summary"), pattern = pattern, full.names = TRUE)
   if (length(hits) == 0) hits <- list.files(base_dir, pattern = pattern, full.names = TRUE)
-  hits
+  sort(hits, method = "radix")
 }
 
 # 役割:

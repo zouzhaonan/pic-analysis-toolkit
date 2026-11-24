@@ -946,7 +946,7 @@ build_xenograft_report <- function(out_dir, asset_dir) {
   # Downloads の埋め込み・相対パス基準
   options(pic.report.reg = reg, pic.report.projdir = out_dir)
 
-  summary_files <- list.files(out_dir, pattern = "^xenograft_classify_summary__.*\\.tsv$", full.names = TRUE)
+  summary_files <- sort(list.files(out_dir, pattern = "^xenograft_classify_summary__.*\\.tsv$", full.names = TRUE), method = "radix")
   # 埋め込む表: 分類サマリ + 画分ごとの定義した表 (build_fraction_analysis で足す)
   options(pic.report.defined = report_rel_path(summary_files[[1]], out_dir))
   run <- sub("\\.tsv$", "", sub("^xenograft_classify_summary__", "", basename(summary_files[[1]])))

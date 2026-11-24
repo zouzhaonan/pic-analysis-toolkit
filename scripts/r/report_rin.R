@@ -67,7 +67,7 @@ pic_rin_pc_hs_dir <- function(rin_dir = pic_rin_dir()) {
     d <- file.path(base, PIC_RIN_PC_HS_NAME)
     if (dir.exists(d)) return(d)
     if (!dir.exists(base)) next
-    hits <- sort(list.files(base, pattern = "^HSRNA_posicont", full.names = TRUE))
+    hits <- sort(list.files(base, pattern = "^HSRNA_posicont", full.names = TRUE), method = "radix")
     hits <- hits[dir.exists(hits)]
     if (length(hits) > 0) return(hits[[1]])
   }
@@ -82,7 +82,7 @@ pic_rin_group_files <- function(files) {
   files <- files[grepl(re, basename(files)) & file.info(files)$size > 0]
   stems <- sub(re, "", files)
   out <- list()
-  for (st in sort(unique(stems))) {
+  for (st in sort(unique(stems), method = "radix")) {
     fs <- files[stems == st]
     ds <- list(stem = basename(st))
     for (k in names(kinds)) {
@@ -97,7 +97,7 @@ pic_rin_group_files <- function(files) {
 # ポジティブコントロールの泳動 (pc_dir 以下の CSV すべて)。
 pic_rin_find_pc <- function(pc_dir) {
   if (!dir.exists(pc_dir)) return(list())
-  pic_rin_group_files(list.files(pc_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE))
+  pic_rin_group_files(sort(list.files(pc_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE), method = "radix"))
 }
 
 # テープの種類 (assay 名)。compactPeakTable の FileName ("2026-09-02 - 15.27.32.RNA") の
@@ -116,12 +116,12 @@ pic_rin_assay <- function(ds) {
 # 複数当たれば全部使う (泳動ごとに 1 ブロック)。sampleTable が無い / 空の stem は捨てる。
 pic_rin_find_datasets <- function(rin_dir, project_id) {
   if (is.null(project_id) || !nzchar(project_id) || !dir.exists(rin_dir)) return(list())
-  hits <- list.files(rin_dir, full.names = TRUE)
+  hits <- sort(list.files(rin_dir, full.names = TRUE), method = "radix")
   b <- tolower(basename(hits)); id <- tolower(project_id)
   nxt <- substr(b, nchar(id) + 1L, nchar(id) + 1L)
   hits <- hits[startsWith(b, id) & !grepl("[a-z0-9]", nxt)]
   files <- unlist(lapply(hits, function(h)
-    if (dir.exists(h)) list.files(h, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE) else h))
+    if (dir.exists(h)) sort(list.files(h, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE), method = "radix") else h))
   pic_rin_group_files(files)
 }
 
