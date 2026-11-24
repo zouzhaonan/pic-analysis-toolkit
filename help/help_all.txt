@@ -35,6 +35,11 @@ Optional options:
   --demux-fastq-dir <dir>    Use already-demultiplexed/classified FASTQ (skips demux).
                              Each sample is read from <dir>/<sample>.fastq.gz
   --no-report                Skip the final HTML report step
+  --rin-run-dir <dir>        TapeStation run folder for the report's RNA integrity
+                             tab (repeatable). Passed to `pic report`; the tab
+                             appears only when given (pic does not search for it)
+  --rin-pc-dir <dir>         RNA ScreenTape positive-control run folder (for report)
+  --rin-pc-hs-dir <dir>      HS RNA ScreenTape positive-control run folder (for report)
   --no-aggregate             Skip the gene-body (TSS-TES) aggregation step.
                              cDNA / 3'-fragment references are skipped
                              automatically (gene bodies shorter than the flank),

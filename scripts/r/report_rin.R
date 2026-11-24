@@ -3,42 +3,28 @@
 #       report_build.R (ローダ) 経由で source する。単体では動作しない。
 #
 # データ: TapeStation の export (<stem>_sampleTable.csv / _compactPeakTable.csv /
-#         _Electropherogram.csv)。RIN データセットのフォルダ直下で、名前 (フォルダ名
-#         またはファイル名) がプロジェクト ID (= run 名) で始まるものを使う。
-#         見つからなければサブタブを出さない。
+#         _Electropherogram.csv)。pic report --rin-run-dir で渡された泳動フォルダ (複数可) の
+#         CSV だけを使う。フォルダを探したり、名前から推測したりはしない (どの泳動を使うかは
+#         呼ぶ側が決めてパスで渡す)。渡されなければサブタブを出さない。
 # サンプル名は sampleTable の Sample Description に従う (sample_sheet とは突き合わせない)。
 # ladder は electropherogram の横軸 (データ点 -> nt) の較正だけに使い、描画しない。
 # テープが普通の RNA ScreenTape (assay 名 "RNA") のときは、ポジティブコントロール
-# (pic_rin_pc_dir() の泳動) を毎回、本番サンプルの下の別パネルに出す (y 軸は別に autoscale)。
-# HS RNA ScreenTape (assay 名 "HSRNA") のときも同様に、pic_rin_pc_hs_dir() の泳動の
+# (--rin-pc-dir の泳動) を毎回、本番サンプルの下の別パネルに出す (y 軸は別に autoscale)。
+# HS RNA ScreenTape (assay 名 "HSRNA") のときも同様に、--rin-pc-hs-dir の泳動の
 # 最初のサンプル (ladder を除いた sampleTable の先頭) を PC として出す (2026-11-17)。
 # 1 run に複数 genome があるときは、レポートの genome のサンプルに当たる測定だけ出す
 # (pic_rin_filter_genome)。
 
-PIC_RIN_DEFAULT_DIR <- "~/OkiLab Dropbox/OkiLab_Data/TapeStation/RIN_raw_data"
-
-# RIN データセットのフォルダ。優先: pic report --rin-dir → 環境変数 PIC_RIN_DIR → 既定パス。
-pic_rin_dir <- function() {
-  d <- getOption("pic.report.rin_dir", default = NULL)
-  if (is.null(d)) d <- Sys.getenv("PIC_RIN_DIR", unset = "")
-  if (!nzchar(d)) d <- PIC_RIN_DEFAULT_DIR
-  d <- path.expand(d)
-  d
-}
+# pic report --rin-run-dir で渡された泳動フォルダ (無ければ character(0))。
+pic_rin_run_dirs <- function() getOption("pic.report.rin_run_dirs", default = character(0))
 
 PIC_RIN_PC_COLOUR <- "#555555"
 
-# ポジティブコントロール (RNA ScreenTape 用) のフォルダ。
-# 優先: pic report --rin-pc-dir → 環境変数 PIC_RIN_PC_DIR → <rin_dir>/RNA_positive_control
-#       (あれば) → <既定パス>/RNA_positive_control。
-pic_rin_pc_dir <- function(rin_dir = pic_rin_dir()) {
-  d <- getOption("pic.report.rin_pc_dir", default = NULL)
-  if (is.null(d)) d <- Sys.getenv("PIC_RIN_PC_DIR", unset = "")
-  if (nzchar(d)) return(path.expand(d))
-  d <- file.path(rin_dir, "RNA_positive_control")
-  if (dir.exists(d)) return(d)
-  file.path(path.expand(PIC_RIN_DEFAULT_DIR), "RNA_positive_control")
-}
+# ポジティブコントロール (RNA ScreenTape 用) の泳動フォルダ。pic report --rin-pc-dir (無ければ NULL)。
+pic_rin_pc_dir <- function() getOption("pic.report.rin_pc_dir", default = NULL)
+
+# HS RNA ScreenTape 用ポジティブコントロールの泳動フォルダ。pic report --rin-pc-hs-dir (無ければ NULL)。
+pic_rin_pc_hs_dir <- function() getOption("pic.report.rin_pc_hs_dir", default = NULL)
 
 # electropherogram の横軸 (size) の範囲。
 # 右端は固定せず、波形が基線近くまで下がるところにする: 各波形で、その波形の最大値の
@@ -52,27 +38,6 @@ pic_rin_pc_dir <- function(rin_dir = pic_rin_dir()) {
 # (TapeStation の画面と同じ。波形はその右まで描く)。
 PIC_RIN_X_CAP <- 5
 PIC_RIN_X_TAIL_FRAC <- 0.02
-
-# HS RNA ScreenTape 用ポジティブコントロールのフォルダ (名前に空白を含む)。
-PIC_RIN_PC_HS_NAME <- "HSRNA_posicont_2026-05-20 - 15-43-17-HSRNA"
-
-# 優先: pic report --rin-pc-hs-dir → 環境変数 PIC_RIN_PC_HS_DIR → <rin_dir>/<PIC_RIN_PC_HS_NAME>
-#       → <rin_dir>/HSRNA_posicont* (名前順で最初) → 既定パスで同じ順。どれも無ければ
-#       <既定パス>/<PIC_RIN_PC_HS_NAME> を返す (呼び出し側が [WARN] を出す)。
-pic_rin_pc_hs_dir <- function(rin_dir = pic_rin_dir()) {
-  d <- getOption("pic.report.rin_pc_hs_dir", default = NULL)
-  if (is.null(d)) d <- Sys.getenv("PIC_RIN_PC_HS_DIR", unset = "")
-  if (nzchar(d)) return(path.expand(d))
-  for (base in unique(c(rin_dir, path.expand(PIC_RIN_DEFAULT_DIR)))) {
-    d <- file.path(base, PIC_RIN_PC_HS_NAME)
-    if (dir.exists(d)) return(d)
-    if (!dir.exists(base)) next
-    hits <- sort(list.files(base, pattern = "^HSRNA_posicont", full.names = TRUE), method = "radix")
-    hits <- hits[dir.exists(hits)]
-    if (length(hits) > 0) return(hits[[1]])
-  }
-  file.path(path.expand(PIC_RIN_DEFAULT_DIR), PIC_RIN_PC_HS_NAME)
-}
 
 # CSV の一覧を TapeStation の 1 回の泳動 (stem) ごとに 3 種のファイルへまとめる。
 pic_rin_group_files <- function(files) {
@@ -96,7 +61,7 @@ pic_rin_group_files <- function(files) {
 
 # ポジティブコントロールの泳動 (pc_dir 以下の CSV すべて)。
 pic_rin_find_pc <- function(pc_dir) {
-  if (!dir.exists(pc_dir)) return(list())
+  if (is.null(pc_dir) || !dir.exists(pc_dir)) return(list())
   pic_rin_group_files(sort(list.files(pc_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE), method = "radix"))
 }
 
@@ -111,17 +76,13 @@ pic_rin_assay <- function(ds) {
   toupper(sub("^.*-", "", ds$stem))
 }
 
-# rin_dir 直下で名前が project_id で始まるもの (直後が英数字でないこと: pic19 は pic192 に
-# 当たらない) を集め、TapeStation の 1 回の泳動 (stem) ごとに 3 種のファイルをまとめる。
-# 複数当たれば全部使う (泳動ごとに 1 ブロック)。sampleTable が無い / 空の stem は捨てる。
-pic_rin_find_datasets <- function(rin_dir, project_id) {
-  if (is.null(project_id) || !nzchar(project_id) || !dir.exists(rin_dir)) return(list())
-  hits <- sort(list.files(rin_dir, full.names = TRUE), method = "radix")
-  b <- tolower(basename(hits)); id <- tolower(project_id)
-  nxt <- substr(b, nchar(id) + 1L, nchar(id) + 1L)
-  hits <- hits[startsWith(b, id) & !grepl("[a-z0-9]", nxt)]
-  files <- unlist(lapply(hits, function(h)
-    if (dir.exists(h)) sort(list.files(h, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE), method = "radix") else h))
+# 渡された泳動フォルダ (run_dirs) 以下の CSV を集め、TapeStation の 1 回の泳動 (stem) ごとに
+# 3 種のファイルをまとめる。複数あれば全部使う (泳動ごとに 1 ブロック)。sampleTable が無い / 空の stem は捨てる。
+pic_rin_find_datasets <- function(run_dirs) {
+  run_dirs <- run_dirs[dir.exists(run_dirs)]
+  if (length(run_dirs) == 0) return(list())
+  files <- unlist(lapply(run_dirs, function(h)
+    sort(list.files(h, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE), method = "radix")))
   pic_rin_group_files(files)
 }
 
@@ -410,9 +371,10 @@ pic_rin_panel <- function(reg, id, r, x_lim, colour = NULL, legend = TRUE) {
 
 # QC タブ「RNA integrity」の中身 (説明 + 本番サンプルのパネル + その下に PC のパネル)。
 # データが無ければ ""。project / base_dir を渡すと、複数 genome の run で genome ごとに絞る。
-build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_dir(),
+# run_dirs: --rin-run-dir の泳動フォルダ。空なら何も探さず "" を返す。
+build_rin_html <- function(reg, project_id, id_prefix = "", run_dirs = pic_rin_run_dirs(),
                            project = NULL, base_dir = NULL) {
-  dss <- pic_rin_find_datasets(rin_dir, project_id)
+  dss <- pic_rin_find_datasets(run_dirs)
   if (length(dss) == 0) return("")
   gnames <- pic_rin_genome_names(base_dir, project_id)
   runs <- list(); rna_tape <- FALSE; hs_tape <- FALSE
@@ -429,19 +391,23 @@ build_rin_html <- function(reg, project_id, id_prefix = "", rin_dir = pic_rin_di
   if (length(runs) == 0) return("")
   pc <- NULL
   if (rna_tape) {
-    pc_dir <- pic_rin_pc_dir(rin_dir)
-    pc <- pic_rin_load_pc(pc_dir)
-    if (is.null(pc) || length(pc$traces) == 0) {
-      message(sprintf("[WARN] RIN: RNA ScreenTape ですが、ポジティブコントロールが見つかりません: %s", pc_dir))
+    pc_dir <- pic_rin_pc_dir()
+    pc <- if (is.null(pc_dir)) NULL else pic_rin_load_pc(pc_dir)
+    if (is.null(pc_dir)) {
+      message("[WARN] RIN: RNA ScreenTape ですが、--rin-pc-dir (ポジティブコントロール) が渡されていません")
+    } else if (is.null(pc) || length(pc$traces) == 0) {
+      message(sprintf("[WARN] RIN: RNA ScreenTape ですが、ポジティブコントロールが読めません: %s", pc_dir))
       pc <- NULL
     }
   }
   pc_hs <- NULL
   if (hs_tape) {
-    pc_hs_dir <- pic_rin_pc_hs_dir(rin_dir)
-    pc_hs <- pic_rin_load_pc(pc_hs_dir, first_only = TRUE)
-    if (is.null(pc_hs) || length(pc_hs$traces) == 0) {
-      message(sprintf("[WARN] RIN: HS RNA ScreenTape ですが、ポジティブコントロールが見つかりません: %s", pc_hs_dir))
+    pc_hs_dir <- pic_rin_pc_hs_dir()
+    pc_hs <- if (is.null(pc_hs_dir)) NULL else pic_rin_load_pc(pc_hs_dir, first_only = TRUE)
+    if (is.null(pc_hs_dir)) {
+      message("[WARN] RIN: HS RNA ScreenTape ですが、--rin-pc-hs-dir (ポジティブコントロール) が渡されていません")
+    } else if (is.null(pc_hs) || length(pc_hs$traces) == 0) {
+      message(sprintf("[WARN] RIN: HS RNA ScreenTape ですが、ポジティブコントロールが読めません: %s", pc_hs_dir))
       pc_hs <- NULL
     }
   }

@@ -35,7 +35,7 @@ Download the latest `pic-channel.zip` from the [Download Page](https://github.co
 | `enrich/` | ORA/GSEA の結果 / ORA/GSEA results (`ORA/<method>/`, `GSEA/<method>/`) |
 | `report_<run>_<genome>.html` | 自己完結の HTML レポート / self-contained HTML report |
 
-レポートの RIN タブは、TapeStation のデータを `pic report --rin-dir` か環境変数 `PIC_RIN_DIR` で渡したときだけ出ます。/ The RIN tab appears only when TapeStation data is given via `pic report --rin-dir` or the `PIC_RIN_DIR` environment variable.
+レポートの RIN タブは、使う TapeStation の泳動フォルダを `pic report --rin-run-dir <dir>`（複数可）で渡したときだけ出ます。ポジティブコントロールは `--rin-pc-dir` / `--rin-pc-hs-dir` で渡します。pic はフォルダを探しません（`pic all` にも同じ引数を渡せます）。/ The RIN tab appears only when the TapeStation run folder(s) are given with `pic report --rin-run-dir <dir>` (repeatable); positive controls are given with `--rin-pc-dir` / `--rin-pc-hs-dir`. pic does not search for them (`pic all` accepts the same options).
 
 ## ChIP-Atlas (`pic chipatlas`)
 

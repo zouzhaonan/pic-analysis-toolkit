@@ -4,12 +4,11 @@
 #   解析出力ディレクトリを読み取り、自己完結型の HTML レポートを生成する。
 # 入力:
 #   --out-dir <dir>      : mapping / deseq2 / enrich の出力ベース (必須)
-#   --rin-dir <dir>      : TapeStation RIN データセットのフォルダ (任意。既定は PIC_RIN_DIR / 既定パス)
-#   --rin-pc-dir <dir>   : RNA ScreenTape 用ポジティブコントロールのフォルダ (任意。既定は PIC_RIN_PC_DIR /
-#                          <rin-dir>/RNA_positive_control / 既定パス/RNA_positive_control)
-#   --rin-pc-hs-dir <dir>: HS RNA ScreenTape 用ポジティブコントロールのフォルダ (任意。既定は PIC_RIN_PC_HS_DIR /
-#                          <rin-dir> か既定パスの "HSRNA_posicont_2026-05-20 - 15-43-17-HSRNA" (無ければ
-#                          HSRNA_posicont*))。最初のサンプル (ladder を除く) を PC に使う
+#   --rin-run-dir <dir>  : この run の TapeStation の泳動フォルダ (任意・繰り返し可)。渡したときだけ
+#                          RNA integrity を出す。フォルダを探したり名前から推測したりはしない
+#   --rin-pc-dir <dir>   : RNA ScreenTape 用ポジティブコントロールの泳動フォルダ (任意)
+#   --rin-pc-hs-dir <dir>: HS RNA ScreenTape 用ポジティブコントロールの泳動フォルダ (任意)。
+#                          最初のサンプル (ladder を除く) を PC に使う
 #   --threads <n>        : 並べる worker の数 (任意。既定 1)。節の組み立て・GSEA/ORA の読み・埋め込みファイルの
 #                          gzip を fork で並べる。出力は --threads によらず同じ
 #   --mem-gb <gb>        : 並べる worker のメモリの上限 (任意。既定は環境変数 PIC_MEM_GB、無ければ制限なし)
@@ -35,12 +34,16 @@ source(file.path(script_dir, "enrichment_plots.R"))
 source(file.path(script_dir, "report_build.R"))
 
 parse_report_args <- function(args) {
-  out <- list(out_dir = NULL, rin_dir = NULL, rin_pc_dir = NULL, rin_pc_hs_dir = NULL, threads = 1L, mem_gb = NULL)
+  out <- list(out_dir = NULL, rin_run_dirs = character(0), rin_pc_dir = NULL, rin_pc_hs_dir = NULL, threads = 1L, mem_gb = NULL)
   i <- 1
   while (i <= length(args)) {
     a <- args[[i]]
     if (a == "--out-dir") { out$out_dir <- args[[i + 1]]; i <- i + 2 }
-    else if (a == "--rin-dir") { out$rin_dir <- args[[i + 1]]; i <- i + 2 }
+    else if (a == "--rin-run-dir") { out$rin_run_dirs <- c(out$rin_run_dirs, args[[i + 1]]); i <- i + 2 }
+    else if (a == "--rin-dir") {
+      stop("--rin-dir is no longer supported: pass each TapeStation run folder with --rin-run-dir <dir> (repeatable) ",
+           "and the positive control with --rin-pc-dir / --rin-pc-hs-dir.", call. = FALSE)
+    }
     else if (a == "--rin-pc-dir") { out$rin_pc_dir <- args[[i + 1]]; i <- i + 2 }
     else if (a == "--rin-pc-hs-dir") { out$rin_pc_hs_dir <- args[[i + 1]]; i <- i + 2 }
     else if (a == "--threads") { out$threads <- suppressWarnings(as.integer(args[[i + 1]])); i <- i + 2 }
@@ -48,6 +51,11 @@ parse_report_args <- function(args) {
     else { stop(sprintf("Unknown option: %s", a), call. = FALSE) }
   }
   if (is.null(out$out_dir)) stop("Missing required option: --out-dir", call. = FALSE)
+  for (opt in c("--rin-run-dir", "--rin-pc-dir", "--rin-pc-hs-dir")) {
+    v <- switch(opt, "--rin-run-dir" = out$rin_run_dirs, "--rin-pc-dir" = out$rin_pc_dir, "--rin-pc-hs-dir" = out$rin_pc_hs_dir)
+    for (p in v) if (is.na(p) || !nzchar(p) || !dir.exists(path.expand(p)))
+      stop(sprintf("%s: folder not found: %s", opt, p), call. = FALSE)
+  }
   if (length(out$threads) != 1 || is.na(out$threads) || out$threads < 1L)
     stop("--threads must be an integer >= 1.", call. = FALSE)
   if (!is.null(out$mem_gb) && (length(out$mem_gb) != 1 || is.na(out$mem_gb) || out$mem_gb <= 0))
@@ -63,9 +71,12 @@ main <- function() {
   })
 
   out_dir <- normalizePath(args$out_dir, mustWork = TRUE)
-  if (!is.null(args$rin_dir)) options(pic.report.rin_dir = args$rin_dir)
-  if (!is.null(args$rin_pc_dir)) options(pic.report.rin_pc_dir = args$rin_pc_dir)
-  if (!is.null(args$rin_pc_hs_dir)) options(pic.report.rin_pc_hs_dir = args$rin_pc_hs_dir)
+  options(pic.report.rin_run_dirs = path.expand(args$rin_run_dirs))
+  if (!is.null(args$rin_pc_dir)) options(pic.report.rin_pc_dir = path.expand(args$rin_pc_dir))
+  if (!is.null(args$rin_pc_hs_dir)) options(pic.report.rin_pc_hs_dir = path.expand(args$rin_pc_hs_dir))
+  if (any(nzchar(Sys.getenv(c("PIC_RIN_DIR", "PIC_RIN_PC_DIR", "PIC_RIN_PC_HS_DIR")))))
+    message("[INFO] RIN: PIC_RIN_DIR / PIC_RIN_PC_DIR / PIC_RIN_PC_HS_DIR are no longer read; ",
+            "pass --rin-run-dir / --rin-pc-dir / --rin-pc-hs-dir instead.")
   options(pic.report.threads = args$threads, pic.report.mem_gb = args$mem_gb)
 
   # xenograft 統合レポート (分類サマリ + graft/host) を優先判定

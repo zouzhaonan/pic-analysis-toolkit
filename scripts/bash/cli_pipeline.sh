@@ -103,6 +103,7 @@ pipeline_downstream_genome() {
 # mapping の後 (aggregate / deseq2 / enrich / report) を流す。pic all と試験の両方から呼ぶ。
 #   pipeline_run_downstream <no_aggregate 0|1> <no_report 0|1> <genome...>
 # OUTPUT_DIR・RUN_NAME・DEFTABLE_DIR・COUNTS_DIR・THREADS・PIC_R_DIR を使う。
+# PIPELINE_REPORT_ARGS (配列。任意) は pic report にそのまま足す (--rin-run-dir など)。
 pipeline_run_downstream() {
   # --- Step 2-5: aggregate / deseq2 / enrich / report を依存関係の順に流す ---
   # 1 本で回る段が続かないよう、待たなくてよいものは同時に走らせる:
@@ -150,7 +151,8 @@ pipeline_run_downstream() {
     log_info "pic all: --no-report によりレポート生成をスキップします"
   else
     log_info "pic all: HTML レポートを生成します"
-    if ! Rscript "${PIC_R_DIR}/cmd_build_report.R" --out-dir "$OUTPUT_DIR" --threads "$THREADS"; then
+    if ! Rscript "${PIC_R_DIR}/cmd_build_report.R" --out-dir "$OUTPUT_DIR" --threads "$THREADS" \
+        ${PIPELINE_REPORT_ARGS[@]+"${PIPELINE_REPORT_ARGS[@]}"}; then
       handle_error "pic all: レポート生成に失敗しました (解析結果は ${OUTPUT_DIR} に保存済み)"
     fi
   fi
@@ -168,6 +170,8 @@ run_pipeline_subcommand() {
   # 既定は pic mapping と同じ (threads=PIC_DEFAULT_THREADS, jobs=1)。
   # 指定がなければ mapping に渡さず、mapping 側の既定に任せる。
   local threads="" jobs=""
+  # pic report に渡す RIN の引数 (pipeline_run_downstream が読む)
+  PIPELINE_REPORT_ARGS=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -195,6 +199,14 @@ run_pipeline_subcommand() {
     --no-report)
       no_report=1
       shift
+      ;;
+    --rin-run-dir | --rin-pc-dir | --rin-pc-hs-dir)
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then
+        handle_error "$1 にはフォルダを指定してください"
+        exit 1
+      fi
+      PIPELINE_REPORT_ARGS+=("$1" "$2")
+      shift 2
       ;;
     --no-aggregate)
       no_aggregate=1
@@ -226,11 +238,20 @@ run_pipeline_subcommand() {
       ;;
     *)
       handle_error "Unknown option: $1"
-      handle_error "pic all のオプション: --sample-sheet / --raw-fastq-dir / --demux-fastq-dir / --run-name / --out-dir / --threads / --jobs / --no-report / --no-aggregate / --hisat2-score-min / --hisat2-very-sensitive"
+      handle_error "pic all のオプション: --sample-sheet / --raw-fastq-dir / --demux-fastq-dir / --run-name / --out-dir / --threads / --jobs / --no-report / --no-aggregate / --rin-run-dir / --rin-pc-dir / --rin-pc-hs-dir / --hisat2-score-min / --hisat2-very-sensitive"
       handle_error "詳細な調整が必要な場合は deseq2 / enrich を個別に実行してください。"
       exit 1
       ;;
     esac
+  done
+
+  # RIN のフォルダは mapping の前に確かめる (最後の report で落ちないように)
+  local k
+  for ((k = 1; k < ${#PIPELINE_REPORT_ARGS[@]}; k += 2)); do
+    if [[ ! -d "${PIPELINE_REPORT_ARGS[k]}" ]]; then
+      handle_error "${PIPELINE_REPORT_ARGS[k - 1]}: フォルダがありません: ${PIPELINE_REPORT_ARGS[k]}"
+      exit 1
+    fi
   done
 
   # mapping 用の共通オプションをパースし、グローバル設定を確定する。

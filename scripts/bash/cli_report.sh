@@ -6,6 +6,8 @@
 #   --out-dir <dir>  : mapping / deseq2 / enrich の出力ベース (必須)
 #   --threads <n>    : 並べる worker の数 (任意。既定 1)
 #   --mem-gb <gb>    : worker のメモリの上限 (任意。既定は PIC_MEM_GB)
+#   --rin-run-dir <dir> (繰り返し可) / --rin-pc-dir <dir> / --rin-pc-hs-dir <dir>
+#                    : RNA integrity に使う TapeStation の泳動フォルダ (任意。渡したときだけ出す)
 # 出力:
 #   <out-dir>/report_<project>.html
 

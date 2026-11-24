@@ -6,31 +6,29 @@ pic report — 解析結果から自己完結型 HTML レポートを生成す�
   PCA / heatmap / MA / volcano はインタラクティブ (マウス hover でラベル表示)。
 
 使い方:
-  pic report --out-dir <dir> [--rin-dir <dir>] [--rin-pc-dir <dir>] [--rin-pc-hs-dir <dir>]
+  pic report --out-dir <dir> [--rin-run-dir <dir> ...] [--rin-pc-dir <dir>] [--rin-pc-hs-dir <dir>]
              [--threads <n>] [--mem-gb <gb>]
 
 オプション:
   --out-dir <dir>   mapping/deseq2/enrich を含む出力ベース (必須)。
                     配下の deseq2 stats_*.csv ごとに 1 レポートを生成する。
-  --rin-dir <dir>   TapeStation の RIN データセットのフォルダ (任意)。
-                    省略時は環境変数 PIC_RIN_DIR を使う。それも無ければ
-                    開発元の研究室の Dropbox の場所
-                    (~/OkiLab Dropbox/OkiLab_Data/TapeStation/RIN_raw_data) を見る。
-                    ほかの環境では --rin-dir か PIC_RIN_DIR で指定する。
-                    どれも見つからなければ RNA integrity は出さない (エラーにはしない)。
+  --rin-run-dir <dir>
+                    この run の TapeStation の泳動フォルダ (任意。複数の泳動は繰り返して
+                    渡す)。フォルダ以下の <名前>_sampleTable.csv などを読む。
+                    渡したときだけ QC タブに「RNA integrity」を出す。pic はフォルダを
+                    探したり名前から推測したりしない (どの泳動を使うかは呼ぶ側が決める)。
   --rin-pc-dir <dir>
-                    RNA ScreenTape 用ポジティブコントロールのフォルダ (任意)。
-                    テープが普通の RNA (assay 名 RNA) のときは毎回 PC を図に重ねる
-                    省略時は PIC_RIN_PC_DIR →
-                    <rin-dir>/RNA_positive_control → 既定パス/RNA_positive_control。
+                    RNA ScreenTape 用ポジティブコントロールの泳動フォルダ (任意)。
+                    テープが普通の RNA (assay 名 RNA) のときに PC を別パネルで出す。
+                    渡さなければ PC のパネルは出さない ([WARN] を出す)。
   --rin-pc-hs-dir <dir>
-                    HS RNA ScreenTape 用ポジティブコントロールのフォルダ (任意)。
-                    テープが HS RNA (assay 名 HSRNA) のときは毎回、このフォルダの
+                    HS RNA ScreenTape 用ポジティブコントロールの泳動フォルダ (任意)。
+                    テープが HS RNA (assay 名 HSRNA) のときに、このフォルダの
                     最初のサンプル (ladder を除いた sampleTable の先頭) を
-                    「Positive control」として出す。省略時は PIC_RIN_PC_HS_DIR →
-                    <rin-dir>/HSRNA_posicont_2026-05-20 - 15-43-17-HSRNA (無ければ
-                    <rin-dir>/HSRNA_posicont*) → 既定パスで同じ順。
+                    「Positive control」として出す。渡さなければ出さない ([WARN] を出す)。
                     空白を含むパスは引用符で囲む。
+                    渡したフォルダが無ければエラーにする。--rin-dir と環境変数
+                    PIC_RIN_DIR / PIC_RIN_PC_DIR / PIC_RIN_PC_HS_DIR は廃止 (読まない)。
   --threads <n>     並べる worker の数 (任意。既定 1)。節ごとの組み立て・GSEA/ORA の
                     CSV の読みと図づくり・埋め込みファイルの圧縮を fork で並べる。
                     出力の HTML は --threads によらず 1 バイトも同じ。
@@ -80,17 +78,16 @@ pic report — 解析結果から自己完結型 HTML レポートを生成す�
   すべての source データを html から取得できる (別途データファイル不要)。
 
 RNA integrity (任意):
-  RIN データセットのフォルダ直下に、名前 (フォルダ名かファイル名) が run 名で
-  始まるもの (例: pic192_kimura_... 。直後は英数字以外) があれば、QC タブの
-  先頭に「RNA integrity」を出す。無ければ出さない (エラーにもしない)。
+  --rin-run-dir で泳動フォルダを渡したときだけ、QC タブの先頭に「RNA integrity」を
+  出す。渡さなければ出さない (エラーにもしない)。
     - TapeStation の export: <名前>_sampleTable.csv (RINe) /
       _compactPeakTable.csv (Lower Marker / 18S / 28S の位置) /
-      _Electropherogram.csv (図の本体)。複数当たれば泳動ごとに並べる。
+      _Electropherogram.csv (図の本体)。複数の泳動は泳動ごとに並べる。
     - サンプル名は sampleTable の Sample Description に従う
       (sample_sheet とは突き合わせない)。
     - ladder は横軸 (nt) の較正だけに使い、描画しない。
     - 各波形の右に、その RINe を同じ色の数字で出す (RINe が空のサンプルは出さない)。
-  pic all から呼ばれるときは PIC_RIN_DIR (か上の既定パス) を使う。
+  pic all にも同じ --rin-run-dir / --rin-pc-dir / --rin-pc-hs-dir を渡せる (report に渡す)。
 
 備考:
   pic all の最終ステップでも自動実行される。
