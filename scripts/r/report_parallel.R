@@ -249,7 +249,7 @@ pic_report_prefetch_gz <- function(rels) {
   cache <- pic_report_gz_cache()
   todo <- character(0)
   for (rel in unique(rels)) {
-    if (is.null(rel) || !nzchar(rel) || file_excluded(rel)) next
+    if (!pic_report_file_defined(rel)) next
     id <- gsub("[^A-Za-z0-9]+", "_", rel)
     if (!is.null(reg$files) && !is.null(reg$files[[id]])) next
     abs <- file.path(proj, rel)

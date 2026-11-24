@@ -8,7 +8,9 @@ pic_gsea_csvs <- function(enrich_dir, project) {
   if (is.null(enrich_dir) || is.na(enrich_dir) || !dir.exists(gsea_root)) return(list())
   out <- list()
   for (mdir in list.dirs(gsea_root, recursive = FALSE, full.names = TRUE)) {
-    csvs <- list.files(mdir, pattern = paste0(project, "\\.csv$"), full.names = TRUE)
+    m <- basename(mdir)
+    csvs <- list.files(mdir, pattern = sprintf("^GSEA_%s_.+_%s\\.csv$", pic_re_escape(m), pic_re_escape(project)),
+                       full.names = TRUE)
     for (csv in sort(csvs)) out[[length(out) + 1L]] <- list(csv = csv, method = basename(mdir))
   }
   out
@@ -40,7 +42,7 @@ pic_gsea_job <- function(csv, method, group_pal, proj_dir) {
   if (!is.null(it) && !is.null(proj)) {
     rel <- report_rel_path(csv, proj_dir)
     abs <- file.path(proj, rel)
-    if (nzchar(rel) && !file_excluded(rel) && file.exists(abs) && !dir.exists(abs))
+    if (pic_report_file_defined(rel) && file.exists(abs) && !dir.exists(abs))
       gz <- list(key = abs, gz = pic_report_file_gz(abs))
   }
   list(item = it, gz = gz)
@@ -57,7 +59,8 @@ pic_ora_mdirs <- function(enrich_dir) {
 # cluster_n: cluster ごとの遺伝子数 (pic_cluster_gene_counts)。x 軸の見出し "c1 (n)" の n に使う
 #   (Cluster expression profiles とそろえる)。NULL なら GeneRatio の分母。
 pic_ora_item <- function(mdir, project, cluster_n = NULL) {
-  csvs <- list.files(mdir, pattern = paste0(project, "\\.csv$"), full.names = TRUE)
+  csvs <- list.files(mdir, pattern = sprintf("^%s_.+_%s\\.csv$", pic_re_escape(basename(mdir)), pic_re_escape(project)),
+                     full.names = TRUE)
   csvs <- csvs[!grepl("^ORA_", basename(csvs))]   # 結合 CSV は cluster から集計するため除外
   if (length(csvs) == 0) return(NULL)
   # 見出しだけ (term 0 件) の cluster の CSV は、readr が全列を文字として読むため、そのまま合わせると

@@ -6,52 +6,21 @@
 # プロジェクト探索
 # ---------------------------------------------------------------------------
 
-# <out_dir> 配下から deseq2 の stats_*.csv を探し、プロジェクト単位の記述子を返す。
+# <out_dir>/deseq2/stats_<project>.csv ごとに、プロジェクト単位の記述子を返す (out_dir は走査しない)。
 pic_report_discover_projects <- function(out_dir) {
-  stats_files <- list.files(
-    out_dir,
-    pattern = "^stats_.*\\.csv$",
-    recursive = TRUE,
-    full.names = TRUE
-  )
-  # deseq2 ディレクトリ配下のものだけ採用
-  stats_files <- stats_files[grepl("deseq2", stats_files, fixed = TRUE)]
-  if (length(stats_files) == 0) {
-    return(list())
-  }
-
-  projects <- list()
-  for (sf in stats_files) {
-    deseq2_dir <- dirname(sf)
-    project <- sub("^stats_", "", basename(sf))
-    project <- sub("\\.csv$", "", project)
-
-    enrich_dir <- pic_report_find_enrich_dir(out_dir, project)
-
-    projects[[length(projects) + 1]] <- list(
-      project = project,
-      deseq2_dir = deseq2_dir,
-      enrich_dir = enrich_dir,
-      stats_csv = sf
-    )
-  }
-  projects
+  deseq2_dir <- file.path(out_dir, "deseq2")
+  stats_files <- sort(list.files(deseq2_dir, pattern = "^stats_.*\\.csv$", full.names = TRUE))
+  lapply(stats_files, function(sf) {
+    project <- sub("\\.csv$", "", sub("^stats_", "", basename(sf)))
+    list(project = project, deseq2_dir = deseq2_dir,
+         enrich_dir = pic_report_find_enrich_dir(out_dir, project), stats_csv = sf)
+  })
 }
 
-# enrich ディレクトリ (GSEA/<method>/*.csv を含み project 名に一致するもの) を探す
+# enrich の置き場は <out_dir>/enrich (GSEA/ か ORA/ があるとき)。無ければ NA。
 pic_report_find_enrich_dir <- function(out_dir, project) {
-  all_csvs <- list.files(out_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE)
-  gsea_csvs <- all_csvs[
-    grepl("enrich", all_csvs, fixed = TRUE) &
-      grepl(file.path("GSEA", ""), all_csvs, fixed = TRUE) &
-      grepl(paste0(project, ".csv"), basename(all_csvs), fixed = TRUE)
-  ]
-  if (length(gsea_csvs) == 0) {
-    return(NA_character_)
-  }
-  # enrich/GSEA/<METHOD>/file -> enrich は 3 階層上 (xenograft の <frac>/enrich/... も同様)
-  enrich_root <- dirname(dirname(dirname(gsea_csvs[[1]])))
-  enrich_root
+  ed <- file.path(out_dir, "enrich")
+  if (dir.exists(file.path(ed, "GSEA")) || dir.exists(file.path(ed, "ORA"))) ed else NA_character_
 }
 
 # ---------------------------------------------------------------------------

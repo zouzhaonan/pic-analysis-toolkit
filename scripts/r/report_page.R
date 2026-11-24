@@ -234,9 +234,8 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   reg <- pic_report_registry()
   # src_note / register_file が参照する埋め込みレジストリと基準ディレクトリ
   options(pic.report.reg = reg, pic.report.projdir = out_dir)
-  # Downloads から他 project (他 genome) のファイルを外すための一覧
-  options(pic.report.project = project,
-          pic.report.all_projects = vapply(pic_report_discover_projects(out_dir), function(d) d$project, character(1)))
+  # 埋め込む表 (= Downloads) は決まった場所・名前のものだけ
+  options(pic.report.defined = pic_report_defined_files(desc, out_dir, out_dir))
 
   stats <- suppressMessages(readr::read_csv(desc$stats_csv, show_col_types = FALSE, progress = FALSE))
   stats <- as.data.frame(stats, check.names = FALSE)
@@ -624,29 +623,14 @@ sf_code,
           overview, pipe_intro, tools_block, paste(steps, collapse = arrow))
 }
 
-# 1 run に複数 genome (= 複数 project) があるとき、パスが他 project のものかを判定する。
-# パスに含まれる project 名のうち最長のものをそのファイルの持ち主とみなす
-# (run_hg38 と run_hg38_rm のように一方が他方を含む名前でも取り違えない)。
-# project 名を含まないファイル (mapping_sum など run 共通) は持ち主なし = 残す。
-pic_belongs_to_other_project <- function(paths, project, all_projects) {
-  if (is.null(project) || length(all_projects) < 2) return(rep(FALSE, length(paths)))
-  vapply(paths, function(p) {
-    hits <- all_projects[vapply(all_projects, function(q) grepl(q, p, fixed = TRUE), logical(1))]
-    length(hits) > 0 && hits[which.max(nchar(hits))] != project
-  }, logical(1), USE.NAMES = FALSE)
-}
-
-# Downloads セクション。プロジェクトの全 csv/tsv をカテゴリ別 (折りたたみ) に列挙。
-# 各ファイルは HTML 埋め込み・クリックで DL。
+# Downloads セクション。定義した表 (pic_report_defined_files) と ORA の結合 CSV を
+# カテゴリ別 (折りたたみ) に列挙。各ファイルは HTML 埋め込み・クリックで DL。
 build_downloads_section <- function(tabs, run, genome, group_pal = NULL, geno_map = NULL) {
   proj <- getOption("pic.report.projdir")
   if (!is.null(proj)) {
-    all <- list.files(proj, pattern = "\\.(csv|tsv)$", recursive = TRUE)
-    all <- all[!grepl("(^|/)enrich_old_backup/", all)]
-    all <- all[!pic_belongs_to_other_project(all, getOption("pic.report.project"),
-                                             getOption("pic.report.all_projects"))]
-    pic_report_prefetch_gz(all)   # gzip+base64 を並べて先に作る (登録の順は下の for のまま)
-    for (rel in all) register_file(rel)
+    def <- getOption("pic.report.defined")
+    pic_report_prefetch_gz(def)   # gzip+base64 を並べて先に作る (登録の順は下の for のまま)
+    for (rel in def) register_file(rel)
   }
   reg <- getOption("pic.report.reg")
   files <- if (!is.null(reg) && !is.null(reg$files)) reg$files else list()
@@ -902,6 +886,8 @@ build_fraction_analysis <- function(reg, frac_key, out_dir, frac_dir, tmp_dir) {
   stats <- as.data.frame(stats, check.names = FALSE)
   deg_counts <- resolve_deg_counts(desc, stats, fdr)
 
+  pic_report_define_files(pic_report_defined_files(desc, frac_dir, out_dir))
+
   sheet <- pic_read_sample_sheet(out_dir, frac_key)
   # 画分側も sample_sheet_<frac>.tsv が無ければ deftable の行順にフォールバックする。
   ord <- if (!is.null(sheet)) sheet else pic_order_from_deftable(frac_dir)
@@ -961,6 +947,8 @@ build_xenograft_report <- function(out_dir, asset_dir) {
   options(pic.report.reg = reg, pic.report.projdir = out_dir)
 
   summary_files <- list.files(out_dir, pattern = "^xenograft_classify_summary__.*\\.tsv$", full.names = TRUE)
+  # 埋め込む表: 分類サマリ + 画分ごとの定義した表 (build_fraction_analysis で足す)
+  options(pic.report.defined = report_rel_path(summary_files[[1]], out_dir))
   run <- sub("\\.tsv$", "", sub("^xenograft_classify_summary__", "", basename(summary_files[[1]])))
   summary_df <- suppressMessages(readr::read_tsv(summary_files[[1]], show_col_types = FALSE, progress = FALSE))
   summary_df <- as.data.frame(summary_df, check.names = FALSE)
@@ -1011,7 +999,7 @@ build_xenograft_report <- function(out_dir, asset_dir) {
       tabs <- c(tabs, list(list(target = k, label = label, prebuilt = TRUE, html = paste(sec_html, collapse = ""))))
   }
 
-  # Downloads (out_dir を再帰スキャンして graft/host 両方を収録)
+  # Downloads (定義した表: 分類サマリ + graft/host 両方)
   merged_tabs <- if (length(fr_list) > 0) fr_list[[1]]$data_tabs else list()
   dl <- build_downloads_section(merged_tabs, run, if (length(fr_list) > 0) fr_list[[1]]$genome else "", NULL, geno_map)
   tabs <- c(tabs, list(list(target = "downloads", label = "Downloads", prebuilt = TRUE,

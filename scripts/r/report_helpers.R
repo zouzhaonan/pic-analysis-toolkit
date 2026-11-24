@@ -18,6 +18,51 @@ pic_cluster_gene_counts <- function(deseq2_dir, project) {
 }
 pca_dir_of        <- function(deseq2_dir, project) file.path(deseq2_dir, sprintf("PCA_%s", project))
 
+# 正規表現の特殊文字をエスケープ (project 名をファイル名の型に埋め込むため)。
+pic_re_escape <- function(x) gsub("([.|()^${}+*?\\[\\]\\\\])", "\\\\\\1", x, perl = TRUE)
+
+# aggregate_profile の CSV (この project のもの。無ければ従来どおり summary/ の全部)。
+pic_aggregate_csvs <- function(base_dir, project = NULL) {
+  csvs <- pic_list_summary(base_dir, "^aggregate_profile_.*\\.csv$")
+  if (!is.null(project)) {
+    hit <- csvs[basename(csvs) == sprintf("aggregate_profile_%s.csv", project)]
+    if (length(hit) > 0) csvs <- hit
+  }
+  sort(csvs)
+}
+
+# pic report が HTML に埋め込む表 (= Downloads に並べる表) の一覧。out_dir からの相対パスで返す。
+# パイプラインの出力の決まった場所・決まった名前だけを組み立てる。--out-dir は走査しない。
+# ここに無いファイル (sample sheet・deftable・中間ファイル・他のツールの出力など) は
+# Downloads にも埋め込みにも入れない (register_file がこの一覧で弾く)。
+#   summary/  mapping_sum__<run>.tsv, aggregate_profile_<project>.csv
+#   deseq2/   stats_ / correlation_ / UMI_count_ / normalizedCountTable_<project>.csv,
+#             PCA_<p>/PCA_RegLog_ / PCA_Variance_<p>.csv,
+#             DEG_<p>/DEGCluster_<p>/DEGCluster_profile_<p>.csv
+#   enrich/   GSEA/<method>/GSEA_<method>_<contrast>_<project>.csv
+#   (ORA は method ごとの結合 CSV をレポートの中で作る: register_virtual_file)
+# xenograft では画分ごとに base_dir = <out_dir>/<frac> で呼び、分類サマリを別に足す。
+pic_report_defined_files <- function(desc, base_dir, out_dir) {
+  p <- desc$project; d <- desc$deseq2_dir
+  abs <- c(
+    utils::head(pic_list_summary(base_dir, "^mapping_sum__.*\\.tsv$"), 1),
+    pic_aggregate_csvs(base_dir, p),
+    file.path(pca_dir_of(d, p), sprintf(c("PCA_RegLog_%s.csv", "PCA_Variance_%s.csv"), p)),
+    file.path(d, sprintf(c("correlation_%s.csv", "UMI_count_%s.csv", "normalizedCountTable_%s.csv", "stats_%s.csv"), p)),
+    file.path(degcluster_dir_of(d, p), sprintf("DEGCluster_profile_%s.csv", p)),
+    vapply(pic_gsea_csvs(desc$enrich_dir, p), function(x) x$csv, character(1)))
+  abs <- abs[file.exists(abs) & !dir.exists(abs)]
+  unique(vapply(abs, report_rel_path, character(1), base = out_dir, USE.NAMES = FALSE))
+}
+
+# 一覧 (options pic.report.defined) に足す / 一覧にあるか。
+pic_report_define_files <- function(rels) {
+  options(pic.report.defined = unique(c(getOption("pic.report.defined"), rels)))
+}
+pic_report_file_defined <- function(rel) {
+  !is.null(rel) && nzchar(rel) && rel %in% getOption("pic.report.defined")
+}
+
 # 集計/中間テーブル (mapping_sum, deftable, aggregate_profile) は base_dir/summary/ に
 # 集約される。新レイアウト (summary/) を優先し、無ければ base_dir 直下 (旧レイアウト) も
 # 探すことで既存出力とも互換を保つ。full.names の結果を返す。
@@ -31,7 +76,7 @@ pic_list_summary <- function(base_dir, pattern) {
 #   解析出力ディレクトリ (mapping / deseq2 / enrich) を読み取り、
 #   自己完結型の HTML レポートを 1 ファイル生成する補助関数群。
 # 入力:
-#   <out-dir> 配下の mapping_sum__*.tsv, deseq2/**/stats_*.csv 等。
+#   <out-dir> 配下の mapping_sum__*.tsv, deseq2/stats_*.csv 等 (決まった場所だけ。pic_report_defined_files)。
 # 出力:
 #   <out-dir>/report_<project>.html (plotly + 画像を base64 で内包)。
 # 注記:
@@ -225,22 +270,6 @@ file_desc <- function(rel) {
   "Source data table."
 }
 
-# ダウンロード対象から除外するファイル (冗長・派生的なもの)。
-file_excluded <- function(rel) {
-  b <- basename(rel)
-  grepl("^sample_sheet", b) || grepl("^Num_UMIs_genes", b) ||
-    # 実行時パラメータの記録 (Materials & Methods の表示用メタデータ)
-    grepl("^analysis_params", b) ||
-    # 部分集合 PCA をブラウザで引き直すための rlog 行列 (レポートに直接埋め込む中間データ)
-    grepl("^PCA_rlogTop", b) ||
-    grepl("^DEG_count", b) || grepl("^DEG_normalizedCountTable", b) ||
-    grepl("^DEGCluster_summary", b) || grepl("^DEGCluster_gene_for_ora", b) ||
-    grepl("^DEGCluster_merge_map", b) ||
-    # ORA は method ごとの結合 CSV のみ提供し、cluster ごとの表は含めない
-    # (enrich/ORA/ や <frac>/enrich/... の画分プレフィックスにも対応)
-    (grepl("(^|/)ORA/", rel) && grepl("_cluster_[0-9]", b))
-}
-
 # 相対パスからカタログ用のカテゴリ (見出し + 対応タブ id) を返す。タブ順に並べる。
 # rel の分類。enrich は enrich/GSEA (パス)、aggregate は aggregate_profile_* (basename)、
 # xenograft は <frac>/... の画分プレフィックスで判定。
@@ -266,7 +295,7 @@ file_category <- function(rel) {
 register_file <- function(rel) {
   reg <- getOption("pic.report.reg"); proj <- getOption("pic.report.projdir")
   if (is.null(reg) || is.null(proj) || is.null(rel) || !nzchar(rel)) return(NULL)
-  if (file_excluded(rel)) return(NULL)
+  if (!pic_report_file_defined(rel)) return(NULL)   # 定義した表だけ (pic_report_defined_files)
   if (is.null(reg$files)) reg$files <- list()
   id <- gsub("[^A-Za-z0-9]+", "_", rel)
   if (!is.null(reg$files[[id]])) return(id)
