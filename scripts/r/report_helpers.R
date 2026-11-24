@@ -33,9 +33,9 @@ pic_aggregate_csvs <- function(base_dir, project = NULL) {
 
 # pic report が HTML に埋め込む表 (= Downloads に並べる表) の一覧。out_dir からの相対パスで返す。
 # パイプラインの出力の決まった場所・決まった名前だけを組み立てる。--out-dir は走査しない。
-# ここに無いファイル (sample sheet・deftable・中間ファイル・他のツールの出力など) は
+# ここに無いファイル (sample sheet・中間ファイル・他のツールの出力など) は
 # Downloads にも埋め込みにも入れない (register_file がこの一覧で弾く)。
-#   summary/  mapping_sum__<run>.tsv, aggregate_profile_<project>.csv
+#   summary/  mapping_sum__<run>.tsv, deftable_<project>.tsv, aggregate_profile_<project>.csv
 #   deseq2/   stats_ / correlation_ / UMI_count_ / normalizedCountTable_<project>.csv,
 #             PCA_<p>/PCA_RegLog_ / PCA_Variance_<p>.csv,
 #             DEG_<p>/DEGCluster_<p>/DEGCluster_profile_<p>.csv
@@ -46,6 +46,7 @@ pic_report_defined_files <- function(desc, base_dir, out_dir) {
   p <- desc$project; d <- desc$deseq2_dir
   abs <- c(
     utils::head(pic_list_summary(base_dir, "^mapping_sum__.*\\.tsv$"), 1),
+    pic_project_deftable(base_dir, p),
     pic_aggregate_csvs(base_dir, p),
     file.path(pca_dir_of(d, p), sprintf(c("PCA_RegLog_%s.csv", "PCA_Variance_%s.csv"), p)),
     file.path(d, sprintf(c("correlation_%s.csv", "UMI_count_%s.csv", "normalizedCountTable_%s.csv", "stats_%s.csv"), p)),
