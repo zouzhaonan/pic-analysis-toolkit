@@ -198,11 +198,14 @@ build_contrasts_from_deftable <- function(def) {
   }
 
   contrast_pairs <- combn(groups, 2, simplify = FALSE)
-  names(contrast_pairs) <- vapply(
+  # 名前は build_stats_tables() などが contrasts[[名前]] で引くので、重複してはいけない。
+  # 英数字以外を「_」にすると「label-_TUC+」と「label+_TUC-」が同じ「label_TUC_」になり、
+  # 全部の比較が最初の比較の名前で書かれていた。重複したら make.unique で番号を付ける。
+  names(contrast_pairs) <- make.unique(vapply(
     contrast_pairs,
     function(pair) paste0(gsub("[^[:alnum:]]+", "_", pair[[1]]), "_vs_", gsub("[^[:alnum:]]+", "_", pair[[2]])),
     character(1)
-  )
+  ), sep = "_")
 
   lapply(contrast_pairs, function(pair) c("group", pair[[1]], pair[[2]]))
 }

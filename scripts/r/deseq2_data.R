@@ -235,6 +235,13 @@ pic_write_analysis_param <- function(out_dir, key, value) {
   pic_commit_tmp(tmp, f)
 }
 
+# design に渡す群の水準名。R の名前として正しい (make.names() で変わらない) ならそのまま、
+# そうでなければ g1, g2, … (群名に + - などを含むとき)。
+pic_design_levels <- function(levels_orig) {
+  if (identical(make.names(levels_orig, unique = TRUE), levels_orig)) return(levels_orig)
+  sprintf("g%d", seq_along(levels_orig))
+}
+
 # カウント行列 (UMI_count の表) から DESeqDataSet を作り、サイズ因子を確定させる。
 # fit と rlog の両方がこれから始める (同じ入力なら同じ dds・同じサイズ因子になる)。
 build_deseq_dds <- function(mat, def) {
@@ -260,11 +267,23 @@ build_deseq_dds <- function(mat, def) {
   label_df <- as.data.frame(label)
   rownames(label_df) <- label_df$sample
 
+  # DESeq2 は design の因子の水準名に make.names() をかけて重複を調べる。「label-_TUC+」と
+  # 「label+_TUC+」はどちらも「label._TUC.」になるので DESeqDataSet が作れない。
+  # 水準名が R の名前として正しくないときだけ、DESeq2 には g1, g2, … の符号を渡す
+  # (群名は label にそのまま残し、results() の contrast は fit_deseq() で符号に直す)。
+  levels_orig <- levels(label_df$group)
+  levels_code <- pic_design_levels(levels_orig)
+  col_df <- label_df
+  if (!identical(levels_code, levels_orig)) {
+    col_df$group <- factor(levels_code[match(as.character(label_df$group), levels_orig)], levels = levels_code)
+  }
+
   dds <- DESeq2::DESeqDataSetFromMatrix(
     countData = count_matrix[, label_df$sample, drop = FALSE],
-    colData = label_df,
+    colData = col_df,
     design = ~group
   )
+  S4Vectors::metadata(dds)$pic_group_code <- stats::setNames(levels_code, levels_orig)
   # サイズ因子を先に確定させる (退化時はライブラリサイズにフォールバック)。
   # 設定済みなら DESeq() は再推定しないため sfType は渡さない。
   dds <- pic_set_size_factors(dds)
@@ -293,6 +312,7 @@ start_rlog_job <- function(dds, master_pid = Sys.getpid()) {
 fit_deseq <- function(dds, contrasts, threads = 1L, mem_gb = Inf, master_pid = Sys.getpid(),
                       busy_threads = 0L, busy_gb = 0) {
   force(master_pid)   # 既定値の評価を fork の前に (子の中で評価すると子の pid になる)
+  group_code <- S4Vectors::metadata(dds)$pic_group_code   # 群名 -> DESeq2 に渡した水準名 (build_deseq_dds)
   deseq_fit <- tryCatch(
     DESeq2::DESeq(dds),
     error = function(err) err
@@ -333,6 +353,7 @@ fit_deseq <- function(dds, contrasts, threads = 1L, mem_gb = Inf, master_pid = S
   }
 
   one_result <- function(cv) {
+    if (!is.null(group_code)) cv[2:3] <- unname(group_code[cv[2:3]])
     DESeq2::results(
       dds,
       contrast = cv,

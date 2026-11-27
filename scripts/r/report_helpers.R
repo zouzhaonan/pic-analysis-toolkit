@@ -292,13 +292,29 @@ file_category <- function(rel) {
   base
 }
 
+# 埋め込みファイルの id (HTML の data-file と JS の参照に使う)。英数字以外を「_」にまとめるだけだと、
+# 群名に + - を含むとき「label-_tuc+_vs_label+_tuc-」も「label+_tuc-_vs_label-_tuc+」も
+# 「label_tuc_vs_label_tuc_」になり、別の比較のファイルが同じ id になる (最初の 1 つしか
+# 埋め込まれず、どの比較の Download も同じ CSV になる)。英数字と _ . / 以外の文字は
+# 「x<16 進の文字コード>」に置き換えてから まとめる (+ -> x2B, - -> x2D)。
+# 英数字と _ . / だけのパスでは今までと同じ id になる。
+pic_report_file_id <- function(rel) {
+  if (grepl("[^A-Za-z0-9_./]", rel)) {
+    ch <- strsplit(enc2utf8(rel), "")[[1]]
+    bad <- !grepl("^[A-Za-z0-9_./]$", ch)
+    ch[bad] <- vapply(ch[bad], function(c) paste0("x", paste(sprintf("%X", utf8ToInt(c)), collapse = "")), character(1))
+    rel <- paste(ch, collapse = "")
+  }
+  gsub("[^A-Za-z0-9]+", "_", rel)
+}
+
 # ファイル (相対パス) を gzip+base64 で埋め込みレジストリに登録し、id を返す。
 register_file <- function(rel) {
   reg <- getOption("pic.report.reg"); proj <- getOption("pic.report.projdir")
   if (is.null(reg) || is.null(proj) || is.null(rel) || !nzchar(rel)) return(NULL)
   if (!pic_report_file_defined(rel)) return(NULL)   # 定義した表だけ (pic_report_defined_files)
   if (is.null(reg$files)) reg$files <- list()
-  id <- gsub("[^A-Za-z0-9]+", "_", rel)
+  id <- pic_report_file_id(rel)
   if (!is.null(reg$files[[id]])) return(id)
   abs <- file.path(proj, rel)
   if (!file.exists(abs) || dir.exists(abs)) return(NULL)
@@ -319,7 +335,7 @@ register_virtual_file <- function(rel, content, desc = NULL) {
   reg <- getOption("pic.report.reg")
   if (is.null(reg) || is.null(content)) return(NULL)
   if (is.null(reg$files)) reg$files <- list()
-  id <- gsub("[^A-Za-z0-9]+", "_", rel)
+  id <- pic_report_file_id(rel)
   if (!is.null(reg$files[[id]])) return(id)
   gz <- tryCatch(jsonlite::base64_enc(memCompress(pic_csv_bom(charToRaw(enc2utf8(content))), "gzip")), error = function(e) NULL)
   if (is.null(gz)) return(NULL)
