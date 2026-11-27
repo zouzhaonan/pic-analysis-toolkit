@@ -206,6 +206,8 @@ table.pic-cmatrix{border-collapse:collapse;font-size:13px}
    押せない (label が無い) のでカーソルは変えず、行・列の強調 (pic-cmx-rowhl/colhl) でも色を付けない。
    行名は元の欄 (th.pic-cmx-rh) に左揃えのまま置く (2026-11-27) */
 .pic-cmatrix td.pic-cmx-empty{background:transparent;border:none;cursor:default}
+/* 押せるマスの無い行・列 (群を外したときも含む。pic-cmx-void は report.js の cmxRelayout が付ける) は描かない */
+.pic-cmatrix .pic-cmx-void{display:none!important}
 /* 合わせているセルの行・列を強調 */
 .pic-cmatrix .pic-cmx-rowhl,.pic-cmatrix .pic-cmx-colhl{background:#e8f1fb}
 .pic-cmatrix th.pic-cmx-hl{background:#cfe2f6}

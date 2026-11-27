@@ -516,6 +516,30 @@
   }
 
   // contrast × method の 2 軸チェックボックス。両軸が選択されたセルのみ表示。
+  // Comparison 行列 (table.pic-cmatrix): 押せるマス (td.pic-cmx-cell で、ラジオが disabled でないもの) が
+  // 1 つも無い行と列に pic-cmx-void を付けて描かない (CSS で display:none)。ページを開いたときと、
+  // 群を外す・戻すたび (exApplyCmatrix) に計算し直す (2026-11-27)
+  function cmxRelayout(tbl) {
+    var head = tbl.querySelector("thead tr");
+    var rows = Array.prototype.slice.call(tbl.querySelectorAll("tbody tr"));
+    var nCol = head ? head.children.length : 0;
+    var colLive = [];
+    function live(c) {
+      if (!c || !c.classList.contains("pic-cmx-cell")) return false;
+      var inp = c.querySelector("input");
+      return !!inp && !inp.disabled;
+    }
+    rows.forEach(function (tr) {
+      var any = false;
+      for (var k = 1; k < tr.children.length; k++) if (live(tr.children[k])) { any = true; colLive[k] = true; }
+      tr.classList.toggle("pic-cmx-void", !any);
+    });
+    for (var k = 1; k < nCol; k++) {
+      var off = !colLive[k];
+      head.children[k].classList.toggle("pic-cmx-void", off);
+      rows.forEach(function (tr) { if (tr.children[k]) tr.children[k].classList.toggle("pic-cmx-void", off); });
+    }
+  }
   function initMatrix(root) {
     function refresh() {
       var rk = {}, ck = {};
@@ -1300,6 +1324,7 @@
       }
       tbl.addEventListener("change", syncSel);
       syncSel();
+      cmxRelayout(tbl);
     });
     // 遺伝子発現 UI を初期化
     document.querySelectorAll(".pic-expr").forEach(initExpr);
@@ -1854,6 +1879,7 @@
             if (!off && !firstOn) firstOn = inp;
           });
         });
+        cmxRelayout(tbl);
         exReselect(checkedOff, firstOn);
       });
       // 行列でない比較の並び (ラベルが "A / B" のラジオ)。ORA の method などは対象外
