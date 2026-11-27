@@ -37,6 +37,10 @@ Download the latest `pic-channel.zip` from the [Download Page](https://github.co
 
 レポートの RIN タブは、使う TapeStation の泳動フォルダを `pic report --rin-run-dir <dir>`（複数可）で渡したときだけ出ます。ポジティブコントロールは `--rin-pc-dir` / `--rin-pc-hs-dir` で渡します。pic はフォルダを探しません（`pic all` にも同じ引数を渡せます）。/ The RIN tab appears only when the TapeStation run folder(s) are given with `pic report --rin-run-dir <dir>` (repeatable); positive controls are given with `--rin-pc-dir` / `--rin-pc-hs-dir`. pic does not search for them (`pic all` accepts the same options).
 
+## 共変量 / Covariates (`--covariate`)
+
+DESeq2 の design は既定で `~group` です。ドナーなどの共変量を入れたいときだけ、`pic deseq2` / `pic all` に `--covariate <列>`（繰り返し・カンマ区切り可）を渡します。例: `--covariate donor` で design は `~donor + group` になります（比較は従来どおり group の全ペア）。列はサンプルシートの `group` の後ろに見出し付きで置きます。指定した design はレポートの Materials & Methods に出ます。群名には `+` `-` も使えます。詳細は `pic deseq2 --help` / `pic all --help`。 / The DESeq2 design is `~group` by default. Pass `--covariate <column>` (repeatable or comma-separated) to `pic deseq2` / `pic all` only when you want a covariate such as donor; e.g. `--covariate donor` gives `~donor + group` (contrasts remain all group pairs). Put the column after `group` in the sample sheet with a header. The design used is shown in the report's Materials & Methods. Group names may contain `+` and `-`. See `pic deseq2 --help` / `pic all --help`.
+
 ## ChIP-Atlas (`pic chipatlas`)
 
 `pic all` の後に、比較ごとの ChIP-Atlas の Enrichment Analysis (EA) と PAGE を DDBJ の WABI で回し、WABI が返す tsv と html をそのまま保存できます（`pic chipatlas --help`）。/ After `pic all`, `pic chipatlas` runs ChIP-Atlas Enrichment Analysis (EA) and PAGE per comparison on DDBJ WABI and saves the tsv and html returned by WABI as-is (see `pic chipatlas --help`).
