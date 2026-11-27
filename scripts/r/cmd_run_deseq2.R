@@ -53,6 +53,15 @@ write_fit_outputs <- function(args, deg_dir, mat, fit, contrasts, e2g, label) {
       signif(get("pic_wald_minmu", envir = globalenv()), 4)
     } else 0.5
   )
+  # design と共変量 (--covariate) の記録。指定しないときは何も書かない (前の実行の記録があれば消す)。
+  cov_keys <- paste0(c("deseq2_design__", "deseq2_covariates__", "deseq2_batch_removal__"), args$genome)
+  if (length(args$covariates)) {
+    pic_write_analysis_param(args$out_dir, cov_keys[[1]], pic_design_label(args$covariates))
+    pic_write_analysis_param(args$out_dir, cov_keys[[2]], paste(args$covariates, collapse = ","))
+    pic_write_analysis_param(args$out_dir, cov_keys[[3]], pic_remove_covariate_label(args$covariates))
+  } else {
+    pic_remove_analysis_params(args$out_dir, cov_keys)
+  }
   message("[INFO] Building stats and summary tables")
   stats_tables <- build_stats_tables(fit$stats, contrasts, e2g, args$fdr)
   normcount <- build_normalized_counts(fit$dds, e2g)
@@ -107,6 +116,28 @@ write_cluster_outputs <- function(args, deg_dir, degpattern) {
   character(0)
 }
 
+# 共変量 (--covariate) の効果を除いた PCA・相関 (*covadj_*) を書き、補正した rlog 行列を返す
+# (書いたファイルは attr "files")。共変量が無ければ、前の実行の *covadj_* を消して NULL を返す。
+run_covadj_outputs <- function(args, dds, label, rlog_mat, e2g) {
+  p <- args$project_name
+  covadj_files <- c(file.path(args$out_dir, sprintf("PCA_%s", p),
+                              sprintf(c("PCA_RegLog_covadj_%s.csv", "PCA_Variance_covadj_%s.csv", "PCA_rlogTop_covadj_%s.csv"), p)),
+                    file.path(args$out_dir, sprintf("correlation_covadj_%s.csv", p)))
+  if (length(args$covariates) == 0) {
+    old <- covadj_files[file.exists(covadj_files)]
+    if (length(old)) unlink(old)
+    return(NULL)
+  }
+  message(sprintf("[INFO] Removing the effect of %s for PCA/correlation (limma::removeBatchEffect)",
+                  paste(args$covariates, collapse = ", ")))
+  rlog_adj <- pic_remove_covariate_effects(rlog_mat, label, args$covariates)
+  files <- run_dimension_reduction_covadj(dds, label, args$out_dir, p, args$ntop, rlog_adj, e2g, args$covariates)
+  attr(rlog_adj, "files") <- files
+  rlog_adj
+}
+
+strip_files_attr <- function(x) { attr(x, "files") <- NULL; x }
+
 save_rds_atomic <- function(x, path) {
   tmp <- pic_tmp_path(path)
   saveRDS(x, tmp, compress = FALSE)
@@ -122,7 +153,7 @@ load_count_matrix <- function(args, def, e2g) {
 run_part_fit <- function(args, deg_dir, def, contrasts, e2g, key, parts_dir) {
   begin_part(parts_dir, "fit")
   mat <- load_count_matrix(args, def, e2g)
-  prep <- build_deseq_dds(mat, def)
+  prep <- build_deseq_dds(mat, def, args$covariates)
   message("[INFO] Running DESeq2")
   fit <- fit_deseq(prep$dds, contrasts, threads = args$threads, mem_gb = args$mem_gb)
   out <- write_fit_outputs(args, deg_dir, mat, fit, contrasts, e2g, prep$label)
@@ -135,7 +166,7 @@ run_part_fit <- function(args, deg_dir, def, contrasts, e2g, key, parts_dir) {
 run_part_rlog <- function(args, def, e2g, key, parts_dir) {
   begin_part(parts_dir, "rlog")
   mat <- load_count_matrix(args, def, e2g)
-  prep <- build_deseq_dds(mat, def)
+  prep <- build_deseq_dds(mat, def, args$covariates)
   message("[INFO] Computing rlog (blind)")
   rlog_mat <- compute_rlog_matrix(prep$dds)
   if (is.null(rlog_mat)) rlog_mat <- SummarizedExperiment::assay(DESeq2::rlog(prep$dds))  # 失敗ならエラーで止まる (all と同じ)
@@ -144,8 +175,12 @@ run_part_rlog <- function(args, def, e2g, key, parts_dir) {
     dds = prep$dds, label = prep$label, out_dir = args$out_dir,
     project_name = args$project_name, ntop = args$ntop, rlog_mat = rlog_mat, e2g = e2g
   )
+  rlog_adj <- run_covadj_outputs(args, prep$dds, prep$label, rlog_mat, e2g)
+  files <- c(files, attr(rlog_adj, "files"))
   f_rlog <- file.path(parts_dir, "rlog.rds")
-  save_rds_atomic(list(rlog_mat = rlog_mat, label = prep$label), f_rlog)
+  rl <- list(rlog_mat = rlog_mat, label = prep$label)
+  if (!is.null(rlog_adj)) rl$rlog_adj <- strip_files_attr(rlog_adj)
+  save_rds_atomic(rl, f_rlog)
   write_part_marker(parts_dir, "rlog", key, c(files, f_rlog))
   message(sprintf("[INFO] --part rlog completed (%s)", part_marker_path(parts_dir, "rlog")))
 }
@@ -158,7 +193,8 @@ run_part_cluster <- function(args, deg_dir, e2g, key, parts_dir) {
   rl <- readRDS(file.path(parts_dir, "rlog.rds"))
   message("[INFO] Running DEG clustering on rlog matrix")
   degpattern <- build_degpattern_outputs(
-    dds = NULL, label = rl$label, stats = stats_min, e2g = e2g, fdr = args$fdr, rlog_mat = rl$rlog_mat
+    dds = NULL, label = rl$label, stats = stats_min, e2g = e2g, fdr = args$fdr,
+    rlog_mat = if (!is.null(rl$rlog_adj)) rl$rlog_adj else rl$rlog_mat
   )
   files <- write_cluster_outputs(args, deg_dir, degpattern)
   write_part_marker(parts_dir, "cluster", key, c(files, part_marker_path(parts_dir, c("fit", "rlog"))), fdr = args$fdr)
@@ -169,7 +205,7 @@ run_part_all <- function(args, deg_dir, def, contrasts, e2g, parts_dir) {
   # 部分ごとの印は、all の結果と食い違わないように消す (all は中間ファイルを作らない)。
   unlink(parts_dir, recursive = TRUE)
   mat <- load_count_matrix(args, def, e2g)
-  prep <- build_deseq_dds(mat, def)
+  prep <- build_deseq_dds(mat, def, args$covariates)
   mem <- deseq2_mem_estimate_gb(nrow(prep$dds), ncol(prep$dds))
   master_pid <- Sys.getpid()
   # rlog の子は worker 1 本 (親のほかに 1 スレッドと rlog の分のメモリ) として数える。
@@ -184,9 +220,14 @@ run_part_all <- function(args, deg_dir, def, contrasts, e2g, parts_dir) {
   out <- write_fit_outputs(args, deg_dir, mat, fit, contrasts, e2g, prep$label)
   message("[INFO] Collecting rlog (blind)")
   rlog_mat <- collect_rlog_matrix(fit$dds, rlog_job)
+  # 共変量があれば、その効果を除いた rlog で DEG をクラスタに分ける (--part cluster と同じ)。
+  rlog_adj <- if (length(args$covariates) && !is.null(rlog_mat)) {
+    pic_remove_covariate_effects(rlog_mat, prep$label, args$covariates)
+  } else NULL
   message("[INFO] Running DEG clustering on rlog matrix")
   degpattern <- build_degpattern_outputs(
-    dds = fit$dds, label = prep$label, stats = out$stats, e2g = e2g, fdr = args$fdr, rlog_mat = rlog_mat
+    dds = fit$dds, label = prep$label, stats = out$stats, e2g = e2g, fdr = args$fdr,
+    rlog_mat = if (!is.null(rlog_adj)) rlog_adj else rlog_mat
   )
   write_cluster_outputs(args, deg_dir, degpattern)
   message("[INFO] Running PCA/correlation")
@@ -194,6 +235,8 @@ run_part_all <- function(args, deg_dir, def, contrasts, e2g, parts_dir) {
     dds = fit$dds, label = prep$label, out_dir = args$out_dir,
     project_name = args$project_name, ntop = args$ntop, rlog_mat = rlog_mat, e2g = e2g
   )
+  if (is.null(rlog_mat)) rlog_mat <- SummarizedExperiment::assay(DESeq2::rlog(fit$dds))  # run_dimension_reduction と同じ
+  run_covadj_outputs(args, fit$dds, prep$label, rlog_mat, e2g)
 }
 
 main <- function() {
@@ -211,6 +254,11 @@ main <- function() {
 
   message("[INFO] Reading deftable and preparing contrasts")
   def <- read_deftable(args$deftable)
+  if (length(args$covariates)) {
+    validate_covariates(def, args$covariates)   # 列が無い・値が空なら、重い処理の前に止める
+    message(sprintf("[INFO] Covariates: %s (design %s)", paste(args$covariates, collapse = ", "),
+                    pic_design_label(args$covariates)))
+  }
   contrasts <- build_contrasts_from_deftable(def)
   key <- deseq2_input_key(args, def)
   message(sprintf("[INFO] Loading biomart cache for genome: %s", args$genome))

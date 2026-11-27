@@ -49,6 +49,8 @@ pipeline_downstream_genome() {
   # 平坦化後の DEG サブフォルダは suffix 付き (DEG_<proj>/DEGCluster_<proj>/)。
   local deg_clusters="${deseq2_out}/DEG_${project}/DEGCluster_${project}/DEGCluster_gene_for_ora_${project}.csv"
   local de_args=(--deftable "$deftable" --count-dir "$COUNTS_DIR" --genome "$g" --out-dir "$deseq2_out" --threads "$THREADS")
+  # --covariate (pic all に指定したときだけ。PIPELINE_DESEQ2_ARGS) は fit / rlog / cluster のすべてに渡す
+  de_args+=(${PIPELINE_DESEQ2_ARGS[@]+"${PIPELINE_DESEQ2_ARGS[@]}"})
   local fit_pid rlog_pid gsea_pid rc=0
 
   log_info "pic all: deseq2 (fit と rlog を同時に) を始めます (genome=${g})"
@@ -104,6 +106,7 @@ pipeline_downstream_genome() {
 #   pipeline_run_downstream <no_aggregate 0|1> <no_report 0|1> <genome...>
 # OUTPUT_DIR・RUN_NAME・DEFTABLE_DIR・COUNTS_DIR・THREADS・PIC_R_DIR を使う。
 # PIPELINE_REPORT_ARGS (配列。任意) は pic report にそのまま足す (--rin-run-dir など)。
+# PIPELINE_DESEQ2_ARGS (配列。任意) は pic deseq2 の各部分にそのまま足す (--covariate)。
 pipeline_run_downstream() {
   # --- Step 2-5: aggregate / deseq2 / enrich / report を依存関係の順に流す ---
   # 1 本で回る段が続かないよう、待たなくてよいものは同時に走らせる:
@@ -158,6 +161,33 @@ pipeline_run_downstream() {
   fi
 }
 
+# pic all --covariate の列名 (カンマ区切りも可) が、サンプルシートの見出し行の group より後ろにあるか。
+# 無ければ、何時間もかかる mapping の前に止める。
+pipeline_check_covariate_columns() {
+  local sheet="$1"
+  shift
+  [[ -f "$sheet" ]] || return 0   # シートが無いことは mapping の検査が知らせる
+  local header extra name spec missing=()
+  header="$(tr -d '\015' <"$sheet" | head -n 1)"
+  if ! awk -F'\t' '{ exit !(tolower($1) == "fastq_prefix" && tolower($5) == "group") }' <<<"$header"; then
+    handle_error "--covariate を使うには、サンプルシートの 1 行目に見出し (fastq_prefix genome barcode sample group <列名>…) が必要です: ${sheet}"
+    exit 1
+  fi
+  extra="$(awk -F'\t' '{ for (i = 6; i <= NF; i++) { gsub(/^[ \t]+|[ \t]+$/, "", $i); if ($i != "") print $i } }' <<<"$header")"
+  for spec in "$@"; do
+    while IFS= read -r name; do
+      name="${name#"${name%%[![:space:]]*}"}"
+      name="${name%"${name##*[![:space:]]}"}"
+      [[ -z "$name" ]] && continue
+      grep -Fxq -- "$name" <<<"$extra" || missing+=("$name")
+    done < <(tr ',' '\n' <<<"$spec")
+  done
+  if [[ "${#missing[@]}" -gt 0 ]]; then
+    handle_error "--covariate: サンプルシートの見出しに列がありません: ${missing[*]} (group より後ろの列: $(paste -sd, - <<<"$extra"))"
+    exit 1
+  fi
+}
+
 run_pipeline_subcommand() {
   if [[ $# -eq 0 ]]; then
     show_help_for_subcommand all
@@ -172,6 +202,9 @@ run_pipeline_subcommand() {
   local threads="" jobs=""
   # pic report に渡す RIN の引数 (pipeline_run_downstream が読む)
   PIPELINE_REPORT_ARGS=()
+  # pic deseq2 に渡す --covariate (pipeline_run_downstream が読む)
+  PIPELINE_DESEQ2_ARGS=()
+  local covariates=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -208,6 +241,15 @@ run_pipeline_subcommand() {
       PIPELINE_REPORT_ARGS+=("$1" "$2")
       shift 2
       ;;
+    --covariate)
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then
+        handle_error "--covariate にはサンプルシートの列名を指定してください (例: --covariate donor)"
+        exit 1
+      fi
+      PIPELINE_DESEQ2_ARGS+=(--covariate "$2")
+      covariates+=("$2")
+      shift 2
+      ;;
     --no-aggregate)
       no_aggregate=1
       shift
@@ -238,7 +280,7 @@ run_pipeline_subcommand() {
       ;;
     *)
       handle_error "Unknown option: $1"
-      handle_error "pic all のオプション: --sample-sheet / --raw-fastq-dir / --demux-fastq-dir / --run-name / --out-dir / --threads / --jobs / --no-report / --no-aggregate / --rin-run-dir / --rin-pc-dir / --rin-pc-hs-dir / --hisat2-score-min / --hisat2-very-sensitive"
+      handle_error "pic all のオプション: --sample-sheet / --raw-fastq-dir / --demux-fastq-dir / --run-name / --out-dir / --threads / --jobs / --covariate / --no-report / --no-aggregate / --rin-run-dir / --rin-pc-dir / --rin-pc-hs-dir / --hisat2-score-min / --hisat2-very-sensitive"
       handle_error "詳細な調整が必要な場合は deseq2 / enrich を個別に実行してください。"
       exit 1
       ;;
@@ -253,6 +295,11 @@ run_pipeline_subcommand() {
       exit 1
     fi
   done
+
+  # --covariate の列がサンプルシートの見出しにあるかを mapping の前に確かめる (値の中身は deseq2 が確かめる)
+  if [[ "${#covariates[@]}" -gt 0 ]]; then
+    pipeline_check_covariate_columns "$sample_sheet" "${covariates[@]}"
+  fi
 
   # mapping 用の共通オプションをパースし、グローバル設定を確定する。
   # subcommand を "mapping" にすることで --run-name / --demux-fastq-dir が許可される。

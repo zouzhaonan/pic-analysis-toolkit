@@ -34,6 +34,12 @@ Optional options:
                              faster above 8 threads; raise --jobs instead.
   --demux-fastq-dir <dir>    Use already-demultiplexed/classified FASTQ (skips demux).
                              Each sample is read from <dir>/<sample>.fastq.gz
+  --covariate <column>       Add a sample-sheet column (e.g. donor) to the DESeq2
+                             design as a covariate: ~ <column> + group (repeatable
+                             or comma-separated). The column needs a header after
+                             "group" in the sample sheet (example below); it is
+                             checked before mapping starts. Default: none
+                             (~group). See `pic deseq2 --help`.
   --no-report                Skip the final HTML report step
   --rin-run-dir <dir>        TapeStation run folder for the report's RNA integrity
                              tab (repeatable). Passed to `pic report`; the tab
@@ -66,6 +72,13 @@ Output layout:
                              <run>_<genome>, not in subdirectories)
   <out-dir>/enrich/          ORA/GSEA results (same naming)
   <out-dir>/report_<run>_<genome>.html  interactive HTML report per genome
+
+Sample sheet with a covariate column (for --covariate donor):
+  fastq_prefix  genome  barcode  sample      group     donor
+  lib1          hg38    AGGATC   Normal_1    Normal    1
+  lib1          hg38    TCGAAG   Abnormal_1  Abnormal  1
+  lib1          hg38    TCCTTC   Normal_2    Normal    2
+  ...
 
 Examples:
   pic all \

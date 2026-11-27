@@ -33,7 +33,8 @@ parse_deseq2_args <- function(args) {
     fdr = cfg$fdr,
     threads = 1L,
     part = "all",
-    mem_gb = NA_character_
+    mem_gb = NA_character_,
+    covariate = character(0)
   )
 
   i <- 1
@@ -100,7 +101,12 @@ parse_deseq2_args <- function(args) {
       stop(sprintf("Unknown option: --%s", gsub("_", "-", key)), call. = FALSE)
     }
 
-    defaults[[key]] <- value
+    # --covariate は繰り返してよい (カンマ区切りでもよい)。ほかは後の指定で上書き。
+    if (identical(key, "covariate")) {
+      defaults$covariate <- c(defaults$covariate, value)
+    } else {
+      defaults[[key]] <- value
+    }
     i <- i + 1
   }
 
@@ -118,6 +124,11 @@ parse_deseq2_args <- function(args) {
     stop("--threads must be an integer >= 1.", call. = FALSE)
   }
   defaults$ntop <- as.integer(cfg$ntop)
+
+  # design に足す共変量 (deftable の列名)。既定は無し (design は ~group)。
+  covs <- trimws(unlist(strsplit(as.character(defaults$covariate), ",", fixed = TRUE)))
+  defaults$covariates <- unique(covs[nzchar(covs)])
+  defaults$covariate <- NULL
 
   defaults$part <- as.character(defaults$part)
   if (!defaults$part %in% c("all", "fit", "rlog", "cluster")) {
@@ -330,7 +341,9 @@ deseq2_input_key <- function(args, def) {
   cf <- file.path(args$count_dir, paste0(unique(def$count_prefix), ".txt.gz"))
   fi <- file.info(cf)
   paste(c(unname(tools::md5sum(args$deftable)), args$genome, args$count_dir,
-          paste(basename(cf), fi$size, format(as.numeric(fi$mtime), nsmall = 3), sep = ":")),
+          paste(basename(cf), fi$size, format(as.numeric(fi$mtime), nsmall = 3), sep = ":"),
+          # 共変量は指定したときだけ鍵に入れる (指定しないときの鍵は前と同じ)
+          if (length(args$covariates)) paste0("covariates=", paste(args$covariates, collapse = ","))),
         collapse = "|")
 }
 
@@ -359,7 +372,7 @@ require_part <- function(parts_dir, part, key, args, fdr = NULL) {
   path <- part_marker_path(parts_dir, part)
   fail <- function(why) {
     message(sprintf("[ERROR] pic deseq2 --part %s には、先に --part %s が済んでいる必要があります: %s", args$part, part, why))
-    message(sprintf("[ERROR] 同じ --deftable / --count-dir / --genome / --out-dir%s で pic deseq2 --part %s を実行してください。",
+    message(sprintf("[ERROR] 同じ --deftable / --count-dir / --genome / --out-dir / --covariate%s で pic deseq2 --part %s を実行してください。",
                     if (is.null(fdr)) "" else " / --fdr", part))
     quit(save = "no", status = 3)
   }
@@ -367,7 +380,7 @@ require_part <- function(parts_dir, part, key, args, fdr = NULL) {
   x <- readLines(path, warn = FALSE)
   kv <- strsplit(x, "\t", fixed = TRUE)
   get1 <- function(k) { v <- vapply(kv[vapply(kv, `[`, "", 1) == k], `[`, "", 2); if (length(v)) v[[1]] else NA_character_ }
-  if (!identical(get1("key"), key)) fail("入力 (deftable / count ファイル / genome) が、その部分を回したときと違います")
+  if (!identical(get1("key"), key)) fail("入力 (deftable / count ファイル / genome / --covariate) が、その部分を回したときと違います")
   if (!is.null(fdr) && !isTRUE(all.equal(as.numeric(get1("fdr")), as.numeric(fdr)))) {
     fail(sprintf("--fdr が違います (%s では %s、今は %s)", part, get1("fdr"), format(fdr)))
   }
@@ -375,4 +388,128 @@ require_part <- function(parts_dir, part, key, args, fdr = NULL) {
   missing <- files[!file.exists(files)]
   if (length(missing)) fail(sprintf("出力が欠けています (%s)", paste(missing, collapse = ", ")))
   invisible(TRUE)
+}
+
+# ---------------------------------------------------------------------------
+# 共変量 (--covariate)。design を ~ <共変量…> + group にする。比較は今まで通り group の全ペア。
+#   - 値は deftable の列 (サンプルシートの group の後ろの見出し付きの列を mapping が写したもの)。
+#   - どの共変量も因子 (カテゴリ) として扱う。数字だけの列 (例: 1〜5 の提供者番号) も因子にする。
+#   - 指定しないときは何も変わらない (design ~group、出力は前とバイト単位で同じ)。
+# ---------------------------------------------------------------------------
+PIC_RESERVED_DEFTABLE_COLUMNS <- c("count_prefix", "barcode", "sample", "group")
+
+# 共変量の列を確かめ、サンプルごとの値の表 (sample + 共変量の列。文字列) を返す。
+# 問題があれば分かりやすいメッセージで止める。
+validate_covariates <- function(def, covariates) {
+  if (length(covariates) == 0) return(NULL)
+  bad <- intersect(covariates, PIC_RESERVED_DEFTABLE_COLUMNS)
+  if (length(bad)) {
+    stop(sprintf("--covariate %s: '%s' cannot be a covariate (it is a fixed deftable column).",
+                 paste(bad, collapse = ","), paste(bad, collapse = "', '")), call. = FALSE)
+  }
+  extra <- setdiff(colnames(def), PIC_RESERVED_DEFTABLE_COLUMNS)
+  missing <- setdiff(covariates, colnames(def))
+  if (length(missing)) {
+    stop(paste0(
+      sprintf("--covariate: column(s) not found in the deftable: %s. ", paste(missing, collapse = ", ")),
+      if (length(extra)) sprintf("Extra columns in the deftable: %s. ", paste(extra, collapse = ", "))
+      else "The deftable has no extra columns. ",
+      "Add the column (with a header) after 'group' in the sample sheet and re-run pic mapping --collect, ",
+      "or add the column to summary/deftable_<project>.tsv."), call. = FALSE)
+  }
+  out <- data.frame(sample = as.character(def$sample), stringsAsFactors = FALSE)
+  for (cv in covariates) {
+    v <- as.character(def[[cv]])
+    v <- trimws(v)
+    empty <- is.na(v) | !nzchar(v)
+    if (any(empty)) {
+      stop(sprintf("--covariate %s: empty value for sample(s): %s", cv,
+                   paste(unique(out$sample[empty]), collapse = ", ")), call. = FALSE)
+    }
+    # 同じサンプルの複数行 (複数 barcode の合算) で値が食い違っていないか
+    per <- tapply(v, out$sample, function(x) length(unique(x)))
+    if (any(per > 1)) {
+      stop(sprintf("--covariate %s: sample(s) have different values in different rows: %s", cv,
+                   paste(names(per)[per > 1], collapse = ", ")), call. = FALSE)
+    }
+    out[[cv]] <- v
+  }
+  out[!duplicated(out$sample), , drop = FALSE]
+}
+
+# design に渡す水準名。R の名前として正しい (make.names() で変わらない) ならそのまま、
+# そうでなければ <prefix>1, <prefix>2, … (+ - などを含むとき。DESeq2 は make.names で重複を調べる)。
+pic_design_levels <- function(levels_orig, prefix = "g") {
+  if (identical(make.names(levels_orig, unique = TRUE), levels_orig)) return(levels_orig)
+  sprintf("%s%d", prefix, seq_along(levels_orig))
+}
+
+# design の式に使う共変量の列名。R の名前として正しく、ほかと重ならなければそのまま、
+# そうでなければ cov1, cov2, … (式・colData 用。表示には元の名前を使う)。
+pic_covariate_design_names <- function(covariates) {
+  ok <- make.names(covariates) == covariates & !covariates %in% c("group", "sample", "sizeFactor")
+  ifelse(ok, covariates, sprintf("cov%d", seq_along(covariates)))
+}
+
+# 表示用の design の式 (元の列名。R の名前として正しくない列名は `` で囲む)。
+pic_design_label <- function(covariates) {
+  if (length(covariates) == 0) return("~group")
+  nm <- ifelse(make.names(covariates) == covariates, covariates, paste0("`", covariates, "`"))
+  paste0("~", paste(c(nm, "group"), collapse = " + "))
+}
+
+# design が full rank か、残差の自由度があるかを確かめる。だめなら原因の共変量を挙げて止める。
+check_covariate_design <- function(col_df, cov_names, cov_labels) {
+  mm_of <- function(terms) stats::model.matrix(stats::as.formula(paste("~", paste(terms, collapse = " + "))), col_df)
+  full_rank <- function(mm) qr(mm)$rank == ncol(mm)
+  mm <- mm_of(c(cov_names, "group"))
+  if (!full_rank(mm)) {
+    confounded <- cov_labels[vapply(cov_names, function(cn) !full_rank(mm_of(c(cn, "group"))), logical(1))]
+    stop(paste0(
+      sprintf("The design %s is not full rank: ", pic_design_label(cov_labels)),
+      if (length(confounded))
+        sprintf("covariate(s) %s are confounded with group (each value occurs in only one group, or the values separate the groups). ",
+                paste(confounded, collapse = ", "))
+      else "the covariates are confounded with each other or with group. ",
+      "Group differences cannot be separated from the covariate; drop --covariate or fix the values."), call. = FALSE)
+  }
+  if (nrow(mm) - ncol(mm) < 1) {
+    stop(sprintf(paste0("The design %s leaves no residual degrees of freedom (%d samples, %d coefficients); ",
+                        "dispersion cannot be estimated. Drop --covariate."),
+                 pic_design_label(cov_labels), nrow(mm), ncol(mm)), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+# 共変量の効果を発現行列 (log の尺度。rlog など) から除く。group の差は design で残す。
+#   limma::removeBatchEffect(x, batch = cov1, batch2 = cov2, covariates = <3 つ目以降>, design = model.matrix(~group))
+# 3 つ目以降の共変量は、limma が batch に使うのと同じ和が 0 の対比 (contr.sum) の行列にして covariates に渡す。
+pic_remove_covariate_effects <- function(x, label, covariates) {
+  if (!requireNamespace("limma", quietly = TRUE)) {
+    stop("R package 'limma' is required for --covariate (covariate-removed PCA / correlation).", call. = FALSE)
+  }
+  lab <- as.data.frame(label, stringsAsFactors = FALSE)
+  lab <- lab[match(colnames(x), as.character(lab$sample)), , drop = FALSE]
+  grp <- factor(as.character(lab$group), levels = unique(as.character(lab$group)))
+  design <- stats::model.matrix(~grp)
+  fac <- lapply(covariates, function(cv) factor(as.character(lab[[cv]]), levels = unique(as.character(lab[[cv]]))))
+  more <- NULL
+  if (length(fac) > 2) {
+    more <- do.call(cbind, lapply(fac[-(1:2)], function(f) {
+      stats::contrasts(f) <- stats::contr.sum(levels(f))
+      stats::model.matrix(~f)[, -1, drop = FALSE]
+    }))
+  }
+  limma::removeBatchEffect(x, batch = fac[[1]], batch2 = if (length(fac) >= 2) fac[[2]] else NULL,
+                           covariates = more, design = design)
+}
+
+# Materials & Methods に書く、補正の式。
+pic_remove_covariate_label <- function(covariates) {
+  nm <- ifelse(make.names(covariates) == covariates, covariates, paste0("`", covariates, "`"))
+  args <- c(sprintf("batch = %s", nm[1]),
+            if (length(nm) >= 2) sprintf("batch2 = %s", nm[2]),
+            if (length(nm) >= 3) sprintf("covariates = <%s>", paste(nm[-(1:2)], collapse = ", ")),
+            "design = model.matrix(~group)")
+  sprintf("limma::removeBatchEffect(x, %s)", paste(args, collapse = ", "))
 }

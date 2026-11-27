@@ -10,6 +10,8 @@
   var picOnTabShown = null;
   // サンプル除外の状態 (全タブ共通・1 つだけ)。excl: sample -> 1。残りは木 (.pic-tree) から作る。
   var EX = { excl: {}, samples: [], groupOf: {}, groups: [], members: {}, ready: false };
+  // PCA の版: "" = 補正なし、"__adj" = 共変量 (pic deseq2 --covariate) の効果を除いた版 (あるときだけ)
+  var PIC_COV_SUFFIXES = ["", "__adj"];
   function exList() { return EX.samples.filter(function (s) { return EX.excl[s]; }); }
   function exAny() { return EX.ready && exList().length > 0; }
   // report の状態 (タブ・除外・View・method・comparison・gene group・左の幅) は保存しない
@@ -23,6 +25,7 @@
       if (el.closest(".pic-subpanel:not(.active)")) return;
       if (el.closest("details:not([open])")) return;
       if (el.closest(".pic-select-item[hidden]")) return;
+      if (el.closest(".pic-covview[hidden]")) return;   // 共変量の切り替えで隠れている版
     }
     var spec = window.PIC_PLOTS && window.PIC_PLOTS[el.id];
     if (!spec) return;
@@ -1481,9 +1484,9 @@
     }
     // 選択中のサンプルだけで引き直した PCA 座標を CSV で保存する
     // (R が出す PCA_RegLog_*.csv と同じ sample, PC1..PCn, group の並び)。
-    function picPCADownloadSelected(tab) {
+    function picPCADownloadSelected(tab, sfx) {
       if (!tab) return;
-      var pd = (typeof PIC_PCA !== "undefined" && PIC_PCA) ? PIC_PCA[tab.id] : null;
+      var pd = (typeof PIC_PCA !== "undefined" && PIC_PCA) ? PIC_PCA[tab.id + (sfx || "")] : null;
       if (!pd || !pd.mat) return;
       var keep = picPCAKeepIdx(tab, pd);
       if (keep.length < 3) { alert("Select at least 3 samples to export a PCA."); return; }
@@ -1504,14 +1507,20 @@
                "PCA_RegLog_" + (pd.project || "selected") + "_" + keep.length + "samples.csv");
     }
     // PCA タブなら再計算して true を返す。PCA データが無ければ false (従来処理へ)。
+    // 共変量の効果を除いた版 (id の後ろに "__adj") があれば、それも同じ選択で引き直す。
     function picRecomputePCA(tab) {
-      var pd = (typeof PIC_PCA !== "undefined" && PIC_PCA) ? PIC_PCA[tab.id] : null;
+      var done = false;
+      PIC_COV_SUFFIXES.forEach(function (sfx) { if (picRecomputePCAOne(tab, sfx)) done = true; });
+      return done;
+    }
+    function picRecomputePCAOne(tab, sfx) {
+      var pd = (typeof PIC_PCA !== "undefined" && PIC_PCA) ? PIC_PCA[tab.id + sfx] : null;
       if (!pd || !pd.mat || !pd.mat.length) return false;
       var pairs = [[0, 1], [1, 2]];
       var divs = pairs.map(function (pr) {
-        return document.getElementById(tab.id + "_PC" + (pr[0] + 1) + "_PC" + (pr[1] + 1));
+        return document.getElementById(tab.id + "_PC" + (pr[0] + 1) + "_PC" + (pr[1] + 1) + sfx);
       });
-      var scree = document.getElementById(tab.id + "_scree");
+      var scree = document.getElementById(tab.id + "_scree" + sfx);
       divs.concat([scree]).forEach(picStashPCA0);
 
       var keepIdx = picPCAKeepIdx(tab, pd);
@@ -2033,9 +2042,25 @@
     });
     // PCA の「選択中サンプルだけ」の CSV は埋め込みではなくその場で生成する
     document.querySelectorAll(".pic-pca-dlsel").forEach(function (el) {
-      var run = function (e) { e.preventDefault(); picPCADownloadSelected(el.closest("section.pic-tab")); };
+      // 共変量の効果を除いた版のリンク (data-covview="adj") は、その版の行列から作る
+      var run = function (e) { e.preventDefault(); picPCADownloadSelected(el.closest("section.pic-tab"), el.dataset.covview === "adj" ? "__adj" : ""); };
       el.addEventListener("click", run);
       el.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") run(e); });
+    });
+    // 共変量 (pic deseq2 --covariate) の「Uncorrected / <共変量> effect removed」の切り替え。
+    // Correlation と PCA の両方のタブで連動する。隠れていた版の図はここで描く。
+    document.querySelectorAll(".pic-covsel-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var view = btn.dataset.covsel;
+        document.querySelectorAll(".pic-covsel-btn").forEach(function (b) { b.classList.toggle("on", b.dataset.covsel === view); });
+        document.querySelectorAll(".pic-covview").forEach(function (v) { v.hidden = v.dataset.covview !== view; });
+        document.querySelectorAll("[data-covview]:not(.pic-covview)").forEach(function (el) {
+          el.style.display = el.dataset.covview === view ? "" : "none";
+        });
+        document.querySelectorAll(".pic-covview:not([hidden]) .pic-plot").forEach(function (p) {
+          if (p.dataset.rendered) { try { Plotly.Plots.resize(p); } catch (e) {} } else renderPlot(p);
+        });
+      });
     });
     // サンプル除外は最初はなし (全サンプル表示)。除外したら全タブに当てる。
     // 以後に描く図には picAfterRender で当てる (PCA はタブごとにまとめて引き直す)。

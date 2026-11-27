@@ -71,6 +71,14 @@ pic report — 解析結果から自己完結型 HTML レポートを生成す�
     posi          mm10    AGGATC   A_posi_1  A_posi  pic159
     WG5_23_nega   mm10    TCCTTC   A_posi_4  A_posi  pic155
   注: バッチ表示はあくまで可視化。DESeq2 の design には影響しない。
+  (pic deseq2 --covariate の列を同じ形で見たいときは、sample_sheet.tsv に同じ値の
+   batch 列を足す。)
+
+共変量 (pic deseq2 --covariate) で解析したとき:
+  - Correlation / PCA タブに「Uncorrected / <共変量> removed」の切り替えを出す。
+    removed は deseq2 が書いた *covadj_* (limma::removeBatchEffect で共変量の効果を
+    除いた値) を描く。最初は Uncorrected。2 つのタブの切り替えは連動する。
+  - Overview (Materials & Methods) に design (例 ~donor + group) と補正の式を書く。
 
 自己完結:
   プロジェクト内の全 csv/tsv を gzip+base64 で HTML に埋め込む。ダウンロード時に

@@ -235,16 +235,26 @@ pic_write_analysis_param <- function(out_dir, key, value) {
   pic_commit_tmp(tmp, f)
 }
 
-# design に渡す群の水準名。R の名前として正しい (make.names() で変わらない) ならそのまま、
-# そうでなければ g1, g2, … (群名に + - などを含むとき)。
-pic_design_levels <- function(levels_orig) {
-  if (identical(make.names(levels_orig, unique = TRUE), levels_orig)) return(levels_orig)
-  sprintf("g%d", seq_along(levels_orig))
+# pic_design_levels (design に渡す水準名) は deseq2_common.R。
+
+# summary/analysis_params.tsv から key を消す。どれも無ければファイルに触らない
+# (共変量を指定しない実行で、前の実行の共変量の記録を残さないため。無ければ前と同じバイト列のまま)。
+pic_remove_analysis_params <- function(out_dir, keys) {
+  f <- file.path(dirname(normalizePath(out_dir, mustWork = FALSE)), "summary", "analysis_params.tsv")
+  if (!file.exists(f)) return(invisible(FALSE))
+  rows <- tryCatch(utils::read.delim(f, stringsAsFactors = FALSE), error = function(e) NULL)
+  if (is.null(rows) || !all(c("key", "value") %in% names(rows)) || !any(rows$key %in% keys)) return(invisible(FALSE))
+  rows <- rows[!rows$key %in% keys, , drop = FALSE]
+  tmp <- pic_tmp_path(f)
+  utils::write.table(rows, tmp, sep = "\t", quote = FALSE, row.names = FALSE)
+  pic_commit_tmp(tmp, f)
+  invisible(TRUE)
 }
 
 # カウント行列 (UMI_count の表) から DESeqDataSet を作り、サイズ因子を確定させる。
 # fit と rlog の両方がこれから始める (同じ入力なら同じ dds・同じサイズ因子になる)。
-build_deseq_dds <- function(mat, def) {
+# covariates (--covariate) を渡すと design を ~ <共変量…> + group にする (deseq2_common.R)。
+build_deseq_dds <- function(mat, def, covariates = character(0)) {
   mat_filtered <- mat |>
     dplyr::filter(.data$chr != "MT" | is.na(.data$chr)) |>
     dplyr::filter(dplyr::if_any(-(1:4), ~ .x > 0))
@@ -266,6 +276,10 @@ build_deseq_dds <- function(mat, def) {
   label$group <- factor(label$group, levels = unique(label$group))
   label_df <- as.data.frame(label)
   rownames(label_df) <- label_df$sample
+  if (length(covariates)) {
+    cov_tbl <- validate_covariates(def, covariates)
+    for (cv in covariates) label_df[[cv]] <- cov_tbl[[cv]][match(label_df$sample, cov_tbl$sample)]
+  }
 
   # DESeq2 は design の因子の水準名に make.names() をかけて重複を調べる。「label-_TUC+」と
   # 「label+_TUC+」はどちらも「label._TUC.」になるので DESeqDataSet が作れない。
@@ -278,10 +292,41 @@ build_deseq_dds <- function(mat, def) {
     col_df$group <- factor(levels_code[match(as.character(label_df$group), levels_orig)], levels = levels_code)
   }
 
+  design <- ~group
+  if (length(covariates)) {
+    # 共変量は因子。列名・水準名が R の名前として正しくなければ cov1… / c1… の符号を DESeq2 に渡す
+    # (群名と同じ理由。表示と label には元の名前を残す)。
+    cov_names <- pic_covariate_design_names(covariates)
+    if (anyDuplicated(cov_names)) {
+      stop(sprintf("--covariate %s: please rename the columns (internal names clash: %s).",
+                   paste(covariates, collapse = ","), paste(cov_names, collapse = ",")), call. = FALSE)
+    }
+    cov_fac <- list()
+    for (k in seq_along(covariates)) {
+      v <- as.character(label_df[[covariates[[k]]]])
+      lv <- unique(v)
+      if (length(lv) < 2) {
+        stop(sprintf("--covariate %s has only one value (%s) among the samples; it cannot be a covariate.",
+                     covariates[[k]], lv), call. = FALSE)
+      }
+      if (all(grepl("^[-+]?[0-9.]+([eE][-+]?[0-9]+)?$", lv))) {
+        message(sprintf("[INFO] --covariate %s: numeric values are treated as categories (factor), not as a continuous variable.",
+                        covariates[[k]]))
+      }
+      code <- pic_design_levels(lv, prefix = "c")
+      cov_fac[[cov_names[[k]]]] <- factor(code[match(v, lv)], levels = code)
+    }
+    col_df <- col_df[, c("sample", "group"), drop = FALSE]
+    for (cn in cov_names) col_df[[cn]] <- cov_fac[[cn]]
+    check_covariate_design(col_df, cov_names, covariates)
+    design <- stats::as.formula(paste("~", paste(c(cov_names, "group"), collapse = " + ")))
+    message(sprintf("[INFO] DESeq2 design: %s", pic_design_label(covariates)))
+  }
+
   dds <- DESeq2::DESeqDataSetFromMatrix(
     countData = count_matrix[, label_df$sample, drop = FALSE],
     colData = col_df,
-    design = ~group
+    design = design
   )
   S4Vectors::metadata(dds)$pic_group_code <- stats::setNames(levels_code, levels_orig)
   # サイズ因子を先に確定させる (退化時はライブラリサイズにフォールバック)。

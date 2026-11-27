@@ -192,8 +192,8 @@ section_mapping_qc <- function(msum, section_id = "qc", heading = "1. Mapping QC
 # DESeq2: PCA / heatmap (plotly)
 # ---------------------------------------------------------------------------
 
-pca_variance_pct <- function(deseq2_dir, project) {
-  f <- file.path(pca_dir_of(deseq2_dir, project), sprintf("PCA_Variance_%s.csv", project))
+pca_variance_pct <- function(deseq2_dir, project, tag = "") {
+  f <- file.path(pca_dir_of(deseq2_dir, project), sprintf("PCA_Variance_%s%s.csv", tag, project))
   if (!file.exists(f)) return(NULL)
   v <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
   v <- as.data.frame(v, check.names = FALSE)
@@ -351,9 +351,10 @@ contrast_text <- function(hex) {
 # サンプル間相関ヒートマップ (deseq2/correlation_<project>.csv を HTML テーブルで図示)。
 # 赤青の発散配色、セルに相関値 (小数 2 桁)、ラベルは group 配色 (列は上部・横書き)、
 # group 境界に区切り線 (ラベルも含め、テーブル内に収まりはみ出さない)。
+# tag = "covadj_" / id_suffix = "__adj" は共変量の効果を除いた版 (correlation_covadj_<project>.csv)。
 build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, group_pal = NULL,
-                                   sample_order = NULL, id_prefix = "", proj_dir = NULL) {
-  f <- file.path(deseq2_dir, sprintf("correlation_%s.csv", project))
+                                   sample_order = NULL, id_prefix = "", proj_dir = NULL, tag = "", id_suffix = "") {
+  f <- file.path(deseq2_dir, sprintf("correlation_%s%s.csv", tag, project))
   if (!file.exists(f)) return("")
   d <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
   d <- as.data.frame(d, check.names = FALSE)
@@ -398,7 +399,7 @@ build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, g
     sprintf('<tr data-grow="%s" data-sample="%s">%s%s</tr>', html_escape(grpof(samples[[i]])), html_escape(samples[[i]]), rh, paste(tds, collapse = ""))
   }, character(1))
 
-  cap_id <- paste0(id_prefix, "cor_cap")
+  cap_id <- paste0(id_prefix, "cor_cap", id_suffix)
   # ダウンロードは deseq2 が書いた CSV (全サンプル) をそのまま。サンプルを外しても中身は変えない (QC と同じ)。
   paste0(
     src_note(report_rel_path(f, proj_dir)),
@@ -409,20 +410,23 @@ build_correlation_html <- function(reg, deseq2_dir, project, group_map = NULL, g
             cap_id, header, paste(rows, collapse = "")))
 }
 
-build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefix = "", proj_dir = NULL) {
-  f <- file.path(pca_dir_of(deseq2_dir, project), sprintf("PCA_RegLog_%s.csv", project))
+# tag = "covadj_" / id_suffix = "__adj" は共変量の効果を除いた版 (PCA_*_covadj_<project>.csv)。
+# 図の id と PIC_PCA の鍵の後ろに id_suffix が付く (report.js が版ごとに引き直す)。
+build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefix = "", proj_dir = NULL,
+                            tag = "", id_suffix = "") {
+  f <- file.path(pca_dir_of(deseq2_dir, project), sprintf("PCA_RegLog_%s%s.csv", tag, project))
   if (!file.exists(f)) return(NULL)
   d <- suppressMessages(readr::read_csv(f, show_col_types = FALSE, progress = FALSE))
   d <- as.data.frame(d, check.names = FALSE)
   if (!("group" %in% colnames(d))) d$group <- "all"
-  varpct <- pca_variance_pct(deseq2_dir, project)
+  varpct <- pca_variance_pct(deseq2_dir, project, tag)
   pal <- ensure_palette(group_pal, d$group)
 
   # 群の部分集合だけで主成分を引き直せるよう、rlog 行列 (分散上位 PCA_POOL_GENES) を
   # レポートに埋め込む。report.js が選択された群のサンプルで上位 ntop を選び直し、
   # 中心化/標準化のうえ PCA を再計算する。旧バージョンの出力にはこの CSV が無いので、
   # その場合は従来どおり静的な PCA (全サンプル) のみになる。
-  rf <- file.path(pca_dir_of(deseq2_dir, project), sprintf("PCA_rlogTop_%s.csv", project))
+  rf <- file.path(pca_dir_of(deseq2_dir, project), sprintf("PCA_rlogTop_%s%s.csv", tag, project))
   if (file.exists(rf)) {
     rl <- suppressMessages(readr::read_csv(rf, show_col_types = FALSE, progress = FALSE))
     rl <- as.data.frame(rl, check.names = FALSE)
@@ -430,7 +434,7 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
     if (length(scols) >= 3 && nrow(rl) >= 2) {
       m <- as.matrix(rl[, scols, drop = FALSE]); storage.mode(m) <- "double"
       grp <- as.character(d$group)[match(scols, as.character(d$sample))]
-      reg$pca[[paste0(id_prefix, "pca")]] <- list(
+      reg$pca[[paste0(id_prefix, "pca", id_suffix)]] <- list(
         samples = as.list(scols),
         groups = as.list(grp),
         project = project,
@@ -451,13 +455,13 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
            name = "variance", marker = list(color = "#5B9BD5"),
            hovertemplate = "%{x}: %{y:.1f}%<extra></extra>")
     )
-    register_plot(reg, paste0(id_prefix, "pca_scree"), list(data = scree, layout = list(
+    register_plot(reg, paste0(id_prefix, "pca_scree", id_suffix), list(data = scree, layout = list(
       xaxis = list(title = ""),
       yaxis = list(title = "% variance", rangemode = "tozero"),  # 上限は自動 (100% までは不要)
       hovermode = "x", margin = list(l = 56, r = 16, t = 8, b = 28), showlegend = FALSE  # 1 色なので凡例不要
     )))
   }
-  scree_block <- sprintf('<div class="pic-plot-cell"><div id="%spca_scree" class="pic-plot"></div></div>', id_prefix)
+  scree_block <- sprintf('<div class="pic-plot-cell"><div id="%spca_scree%s" class="pic-plot"></div></div>', id_prefix, id_suffix)
 
   pair_blocks <- character(0)
   pairs <- list(c("PC1", "PC2"), c("PC2", "PC3"))
@@ -510,7 +514,7 @@ build_pca_plots <- function(reg, deseq2_dir, project, group_pal = NULL, id_prefi
     }
     xlab <- if (!is.null(varpct) && xc %in% names(varpct)) sprintf("%s (%.1f%%)", xc, varpct[[xc]]) else xc
     ylab <- if (!is.null(varpct) && yc %in% names(varpct)) sprintf("%s (%.1f%%)", yc, varpct[[yc]]) else yc
-    id <- sprintf("%spca_%s_%s", id_prefix, xc, yc)
+    id <- sprintf("%spca_%s_%s%s", id_prefix, xc, yc, id_suffix)
     layout <- list(
       xaxis = list(title = xlab, zeroline = TRUE),
       yaxis = list(title = ylab, zeroline = TRUE),

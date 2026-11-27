@@ -16,6 +16,10 @@ deftable_<run>_<genome>.tsv):
   DEG_<project>/DEG_normalizedCountTable_<project>.csv,
   DEG_<project>/DEGCluster_<project>/DEGCluster_*_<project>.csv,
   DEG_<project>/DEGList_<project>/<contrast>__<group>.txt
+  With --covariate, also the covariate-removed views:
+  PCA_<project>/PCA_RegLog_covadj_<project>.csv,
+  PCA_<project>/PCA_Variance_covadj_<project>.csv,
+  PCA_<project>/PCA_rlogTop_covadj_<project>.csv, correlation_covadj_<project>.csv
 
 Gene names in the tables (from the biomart cache of the genome):
   Tables keyed by gene ID carry the gene name next to the ID column:
@@ -43,6 +47,34 @@ Required options:
 
 Optional options:
   --fdr <value>         FDR threshold for DEG calling (default: 0.1)
+  --covariate <column>  Add a deftable column to the DESeq2 design as a
+                        covariate (e.g. donor / batch). Repeat it or separate
+                        names with commas for several covariates. The design
+                        becomes ~ <covariate...> + group; the contrasts are
+                        still all pairs of groups, now adjusted for the
+                        covariate. Default: none (design ~group, unchanged).
+                          - Values are treated as categories (factor), also
+                            when they are numbers (donor 1..5).
+                          - Stops with a message when the column is missing,
+                            a value is empty, a covariate has only one value,
+                            or it is confounded with group (design not full
+                            rank). Unbalanced designs (a missing sample) are
+                            fine.
+                          - The column comes from the sample sheet: give it a
+                            header after "group" (see pic mapping); mapping
+                            copies it to the deftable. For an existing run,
+                            add the column to summary/deftable_<project>.tsv.
+                          - rlog (blind) PCA / correlation are written as
+                            before; in addition the *covadj_* files hold the
+                            same views with the covariate effect removed by
+                            limma::removeBatchEffect(x, batch = <covariate>,
+                            design = model.matrix(~group)). The report can
+                            switch between the two. DEG clusters
+                            (DEGCluster_*) use the covariate-removed rlog.
+                          - The design is recorded in
+                            summary/analysis_params.tsv and in the report's
+                            Materials & Methods.
+                        Pass the same --covariate to every --part.
   --threads <n>         Run rlog alongside the DESeq2 fit and extract the
                         contrasts in parallel (default: 1). Results are the
                         same as with 1. Never starts more workers than there
@@ -85,3 +117,14 @@ Example:
     --count-dir /path/to/out/counts \
     --genome mm10 \
     --out-dir /path/to/out
+
+Example (paired tissues from the same donors; design ~donor + group):
+  deftable (columns after group are kept by pic mapping from the sample sheet):
+    count_prefix  barcode  sample      group     donor
+    Normal_1      AGGATC   Normal_1    Normal    1
+    Abnormal_1    TCGAAG   Abnormal_1  Abnormal  1
+    Border_1      TCCTTC   Border_1    Border    1
+    Normal_2      TGTCTG   Normal_2    Normal    2
+    ...
+  pic deseq2 --deftable out/summary/deftable_test_hg38.tsv --count-dir out/counts \
+    --genome hg38 --out-dir out/deseq2 --covariate donor

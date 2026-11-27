@@ -78,10 +78,18 @@ build_analysis_data_tabs <- function(reg, desc, base_dir, out_dir, id_prefix, fd
       build_rin_html(r, pic_report_run_name(out_dir), id_prefix, project = project, base_dir = base_dir)
     },
     # 2. Sample correlation
-    cor = function(r) build_correlation_html(r, desc$deseq2_dir, project, group_map, group_pal, sample_order, id_prefix, out_dir),
+    # 共変量 (pic deseq2 --covariate) の効果を除いた版 (*covadj_*) があれば、切り替えて見られるようにする
+    cor = function(r) pic_covadj_views(
+      build_correlation_html(r, desc$deseq2_dir, project, group_map, group_pal, sample_order, id_prefix, out_dir),
+      build_correlation_html(r, desc$deseq2_dir, project, group_map, group_pal, sample_order, id_prefix, out_dir,
+                             tag = "covadj_", id_suffix = "__adj"),
+      getOption("pic.report.covariates")),
     # 3. PCA (群/サンプルの選択パネルに使う samples / groups も返す)
     pca = function(r) {
       h <- build_pca_plots(r, desc$deseq2_dir, project, group_pal, id_prefix, out_dir)
+      h <- pic_covadj_views(h, build_pca_plots(r, desc$deseq2_dir, project, group_pal, id_prefix, out_dir,
+                                               tag = "covadj_", id_suffix = "__adj"),
+                            getOption("pic.report.covariates"))
       pp <- r$pca[[sid("pca")]]
       list(html = h, has_pp = !is.null(pp) && length(pp$samples) > 0,
            samples = if (!is.null(pp)) unlist(pp$samples), groups = if (!is.null(pp)) unlist(pp$groups))
@@ -231,6 +239,9 @@ build_report_for_project <- function(desc, out_dir, msum, asset_dir) {
   # この project (= genome) の deftable に載っているサンプルに絞って使う。
   proj_samples <- pic_project_samples(out_dir, project)
   genome <- pic_report_genome_of(out_dir, project, samples = proj_samples)
+  # pic deseq2 --covariate の列名 (Correlation / PCA の切り替えの表示に使う)。無ければ NULL。
+  cov_rec <- pic_param(pic_read_analysis_params(out_dir), paste0("deseq2_covariates__", genome))
+  options(pic.report.covariates = if (nzchar(cov_rec)) strsplit(cov_rec, ",", fixed = TRUE)[[1]] else NULL)
   reg <- pic_report_registry()
   # src_note / register_file が参照する埋め込みレジストリと基準ディレクトリ
   options(pic.report.reg = reg, pic.report.projdir = out_dir)
@@ -550,18 +561,32 @@ else 'dds &lt;- nbinomWaldTest(dds)\n')
                         pic_param(params, "deseq2_batch_levels", ""))
   ds_bcorr <- pic_param(params, paste0("deseq2_batch_removal__", genome),
                         pic_param(params, "deseq2_batch_removal", ""))
-  has_batch_design <- nzchar(ds_batch)
-  batch_desc <- if (has_batch_design) {
+  # pic deseq2 --covariate の列 (例 "donor")。記録があれば batch の古いキーより優先する。
+  ds_covs <- pic_param(params, paste0("deseq2_covariates__", genome), "")
+  cov_names <- if (nzchar(ds_covs)) strsplit(ds_covs, ",", fixed = TRUE)[[1]] else character(0)
+  has_batch_design <- nzchar(ds_batch) && length(cov_names) == 0
+  # 共変量 (pic deseq2 --covariate) は design の式 (~donor + group など) と coldata のコードにだけ書く
+  batch_desc <- if (length(cov_names)) {
+    ""
+  } else if (has_batch_design) {
     sprintf(' Batch (<b>%s</b>) is included as a covariate, so group effects are estimated adjusted for it.',
             html_escape(ds_batch))
   } else ""
-  batch_vis <- if (nzchar(ds_bcorr)) {
+  batch_vis <- if (length(cov_names)) {
+    ""
+  } else if (nzchar(ds_bcorr)) {
     sprintf(paste0(' For the PCA / sample-correlation / DEG-cluster views the batch component is additionally',
                    ' removed from the rlog matrix with <code>%s</code> (group differences are preserved by',
                    ' passing the group design); the statistics above are unaffected by this step.'),
             html_escape(ds_bcorr))
   } else ""
-  coldata_code <- if (has_batch_design) {
+  coldata_code <- if (length(cov_names)) {
+    rn <- ifelse(make.names(cov_names) == cov_names, cov_names, paste0("`", cov_names, "`"))
+    paste0(
+      paste(sprintf('%s &lt;- c(...)\n', vapply(rn, html_escape, character(1))), collapse = ""),
+      sprintf('coldata &lt;- data.frame(%s, group = factor(grp), row.names = colnames(umi_counts))\n',
+              paste(sprintf('%s = factor(%s)', vapply(rn, html_escape, character(1)), vapply(rn, html_escape, character(1))), collapse = ", ")))
+  } else if (has_batch_design) {
     lv <- trimws(strsplit(ds_batch, ",", fixed = TRUE)[[1]])
     paste0(
       sprintf('bat &lt;- c(%s, ...)  <span class="c"># one per sample</span>\n',

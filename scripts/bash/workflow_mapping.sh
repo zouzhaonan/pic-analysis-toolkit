@@ -9,9 +9,11 @@ format_sample_sheet() {
   debug_kv "output.formatted_sample_sheet" "$FORMATTED_SAMPLE_SHEET"
   {
     printf "%s\t%s\t%s\t%s\t%s\n" "fastq_prefix" "genome" "barcode" "sample" "group"
-    tr -d "\015" <"$SAMPLE_SHEET" | awk -F"\t" 'NR==1{
+    # group の後ろの追加の列 (donor など。deftable に写して pic deseq2 --covariate で使う) は
+    # mapping では使わない。job_queue は 6 列目に読みの数を足すので、ここで 5 列にそろえる。
+    tr -d "\015" <"$SAMPLE_SHEET" | awk -F"\t" -v OFS="\t" 'NR==1{
       if (tolower($1)=="fastq_prefix" && tolower($2)=="genome" && tolower($3)=="barcode" && tolower($4)=="sample" && tolower($5)=="group") next
-    } {print}'
+    } { if (NF > 5) print $1, $2, $3, $4, $5; else print }'
   } >"$FORMATTED_SAMPLE_SHEET"
   debug_kv "result.rows" "$(($(wc -l <"$FORMATTED_SAMPLE_SHEET") - 1))"
 }

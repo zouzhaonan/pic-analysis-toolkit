@@ -49,7 +49,10 @@ pic_report_defined_files <- function(desc, base_dir, out_dir) {
     pic_project_deftable(base_dir, p),
     pic_aggregate_csvs(base_dir, p),
     file.path(pca_dir_of(d, p), sprintf(c("PCA_RegLog_%s.csv", "PCA_Variance_%s.csv"), p)),
+    # 共変量 (pic deseq2 --covariate) の効果を除いた版。無ければ下の file.exists で落ちる
+    file.path(pca_dir_of(d, p), sprintf(c("PCA_RegLog_covadj_%s.csv", "PCA_Variance_covadj_%s.csv"), p)),
     file.path(d, sprintf(c("correlation_%s.csv", "UMI_count_%s.csv", "normalizedCountTable_%s.csv", "stats_%s.csv"), p)),
+    file.path(d, sprintf("correlation_covadj_%s.csv", p)),
     file.path(degcluster_dir_of(d, p), sprintf("DEGCluster_profile_%s.csv", p)),
     vapply(pic_gsea_csvs(desc$enrich_dir, p), function(x) x$csv, character(1)))
   abs <- abs[file.exists(abs) & !dir.exists(abs)]
@@ -244,8 +247,11 @@ file_desc <- function(rel) {
   if (grepl("^normalizedCountTable", b)) return("DESeq2 size-factor normalized counts (genes × samples).")
   if (grepl("^DEG_normalizedCountTable", b)) return("Normalized counts restricted to DEGs (heatmap input).")
   if (grepl("^stats", b)) return("DESeq2 differential-expression statistics for all contrasts.")
+  if (grepl("^correlation_covadj_", b)) return("Sample-to-sample correlation matrix, covariate effect removed.")
   if (grepl("^correlation", b)) return("Sample-to-sample correlation matrix.")
+  if (grepl("PCA_RegLog_covadj_", b)) return("PCA sample coordinates (regularized-log transform), covariate effect removed.")
   if (grepl("PCA_RegLog", b)) return("PCA sample coordinates (regularized-log transform).")
+  if (grepl("PCA_Variance_covadj_", b)) return("PCA variance explained per component, covariate effect removed.")
   if (grepl("PCA.*[Vv]ar", b) || grepl("variance", b)) return("PCA variance explained per component.")
   if (grepl("DEGCluster_profile", b)) return("Per-cluster gene expression profile (values by group).")
   if (grepl("DEGCluster_gene_for_ora", b)) return("Gene-to-cluster assignment used as ORA input.")
@@ -662,3 +668,32 @@ register_plot <- function(reg, id, spec) {
   invisible(id)
 }
 
+
+# --- 共変量 (pic deseq2 --covariate) の補正なし / 効果を除いた版の切り替え ------------------
+# raw_html (補正なし) と adj_html (*covadj_* から作った同じ節) を並べ、上に切り替えのボタンを置く。
+# adj は最初は隠す。説明文 (pic-note) は raw の分だけ残す (タブの info に集める)。
+# 見出しの右に移るダウンロード・PNG ボタンには data-covview を付け、表示中の版の分だけ見せる (report.js)。
+# adj_html が空なら raw_html をそのまま返す (共変量の無い解析では何も変わらない)。
+pic_covadj_views <- function(raw_html, adj_html, covariates = NULL) {
+  if (is.null(adj_html) || !nzchar(adj_html) || is.null(raw_html) || !nzchar(raw_html)) return(raw_html)
+  lab <- if (length(covariates)) paste(covariates, collapse = " + ") else "covariate"
+  mark <- function(h, view, hide) {
+    st <- if (hide) ' style="display:none"' else ""
+    h <- gsub('<a class="pic-dlcsv', sprintf('<a data-covview="%s"%s class="pic-dlcsv', view, st), h, fixed = TRUE)
+    gsub('<button class="pic-png-btn"', sprintf('<button data-covview="%s"%s class="pic-png-btn"', view, st), h, fixed = TRUE)
+  }
+  adj_html <- gsub('<p class="pic-note">.*?</p>', '', adj_html, perl = TRUE)
+  sel <- sprintf(paste0(
+    '<div class="pic-covsel" role="group" aria-label="Covariate">',
+    '<button type="button" class="pic-covsel-btn on" data-covsel="raw">Uncorrected</button>',
+    '<button type="button" class="pic-covsel-btn" data-covsel="adj">%s effect removed</button></div>'),
+    html_escape(lab))
+  note <- sprintf(paste0(
+    '<p class="pic-note"><b>Uncorrected / %s effect removed:</b> the DESeq2 design includes %s as a covariate. ',
+    '&ldquo;%s effect removed&rdquo; shows the same view after removing the %s effect with ',
+    '<code>limma::removeBatchEffect</code> (group differences kept); the DEG statistics are the same in both.</p>'),
+    html_escape(lab), html_escape(lab), html_escape(lab), html_escape(lab))
+  paste0(note, sel,
+         '<div class="pic-covview" data-covview="raw">', mark(raw_html, "raw", FALSE), '</div>',
+         '<div class="pic-covview" data-covview="adj" hidden>', mark(adj_html, "adj", TRUE), '</div>')
+}

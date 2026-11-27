@@ -22,6 +22,9 @@ Required options:
                                ovary         mm10    TCCTTC   ovary_1  ovary
                                ovary         mm10    TGTCTG   ovary_2  ovary
                              - - - - - - - - - - - - - - - - - - - - - - - - -
+                             Extra columns after "group" with a header (e.g.
+                             donor, batch) are copied to the deftables, so that
+                             `pic deseq2 --covariate <column>` can use them.
   --raw-fastq-dir <dir>      Directory containing raw paired FASTQ files (R1 & R2)
                              * No need when --demux-fastq-dir is specified
 

@@ -13,8 +13,8 @@ build_sample_correlation <- function(dds) {
   stats::cor(normalized_matrix, method = "pearson", use = "pairwise.complete.obs")
 }
 
-save_correlation_outputs <- function(correlation_matrix, out_dir, project_name) {
-  f <- file.path(out_dir, sprintf("correlation_%s.csv", project_name))
+save_correlation_outputs <- function(correlation_matrix, out_dir, project_name, tag = "") {
+  f <- file.path(out_dir, sprintf("correlation_%s%s.csv", tag, project_name))
   pic_write_csv_atomic(
     tibble::rownames_to_column(as.data.frame(correlation_matrix), var = "sample"),
     f
@@ -31,7 +31,10 @@ PCA_POOL_GENES <- 2000L
 # dds は DESeq() の前 (--part rlog。サイズ因子だけ設定したもの) でも後 (--part all) でもよい:
 # 相関に使う counts(dds, normalized = TRUE) は カウント / サイズ因子 で、DESeq() はサイズ因子が
 # 設定済みなら変えない (README の確かめ)。
-run_dimension_reduction <- function(dds, label, out_dir, project_name, ntop, rlog_mat = NULL, e2g = NULL) {
+# tag と cor_mat は共変量の効果を除いた版 (run_dimension_reduction_covadj) に使う。
+# 既定 (tag = "") のファイル名・中身は前と同じ。
+run_dimension_reduction <- function(dds, label, out_dir, project_name, ntop, rlog_mat = NULL, e2g = NULL,
+                                    tag = "", cor_mat = NULL) {
   # rlog_mat は main で 1 回だけ計算した rlog(dds, blind = TRUE) の行列 (rlog の既定も blind = TRUE)。
   # 無ければ (rlog が失敗したときなど) ここで計算し直し、失敗ならそのまま止める (前と同じ)。
   if (is.null(rlog_mat)) rlog_mat <- SummarizedExperiment::assay(DESeq2::rlog(dds))
@@ -51,8 +54,8 @@ run_dimension_reduction <- function(dds, label, out_dir, project_name, ntop, rlo
   pca_df <- tibble::as_tibble(pca_res$x, rownames = "sample") |>
     dplyr::left_join(label_tbl, by = "sample")
 
-  f_pca <- file.path(pca_plot_dir, sprintf("PCA_RegLog_%s.csv", project_name))
-  f_var <- file.path(pca_plot_dir, sprintf("PCA_Variance_%s.csv", project_name))
+  f_pca <- file.path(pca_plot_dir, sprintf("PCA_RegLog_%s%s.csv", tag, project_name))
+  f_var <- file.path(pca_plot_dir, sprintf("PCA_Variance_%s%s.csv", tag, project_name))
   pic_write_csv_atomic(pca_df, f_pca)
   pic_write_csv_atomic(tibble::rownames_to_column(pca_var, "metric"), f_var)
 
@@ -61,12 +64,27 @@ run_dimension_reduction <- function(dds, label, out_dir, project_name, ntop, rlo
   pool <- min(PCA_POOL_GENES, nrow(rld_df))
   pool_idx <- rank(-gene_var, ties.method = "first") <= pool
   rld_pool <- round(rld_df[pool_idx, , drop = FALSE], 3)
-  f_top <- file.path(pca_plot_dir, sprintf("PCA_rlogTop_%s.csv", project_name))
+  f_top <- file.path(pca_plot_dir, sprintf("PCA_rlogTop_%s%s.csv", tag, project_name))
   # gene (ens_gene) のすぐ右に gene_name (deseq2_data.R の pic_gene_name_of)。
   top_tbl <- tibble::rownames_to_column(as.data.frame(rld_pool), "gene")
   top_tbl <- tibble::add_column(top_tbl, gene_name = pic_gene_name_of(top_tbl$gene, e2g), .after = "gene")
   pic_write_csv_atomic(top_tbl, f_top)
 
-  f_cor <- save_correlation_outputs(build_sample_correlation(dds), out_dir, project_name)
+  if (is.null(cor_mat)) cor_mat <- build_sample_correlation(dds)
+  f_cor <- save_correlation_outputs(cor_mat, out_dir, project_name, tag)
   invisible(c(f_pca, f_var, f_top, f_cor))
+}
+
+# 共変量 (--covariate) の効果を除いた PCA と相関。ファイル名に covadj_ を付ける:
+#   PCA_<p>/PCA_RegLog_covadj_<p>.csv, PCA_Variance_covadj_<p>.csv, PCA_rlogTop_covadj_<p>.csv,
+#   correlation_covadj_<p>.csv
+# PCA: rlog(blind) の行列から limma::removeBatchEffect で共変量の効果を除いたもの (rlog_adj)。
+# 相関: 補正なしの相関と同じ尺度にするため、log2(正規化カウント + 1) から共変量の効果を除き、
+#       2^x - 1 に戻してから Pearson の相関をとる。
+run_dimension_reduction_covadj <- function(dds, label, out_dir, project_name, ntop, rlog_adj, e2g, covariates) {
+  lx <- log2(DESeq2::counts(dds, normalized = TRUE) + 1)
+  cor_adj <- stats::cor(2^pic_remove_covariate_effects(lx, label, covariates) - 1,
+                        method = "pearson", use = "pairwise.complete.obs")
+  run_dimension_reduction(dds = dds, label = label, out_dir = out_dir, project_name = project_name, ntop = ntop,
+                          rlog_mat = rlog_adj, e2g = e2g, tag = "covadj_", cor_mat = cor_adj)
 }
