@@ -218,10 +218,10 @@
     var toSec = document.getElementById(toGeno + "__" + tabKey);
     if (!fromSec || !toSec) return;  // 解析タブ以外は対象外
     // 1. サブタブ (Read distribution/Sequencing depth, Heatmap/MA・Volcano, GSEA/ORA)
-    var actSub = fromSec.querySelector(".pic-subtabbtn.active");
+    var actSub = fromSec.querySelector(".pic-subtabbtn[data-sub].active");
     if (actSub) {
       var suf = stripGeno(actSub.dataset.sub);
-      var dstSub = Array.prototype.filter.call(toSec.querySelectorAll(".pic-subtabbtn"),
+      var dstSub = Array.prototype.filter.call(toSec.querySelectorAll(".pic-subtabbtn[data-sub]"),
         function (x) { return stripGeno(x.dataset.sub) === suf; })[0];
       if (dstSub && !dstSub.classList.contains("active")) dstSub.click();
     }
@@ -1219,11 +1219,12 @@
       });
     });
     // セクション内サブタブの切替 (ボタンはサブパネルごとに複製されるため data-sub で照合)
-    document.querySelectorAll(".pic-subtabbtn").forEach(function (b) {
+    // (共変量の切り替え .pic-covsel-btn は同じ部品だが data-sub が無く、下で別に扱う)
+    document.querySelectorAll(".pic-subtabbtn[data-sub]").forEach(function (b) {
       b.addEventListener("click", function () {
         var sec = b.closest("section.pic-tab"); if (!sec) return;
         var key = b.dataset.sub;
-        sec.querySelectorAll(".pic-subtabbtn").forEach(function (x) { x.classList.toggle("active", x.dataset.sub === key); });
+        sec.querySelectorAll(".pic-subtabbtn[data-sub]").forEach(function (x) { x.classList.toggle("active", x.dataset.sub === key); });
         sec.querySelectorAll(".pic-subpanel").forEach(function (p) {
           var on = (p.id === key);
           p.classList.toggle("active", on);
@@ -2048,11 +2049,12 @@
       el.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") run(e); });
     });
     // 共変量 (pic deseq2 --covariate) の「Uncorrected / <共変量> effect removed」の切り替え。
+    // ボタンはタブの見出し (タイトルの隣) にあり、見た目はサブタブ (.pic-subtabbtn) と同じ。
     // Correlation と PCA の両方のタブで連動する。隠れていた版の図はここで描く。
     document.querySelectorAll(".pic-covsel-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var view = btn.dataset.covsel;
-        document.querySelectorAll(".pic-covsel-btn").forEach(function (b) { b.classList.toggle("on", b.dataset.covsel === view); });
+        document.querySelectorAll(".pic-covsel-btn").forEach(function (b) { b.classList.toggle("active", b.dataset.covsel === view); });
         document.querySelectorAll(".pic-covview").forEach(function (v) { v.hidden = v.dataset.covview !== view; });
         document.querySelectorAll("[data-covview]:not(.pic-covview)").forEach(function (el) {
           el.style.display = el.dataset.covview === view ? "" : "none";

@@ -670,13 +670,18 @@ register_plot <- function(reg, id, spec) {
 
 
 # --- 共変量 (pic deseq2 --covariate) の補正なし / 効果を除いた版の切り替え ------------------
-# raw_html (補正なし) と adj_html (*covadj_* から作った同じ節) を並べ、上に切り替えのボタンを置く。
+# raw_html (補正なし) と adj_html (*covadj_* から作った同じ節) を並べ、切り替えのボタンを置く。
+# ボタンは DEG の「Heatmap | M-A / Volcano」と同じ部品 (.pic-subtabs / .pic-subtabbtn) で作り、
+# pic_tab_panel がタブの見出し (タイトルの隣) へ移す (.pic-covsel が目印。data-sub は付けない)。
 # adj は最初は隠す。説明文 (pic-note) は raw の分だけ残す (タブの info に集める)。
 # 見出しの右に移るダウンロード・PNG ボタンには data-covview を付け、表示中の版の分だけ見せる (report.js)。
 # adj_html が空なら raw_html をそのまま返す (共変量の無い解析では何も変わらない)。
+# 表示の名前は、ほかのタブ名と同じく頭を大文字にする (列名 donor -> "Donor effect removed")。
+pic_ucfirst <- function(x) sub("^(.)", "\\U\\1", x, perl = TRUE)
 pic_covadj_views <- function(raw_html, adj_html, covariates = NULL) {
   if (is.null(adj_html) || !nzchar(adj_html) || is.null(raw_html) || !nzchar(raw_html)) return(raw_html)
-  lab <- if (length(covariates)) paste(covariates, collapse = " + ") else "covariate"
+  lab <- if (length(covariates)) paste(pic_ucfirst(covariates), collapse = " + ") else "Covariate"
+  nm <- if (length(covariates)) paste(covariates, collapse = " + ") else "covariate"
   mark <- function(h, view, hide) {
     st <- if (hide) ' style="display:none"' else ""
     h <- gsub('<a class="pic-dlcsv', sprintf('<a data-covview="%s"%s class="pic-dlcsv', view, st), h, fixed = TRUE)
@@ -684,15 +689,15 @@ pic_covadj_views <- function(raw_html, adj_html, covariates = NULL) {
   }
   adj_html <- gsub('<p class="pic-note">.*?</p>', '', adj_html, perl = TRUE)
   sel <- sprintf(paste0(
-    '<div class="pic-covsel" role="group" aria-label="Covariate">',
-    '<button type="button" class="pic-covsel-btn on" data-covsel="raw">Uncorrected</button>',
-    '<button type="button" class="pic-covsel-btn" data-covsel="adj">%s effect removed</button></div>'),
+    '<nav class="pic-subtabs pic-covsel" aria-label="Covariate">',
+    '<button class="pic-subtabbtn pic-covsel-btn active" type="button" data-covsel="raw">Uncorrected</button>',
+    '<button class="pic-subtabbtn pic-covsel-btn" type="button" data-covsel="adj">%s effect removed</button></nav>'),
     html_escape(lab))
   note <- sprintf(paste0(
     '<p class="pic-note"><b>Uncorrected / %s effect removed:</b> the DESeq2 design includes %s as a covariate. ',
     '&ldquo;%s effect removed&rdquo; shows the same view after removing the %s effect with ',
     '<code>limma::removeBatchEffect</code> (group differences kept); the DEG statistics are the same in both.</p>'),
-    html_escape(lab), html_escape(lab), html_escape(lab), html_escape(lab))
+    html_escape(lab), html_escape(nm), html_escape(lab), html_escape(nm))
   paste0(note, sel,
          '<div class="pic-covview" data-covview="raw">', mark(raw_html, "raw", FALSE), '</div>',
          '<div class="pic-covview" data-covview="adj" hidden>', mark(adj_html, "adj", TRUE), '</div>')

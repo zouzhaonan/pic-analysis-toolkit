@@ -393,6 +393,10 @@ pic_tab_panel <- function(sec_html, active = FALSE, controls = "", subs = NULL, 
     n <- pic_pull_notes(x$inner)
     info <- info_badge(n$desc)
     p <- pic_pull_src(n$html)
+    # 共変量の切り替え (pic_covadj_views の .pic-covsel) はタイトルの隣 (info の右) へ移す
+    covsel <- unlist(regmatches(p$html, regexpr('<nav class="pic-subtabs pic-covsel".*?</nav>', p$html, perl = TRUE)))
+    if (length(covsel)) p$html <- sub('<nav class="pic-subtabs pic-covsel".*?</nav>', '', p$html, perl = TRUE)
+    info <- paste0(info, paste(covsel, collapse = ""))
     # ヘッダ右のアクション (例: correlation の PNG ボタン) を source の隣へ移す
     acts <- unique(unlist(regmatches(p$html, gregexpr('<span class="pic-headact">.*?</span>', p$html, perl = TRUE))))
     inner2 <- gsub('<span class="pic-headact">.*?</span>', '', p$html, perl = TRUE)

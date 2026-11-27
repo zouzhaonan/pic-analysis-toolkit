@@ -409,10 +409,6 @@ table.pic-cmatrix.pic-cmx-nocount{--cmx:20px;--cmx-pad:6px}
 .pic-expr-pager{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin:0 0 4px;font-size:13px}
 .pic-expr-pager-pos{min-width:7em;text-align:center;font-variant-numeric:tabular-nums;color:var(--muted,#52606d)}
 .pic-expr-pager button:disabled{opacity:.4;cursor:default}
-/* 共変量 (pic deseq2 --covariate): Correlation / PCA の「Uncorrected / <共変量> effect removed」 */
-.pic-covsel{display:inline-flex;gap:0;border:1px solid var(--accent);border-radius:7px;overflow:hidden;margin:0 0 10px}
-.pic-covsel-btn{appearance:none;border:none;border-left:1px solid var(--accent);border-radius:0;background:#fff;color:var(--accent);font-size:12.5px;font-weight:600;font-family:inherit;padding:4px 13px;cursor:pointer;white-space:nowrap}
-.pic-covsel-btn:first-child{border-left:none}
-.pic-covsel-btn:hover{background:#eef3fb}
-.pic-covsel-btn.on{background:var(--accent);color:#fff}
+/* 共変量 (pic deseq2 --covariate): Correlation / PCA の「Uncorrected / <共変量> effect removed」。
+   ボタンはサブタブと同じ .pic-subtabs / .pic-subtabbtn で、タイトルの隣に置く (report_page.R) */
 .pic-covview[hidden]{display:none}
