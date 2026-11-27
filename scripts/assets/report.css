@@ -202,7 +202,10 @@ table.pic-cmatrix{border-collapse:collapse;font-size:13px}
 .pic-cmatrix.pic-cmx-nocount .pic-cmx-cell label{justify-content:center}
 .pic-cmx-cell:hover{background:#f3f7fc}
 .pic-cmx-n{font-variant-numeric:tabular-nums;font-weight:600}
-.pic-cmx-empty{background:#fafbfc}
+/* 比較の無いマス (下三角と対角。build_group_matrix は比較を上三角にだけ置く) は枠も背景も描かない空白にする。
+   押せない (label が無い) のでカーソルは変えず、行・列の強調 (pic-cmx-rowhl/colhl) でも色を付けない。
+   行名は元の欄 (th.pic-cmx-rh) に左揃えのまま置く (2026-11-27) */
+.pic-cmatrix td.pic-cmx-empty{background:transparent;border:none;cursor:default}
 /* 合わせているセルの行・列を強調 */
 .pic-cmatrix .pic-cmx-rowhl,.pic-cmatrix .pic-cmx-colhl{background:#e8f1fb}
 .pic-cmatrix th.pic-cmx-hl{background:#cfe2f6}
