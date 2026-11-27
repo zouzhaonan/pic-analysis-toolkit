@@ -6,17 +6,6 @@
 # DESeq2: contrast ごとの MA / volcano (plotly)
 # ---------------------------------------------------------------------------
 
-# 背景 (非有意) 点を上限まで間引く。有意点は全て残す。
-downsample_idx <- function(is_sig, cap = 3500L) {
-  sig_idx <- which(is_sig)
-  bg_idx <- which(!is_sig)
-  if (length(bg_idx) > cap) {
-    set.seed(42L)
-    bg_idx <- sort(sample(bg_idx, cap))
-  }
-  sort(c(sig_idx, bg_idx))
-}
-
 scatter_traces_by_dir <- function(df, x, y, numerator, denominator, hovertemplate, group_pal = NULL) {
   # df は idx で絞り込み済み。direction 列 (up/down/ns) でトレース分割。
   # df には cd1 (padj), cd2 (pvalue) 列を含み、customdata として hover に渡す。
@@ -101,8 +90,8 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
 
     # ---- M-A (hover に padj) ----
     keepMA <- is.finite(base) & base > 0 & is.finite(lfc)
-    idxMA <- downsample_idx(is_sig & keepMA)
-    idxMA <- idxMA[keepMA[idxMA]]
+    # 全遺伝子を描く (間引かない。2026-11-27 ユーザーの指示)。log 軸に置けない baseMean 0 などだけ除く。
+    idxMA <- which(keepMA)
     if (length(idxMA) > 0) {
       dfMA <- data.frame(x = base[idxMA], y = lfc[idxMA], gene = gene[idxMA], dir = dir[idxMA],
                          cd1 = padj[idxMA], cd2 = pval[idxMA], stringsAsFactors = FALSE)
@@ -121,8 +110,8 @@ build_contrast_plots <- function(reg, stats, deg_counts, fdr, id_prefix = "", st
 
     # ---- Volcano: y=-log10(p-value) 一本化、hover に padj も表示 ----
     keepV <- is.finite(pval) & pval > 0 & is.finite(lfc)
-    idxV <- downsample_idx(is_sig & keepV)
-    idxV <- idxV[keepV[idxV]]
+    # 全遺伝子を描く (間引かない)。p-value が NA (DESeq2 が検定しなかった遺伝子) は置けないので除く。
+    idxV <- which(keepV)
     if (length(idxV) > 0) {
       dfV <- data.frame(x = lfc[idxV], y = -log10(pval[idxV]), gene = gene[idxV], dir = dir[idxV],
                         cd1 = padj[idxV], cd2 = pval[idxV], stringsAsFactors = FALSE)
